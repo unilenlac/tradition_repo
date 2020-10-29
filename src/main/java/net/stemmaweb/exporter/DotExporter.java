@@ -312,7 +312,7 @@ public class DotExporter
      * Helper functions for variant graph production
      */
 
-    private static HashMap<Node, Node> getRepresentatives(Node sectionNode, String normaliseOn)
+    private static HashMap<Node, Node> getRepresentatives(Node sectionNode, List<String> normaliseOn)
             throws Exception {
         if (normaliseOn == null) {
             HashMap<Node, Node> representatives = new HashMap<>();

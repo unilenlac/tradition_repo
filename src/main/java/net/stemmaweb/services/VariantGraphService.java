@@ -205,21 +205,23 @@ public class VariantGraphService {
      * a map of each section node to its representative node.
      *
      * @param sectionNode     The section to be normalized
-     * @param normalizeType   The (string) name of the type on which we are normalizing
+     * @param normalizeTypeList   The (string) name list of the types on which we are normalizing
      * @return                A HashMap of nodes to their representatives
      *
      * @throws                Exception, if clusters cannot be got, if the requested relation type doesn't
      *                        exist, or if something goes wrong with the transaction
      */
 
-    public static HashMap<Node,Node> normalizeGraph(Node sectionNode, String normalizeType) throws Exception {
+    public static HashMap<Node,Node> normalizeGraph(Node sectionNode, List<String> normalizeTypeList) throws Exception {
         HashMap<Node,Node> representatives = new HashMap<>();
         GraphDatabaseService db = sectionNode.getGraphDatabase();
         // Make sure the relation type exists
         Node tradition = getTraditionNode(sectionNode);
-        Node relType = new RelationTypeModel(normalizeType).lookup(tradition);
-        if (relType == null)
-            throw new Exception("Relation type " + normalizeType + " does not exist in this tradition");
+        for (String normalizeType : normalizeTypeList) {
+            Node relType = new RelationTypeModel(normalizeType).lookup(tradition);
+            if (relType == null)
+                throw new Exception("Relation type " + normalizeType + " does not exist in this tradition");
+        }
 
         try (Transaction tx = db.beginTx()) {
             Node sectionStart = sectionNode.getSingleRelationship(ERelations.COLLATION, Direction.OUTGOING).getEndNode();
@@ -231,7 +233,7 @@ public class VariantGraphService {
             String tradId = tradition.getProperty("id").toString();
             String sectionId = String.valueOf(sectionNode.getId());
             for (Set<Node> cluster : RelationService.getCloselyRelatedClusters(
-                    tradId, sectionId, db, normalizeType)) {
+                    tradId, sectionId, db, normalizeTypeList)) {
                 if (cluster.size() == 0) continue;
                 Node representative = RelationService.findRepresentative(cluster);
                 if (representative == null)
