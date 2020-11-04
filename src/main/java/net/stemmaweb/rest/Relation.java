@@ -418,6 +418,7 @@ public class Relation {
             Node readingA = db.getNodeById(Long.parseLong(relationModel.getSource()));
             Node readingB = db.getNodeById(Long.parseLong(relationModel.getTarget()));
 
+            if (relationModel.getScope() == null) relationModel.setScope(SCOPE_LOCAL);
             switch (relationModel.getScope()) {
                 case SCOPE_LOCAL:
                     ArrayList<Relationship> findRel = DatabaseService.getRelationshipTo(readingA, readingB, ERelations.RELATED);
