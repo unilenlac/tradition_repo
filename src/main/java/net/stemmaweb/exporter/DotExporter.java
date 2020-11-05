@@ -160,6 +160,19 @@ public class DotExporter
                 }
                 tx.success();
 
+                // cleanup: delete COLLATED relations, no longer needed
+                for ( Relationship r: db.traversalDescription()
+                        .depthFirst()
+                        .uniqueness(Uniqueness.RELATIONSHIP_GLOBAL)
+                        .traverse(sectionStartNode)
+                        .relationships() ) {
+                    if ( r.getType().name().equals(ERelations.COLLATED.name()) ) {
+                        System.out.println(String.format("Deleting relation %s", r.getType().name()));
+                        r.delete();
+                    }
+                }
+                tx.success();
+
                 // Find our representative nodes, in case we are producing a normalised form of the graph
                 HashMap<Node, Node> representatives = getRepresentatives(sectionNode, dm.getNormaliseOn());
                 RelationshipType seqLabel = dm.getNormaliseOn() == null ? ERelations.SEQUENCE : ERelations.NSEQUENCE;
