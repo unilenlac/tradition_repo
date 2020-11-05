@@ -150,13 +150,14 @@ public class RelationService {
         List<RelationTypeModel> rtmlist = ourRelationTypes(traditionNode);
 
         for (String thresholdName : thresholdNameList) {
-            int bindlevel = 0;
-            Optional<RelationTypeModel> thresholdModel = rtmlist.stream().filter(x -> x.getName().equals(thresholdName)).findFirst();
-            if (thresholdModel.isPresent())
-                bindlevel = thresholdModel.get().getBindlevel();
-            for (RelationTypeModel rtm : rtmlist)
-                if (rtm.getBindlevel() <= bindlevel)
-                    closeRelations.add(String.format("\"%s\"", rtm.getName()));
+            closeRelations.add(String.format("\"%s\"", thresholdName));
+            // int bindlevel = 0;
+            // Optional<RelationTypeModel> thresholdModel = rtmlist.stream().filter(x -> x.getName().equals(thresholdName)).findFirst();
+            // if (thresholdModel.isPresent())
+            //     bindlevel = thresholdModel.get().getBindlevel();
+            // for (RelationTypeModel rtm : rtmlist)
+            //     if (rtm.getBindlevel() <= bindlevel)
+            //         closeRelations.add(String.format("\"%s\"", rtm.getName()));
         }
 
         return collectSpecifiedClusters(sectionId, db, closeRelations);
