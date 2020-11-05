@@ -154,6 +154,7 @@ public class DotExporter
                                   if (node.getProperty("normal_form").equals(collatedNode.getProperty("normal_form"))) {
                                       Relationship newRelation = node.createRelationshipTo(collatedNode, ERelations.RELATED);
                                       newRelation.setProperty("type", "token-normal-form");
+                                      newRelation.setProperty("scope", "local");
                                   }
                             }
                 }
