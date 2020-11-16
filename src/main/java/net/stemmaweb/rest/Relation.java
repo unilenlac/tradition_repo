@@ -248,7 +248,7 @@ public class Relation {
             // We are finally ready to write a relation.
             readingsAndRelationModel = createSingleRelation(readingA, readingB, relationModel, rmodel);
             // We can also write any transitive relationships.
-            propagateRelation(readingsAndRelationModel, rmodel);
+            // propagateRelation(readingsAndRelationModel, rmodel);
             tx.success();
         } catch (Exception e) {
             e.printStackTrace();
