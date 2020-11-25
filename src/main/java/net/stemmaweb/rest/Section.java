@@ -288,6 +288,42 @@ public class Section {
         return readingModels;
     }
 
+    /*
+    Get a list of all complex readings in the given tradition section.
+     *
+     */
+    @GET
+    @Path("/complex")
+    @Produces("application/json; charset=utf-8")
+    @ReturnType("java.util.List<net.stemmaweb.model.ComplexReadingModel>")
+    public Response getAllComplexReadings() {
+        if (!sectionInTradition())
+            return Response.status(Response.Status.NOT_FOUND).entity(jsonerror("Tradition and/or section not found")).build();
+
+        List<ComplexReadingModel> complexReadingModels = sectionComplexReadings();
+        if (complexReadingModels == null)
+            return Response.serverError().entity(jsonerror("No complex readings found in section")).build();
+        return Response.ok(complexReadingModels).build();
+    }
+
+    List<ComplexReadingModel> sectionComplexReadings() {
+        ArrayList<ComplexReadingModel> complexReadingModels = new ArrayList<>();
+        try (Transaction tx = db.beginTx()) {
+            Node startNode = VariantGraphService.getStartNode(sectId, db);
+            if (startNode == null) throw new Exception("Section " + sectId + " has no start node");
+
+            Set<Node> sectionNodes = VariantGraphService.returnTraditionSection(startNode).nodes()
+                    .stream()
+                    .filter(x -> x.hasLabel(Label.label("HYPERREADING"))).collect(Collectors.toSet());
+            sectionNodes.forEach(x -> complexReadingModels.add(new ComplexReadingModel(x)));
+            tx.success();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+        return complexReadingModels;
+    }
+
     /**
      * Gets a list of all relations defined within the given section.
      *

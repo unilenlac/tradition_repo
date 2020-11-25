@@ -1300,7 +1300,7 @@ public class Reading {
     @ReturnType(clazz = ComplexReadingModel.class)
     public Response complexReading(ComplexReadingModel skeleton) {
         try (Transaction tx = db.beginTx()) {
-            Node hyperNode = db.createNode();
+            Node hyperNode = db.createNode(Nodes.READING, Nodes.HYPERREADING);
             Node firstReading = db.getNodeById(readId);
             firstReading.createRelationshipTo(hyperNode, ERelations.HAS_HYPERNODE);
             for (ReadingModel reading: skeleton.getReadings())  {
