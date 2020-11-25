@@ -821,7 +821,7 @@ public class Tradition {
      * @param showNormalForms - Display normal form of readings alongside "raw" text form, if true
      * @param showRank - Display the rank of readings, if true
      * @param displayAllSigla - Avoid the 'majority' contraction of long witness labels, if true
-     * @param normalise - A RelationType name to normalise on, if desired
+     * @param normalise - RelationType names to normalise on, if desired
      * @param excWitnesses - Exclude the given witness from the dot output. Can be specified multiple times
      * @return Plaintext dot format
      */
@@ -833,7 +833,7 @@ public class Tradition {
                            @DefaultValue("false") @QueryParam("show_normal") Boolean showNormalForms,
                            @DefaultValue("false") @QueryParam("show_rank") Boolean showRank,
                            @DefaultValue("false") @QueryParam("expand_sigla") Boolean displayAllSigla,
-                                                  @QueryParam("normalise") String normalise,
+                                                  @QueryParam("normalise") List<String> normalise,
                                                   @QueryParam("include_witness") List<String> excWitnesses) {
         if (VariantGraphService.getTraditionNode(traditionId, db) == null)
             return Response.status(Status.NOT_FOUND).entity("No such tradition found").build();
