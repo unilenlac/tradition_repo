@@ -227,7 +227,9 @@ public class VariantGraphService {
             Node sectionStart = sectionNode.getSingleRelationship(ERelations.COLLATION, Direction.OUTGOING).getEndNode();
             // Get the list of all readings in this section
             Set<Node> sectionNodes = returnTraditionSection(sectionNode).nodes().stream()
-                    .filter(x -> x.hasLabel(Label.label("READING"))).collect(Collectors.toSet());
+                    .filter(x -> x.hasLabel(Label.label("READING")))
+                    .filter(x -> ! x.hasLabel(Label.label("HYPERREADING")))
+                    .collect(Collectors.toSet());
 
             // Find the normalisation clusters and nominate a representative for each
             String tradId = tradition.getProperty("id").toString();

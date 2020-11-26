@@ -331,7 +331,9 @@ public class DotExporter
         if (normaliseOn == null) {
             HashMap<Node, Node> representatives = new HashMap<>();
             List<Node> sectionNodes = VariantGraphService.returnTraditionSection(sectionNode).nodes().stream()
-                    .filter(x -> x.hasLabel(Label.label("READING"))).collect(Collectors.toList());
+                    .filter(x -> x.hasLabel(Label.label("READING")))
+                    .filter(x -> ! x.hasLabel(Label.label("HYPERREADING")))
+                    .collect(Collectors.toList());
             for (Node n: sectionNodes) {
                 representatives.put(n, n);
             }
