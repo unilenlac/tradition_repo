@@ -1301,11 +1301,11 @@ public class Reading {
     public Response complexReading(ComplexReadingModel skeleton) {
         try (Transaction tx = db.beginTx()) {
             Node hyperNode = db.createNode(Nodes.READING, Nodes.HYPERREADING);
-            Node firstReading = db.getNodeById(readId);
-            firstReading.createRelationshipTo(hyperNode, ERelations.HAS_HYPERNODE);
-            for (ReadingModel reading: skeleton.getReadings())  {
-                  Node secondReading = db.getNodeById(Long.parseLong(reading.getId()));
-                  secondReading.createRelationshipTo(hyperNode, ERelations.HAS_HYPERNODE);
+            Node thisNode = db.getNodeById(readId);
+            thisNode.createRelationshipTo(hyperNode, ERelations.HAS_HYPERNODE);
+            for (ComplexReadingModel comp: skeleton.getComponents())  {
+                Node otherNode = db.getNodeById(Long.parseLong(comp.getReading().getId()));
+                otherNode.createRelationshipTo(hyperNode, ERelations.HAS_HYPERNODE);
             }
             tx.success();
             return Response.ok(new ComplexReadingModel(hyperNode)).build();

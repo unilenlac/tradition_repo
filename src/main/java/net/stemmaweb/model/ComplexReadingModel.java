@@ -3,6 +3,7 @@ package net.stemmaweb.model;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import net.stemmaweb.rest.ERelations;
+import net.stemmaweb.rest.Nodes;
 import org.neo4j.graphdb.*;
 
 import javax.xml.bind.annotation.XmlRootElement;
@@ -12,7 +13,7 @@ import java.util.*;
 @JsonInclude(JsonInclude.Include.NON_DEFAULT)
 public class ComplexReadingModel {
     /**
-     * Expresses a complex reading, which is made up of a several readings.
+     * Expresses a complex reading, which is defined reccursively as either a simple reading or a list of complex readings.
      */
 
     /**
@@ -21,9 +22,14 @@ public class ComplexReadingModel {
     private String id;
 
     /**
+    * Basic data: Simple reading.
+    */
+    private ReadingModel reading;
+
+    /**
     * Components of complex reading.
     */
-    private List<ReadingModel> readings;
+    private List<ComplexReadingModel> components;
 
     public String getId() {
         return id;
@@ -33,30 +39,59 @@ public class ComplexReadingModel {
         this.id = id;
     }
 
-    public void setReadings(List<ReadingModel> readings) {
-        this.readings = readings;
+    public ReadingModel getReading() {
+        return reading;
     }
 
-    public List<ReadingModel> getReadings() {
-        return readings;
+    public void setReading(ReadingModel reading) {
+        this.reading = reading;
+    }
+
+    public void setComponents(List<ComplexReadingModel> components) {
+        this.components = components;
+    }
+
+    public List<ComplexReadingModel> getComponents() {
+        return components;
     }
 
     @SuppressWarnings("unused")
     public ComplexReadingModel() {
-        readings = new ArrayList<>();
+        this.id = "";
+        this.components = new ArrayList<>();
+        this.reading = null;
     }
 
     /**
-    * Set readings as the nodes in a HAS_HYPERNODE relation with the current node.
+    * Initialize using the the basic data (of reading type).
+    */
+    public ComplexReadingModel(ReadingModel reading) {
+        this.id = "";
+        this.components = null;
+        this.reading = reading;
+    }
+
+    /**
+    * Initialize reccursively using the HAS_HYPERNODE relations of the current node.
     */
     public ComplexReadingModel(Node node) {
+        this.id = "";
+        this.reading = null;
+        this.components = null;
         try (Transaction tx = node.getGraphDatabase().beginTx()) {
             setId(Long.toString(node.getId()));
-            List<ReadingModel> compReadings = new ArrayList<>();
-            for (Relationship r: node.getRelationships(ERelations.HAS_HYPERNODE)) {
-                compReadings.add(new ReadingModel(r.getOtherNode(node)));
-            }
-            this.setReadings(compReadings);
+            List<ComplexReadingModel> compReadings = new ArrayList<>();
+              for (Relationship r: node.getRelationships(ERelations.HAS_HYPERNODE)) {
+                  Node otherNode = r.getOtherNode(node);
+                  if (otherNode.hasLabel(Nodes.HYPERREADING)) {
+                    // if complex node: initialize reccursively with the component node
+                    compReadings.add(new ComplexReadingModel(otherNode));
+                  } else {
+                    // if simple nodes: initialize with Reading
+                    compReadings.add(new ComplexReadingModel(new ReadingModel(otherNode)));
+                  }
+              }
+            this.setComponents(compReadings);
             tx.success();
         }
     }
