@@ -70,6 +70,28 @@ public class ComplexReading {
     }
 
 
+    /**
+     * Deletes a complex reading.
+     *
+     * @summary Delete a complex reading
+     */
+    @DELETE
+    @Produces("application/json; charset=utf-8")
+    @ReturnType(clazz = GraphModel.class)
+    public Response deleteUserComplexReading() {
+      try (Transaction tx = db.beginTx()) {
+          Node removableNode = db.getNodeById(readId);
+          removableNode.getRelationships().forEach(Relationship::delete);
+          removableNode.delete();
+          tx.success();
+      } catch (Exception e) {
+          e.printStackTrace();
+          return Response.serverError().entity(jsonerror(e.getMessage())).build();
+      }
+      return Response.ok().build();
+    }
+
+
 
     // Class-level utility function to encapsulate the instance-wide error message
     private Response errorResponse (Status status) {
