@@ -1304,8 +1304,14 @@ public class Reading {
             Node thisNode = db.getNodeById(readId);
             thisNode.createRelationshipTo(hyperNode, ERelations.HAS_HYPERNODE);
             for (ComplexReadingModel comp: skeleton.getComponents())  {
-                Node otherNode = db.getNodeById(Long.parseLong(comp.getReading().getId()));
-                otherNode.createRelationshipTo(hyperNode, ERelations.HAS_HYPERNODE);
+                if (comp.getReading() != null) { // create relationship from actual reading
+                  Node otherNode = db.getNodeById(Long.parseLong(comp.getReading().getId()));
+                  otherNode.createRelationshipTo(hyperNode, ERelations.HAS_HYPERNODE);
+                } else { // create relationship from embedded complex reading
+                  System.out.println("create relationship to embedded complex reading");
+                  Node embeddedHyperNode = db.getNodeById(Long.parseLong(comp.getId()));
+                  embeddedHyperNode.createRelationshipTo(hyperNode, ERelations.HAS_HYPERNODE);
+                }
             }
             tx.success();
             return Response.ok(new ComplexReadingModel(hyperNode)).build();

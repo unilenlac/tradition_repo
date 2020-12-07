@@ -81,7 +81,7 @@ public class ComplexReadingModel {
         try (Transaction tx = node.getGraphDatabase().beginTx()) {
             setId(Long.toString(node.getId()));
             List<ComplexReadingModel> compReadings = new ArrayList<>();
-              for (Relationship r: node.getRelationships(ERelations.HAS_HYPERNODE)) {
+              for (Relationship r: node.getRelationships(ERelations.HAS_HYPERNODE, Direction.INCOMING)) {
                   Node otherNode = r.getOtherNode(node);
                   if (otherNode.hasLabel(Nodes.HYPERREADING)) {
                     // if complex node: initialize reccursively with the component node
