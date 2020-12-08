@@ -282,6 +282,9 @@ public class Relation {
         relationAtoB.setProperty("a_derivable_from_b", relModel.getA_derivable_from_b());
         relationAtoB.setProperty("b_derivable_from_a", relModel.getB_derivable_from_a());
         relationAtoB.setProperty("alters_meaning", relModel.getAlters_meaning());
+        relationAtoB.setProperty("is_hyperrelation", relModel.getIs_hyperrelation());
+        relationAtoB.setProperty("hsource", relModel.getHSource());
+        relationAtoB.setProperty("htarget", relModel.getHTarget());
         relationAtoB.setProperty("is_significant", relModel.getIs_significant());
         relationAtoB.setProperty("non_independent", relModel.getNon_independent());
         relationAtoB.setProperty("reading_a", readingA.getProperty("text"));
