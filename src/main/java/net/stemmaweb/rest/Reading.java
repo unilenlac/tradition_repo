@@ -1278,9 +1278,13 @@ public class Reading {
         List<ComplexReadingModel> crList = new ArrayList<>();
         try (Transaction tx = db.beginTx()) {
             Node myReading = db.getNodeById(readId);
-            // Find hypernodes
-            for (Relationship r: myReading.getRelationships(ERelations.HAS_HYPERNODE)) {
-                crList.add(new ComplexReadingModel(r.getOtherNode(myReading)));
+            for (Node node : db.traversalDescription().depthFirst()
+                    .relationships(ERelations.HAS_HYPERNODE, Direction.OUTGOING)
+                    .uniqueness(Uniqueness.RELATIONSHIP_GLOBAL).traverse(myReading)
+                    .nodes()) {
+              if (node != myReading) {
+                crList.add(new ComplexReadingModel(node));
+              }
             }
             tx.success();
         } catch (Exception e) {
