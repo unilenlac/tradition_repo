@@ -936,8 +936,8 @@ public class Reading {
         try (Transaction tx = db.beginTx()) {
             originalReading = db.getNodeById(readId);
             String originalText = originalReading.getProperty("text").toString();
-            if (splitIndex >= originalText.length())
-                errorMessage = "The index must be smaller than the text length";
+            if (splitIndex > originalText.length())
+                errorMessage = "The index must not be bigger than the text length";
 
             else if (model.getIsRegex()) {
                 // Test that the regex matches on the original text
@@ -1043,6 +1043,10 @@ public class Reading {
 
             ReadingService.copyReadingProperties(lastReading, newReading);
             newReading.setProperty("text", splitWords[i]);
+            if (splitWords[i].equals("")) {
+              newReading.setProperty("normal_form", "");
+              newReading.setProperty("display", "");
+            } // special case, when we split to create empty node
             // Set the rank here, even though we re-rank above, so that the ReadingModels we produce are right
             Long previousRank = (Long) lastReading.getProperty("rank");
             newReading.setProperty("rank", previousRank + 1);
