@@ -102,7 +102,7 @@ public class VariantGraphServiceTest {
         ArrayList<Node> sections = VariantGraphService.getSectionNodes(newTradId, db);
         assertNotNull(sections);
         try (Transaction tx = db.beginTx()) {
-            HashMap<Node,Node> representatives = VariantGraphService.normalizeGraph(sections.get(0), "collated");
+            HashMap<Node,Node> representatives = VariantGraphService.normalizeGraph(sections.get(0), Arrays.asList("collated"));
             for (Node n : representatives.keySet()) {
                 // If it is represented by itself, it should have an NSEQUENCE both in and out; if not, not.
                 if (!n.hasProperty("is_end"))
@@ -175,7 +175,7 @@ public class VariantGraphServiceTest {
             Relation relRest = new Relation(newTradId);
             Response r = relRest.create(rm);
             assertEquals(Response.Status.CREATED.getStatusCode(), r.getStatus());
-            VariantGraphService.normalizeGraph(sections.get(0), "collated"); // TODO not sure this has an effect??
+            VariantGraphService.normalizeGraph(sections.get(0), Arrays.asList("collated")); // TODO not sure this has an effect??
             List<Node> majorityReadings = VariantGraphService.calculateMajorityText(sections.get(0));
             List<String> words = majorityReadings.stream()
                     .filter(x -> !x.hasProperty("is_start") && !x.hasProperty("is_end"))

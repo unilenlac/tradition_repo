@@ -601,7 +601,7 @@ public class Section {
      *                 variant list. Defaults to punctuation-only readings.
      * @param excludeNonsense - Whether
      * @param baseWitness  - Use the path of the given witness as the base path.
-     * @param conflate - The name of a relation type that should be used for normalization
+     * @param conflate - The name of relations that should be used for normalization
      * @param excWitnesses - One or more witnesses that should be excluded from the variant list
      *
      * @return A list of VariantLocationModels
@@ -617,7 +617,7 @@ public class Section {
                                      @DefaultValue("no") @QueryParam("combine_dislocations") String combine,
                                      @DefaultValue("punct") @QueryParam("suppress_matching") String suppressMatching,
                                                          @QueryParam("base_witness") String baseWitness,
-                                                         @QueryParam("normalize") String conflate,
+                                                         @QueryParam("normalize") List<String> conflate,
                                                          @QueryParam("exclude_witness") List<String> excWitnesses) {
         if (!sectionInTradition())
             return Response.status(Response.Status.NOT_FOUND).entity("Tradition and/or section not found").build();
@@ -1519,7 +1519,7 @@ public class Section {
     @Path("/json")
     @Produces("application/json; charset=utf-8")
     @ReturnType(clazz = AlignmentModel.class)
-    public Response getJson(@QueryParam("conflate") String toConflate,
+    public Response getJson(@QueryParam("conflate") List<String> toConflate,
                             @QueryParam("exclude_layers") String excludeLayers) {
         List<String> thisSection = new ArrayList<>(Collections.singletonList(sectId));
         return new TabularExporter(db).exportAsJSON(tradId, toConflate, thisSection, "true".equals(excludeLayers));
@@ -1538,7 +1538,7 @@ public class Section {
     @Path("/csv")
     @Produces("text/plain; charset=utf-8")
     @ReturnType("java.lang.Void")
-    public Response getCsv(@QueryParam("conflate") String toConflate,
+    public Response getCsv(@QueryParam("conflate") List<String> toConflate,
                            @QueryParam("exclude_layers") String excludeLayers) {
         List<String> thisSection = new ArrayList<>(Collections.singletonList(sectId));
         return new TabularExporter(db).exportAsCSV(tradId, ',', toConflate,
@@ -1558,7 +1558,7 @@ public class Section {
     @Path("/tsv")
     @Produces("text/plain; charset=utf-8")
     @ReturnType(clazz = String.class)
-    public Response getTsv(@QueryParam("conflate") String toConflate,
+    public Response getTsv(@QueryParam("conflate") List<String> toConflate,
                            @QueryParam("exclude_layers") String excludeLayers) {
         List<String> thisSection = new ArrayList<>(Collections.singletonList(sectId));
         return new TabularExporter(db).exportAsCSV(tradId, '\t', toConflate,
@@ -1580,7 +1580,7 @@ public class Section {
     @Path("/matrix")
     @Produces("text/plain; charset=utf-8")
     @ReturnType(clazz = String.class)
-    public Response getCharMatrix(@QueryParam("conflate") String toConflate,
+    public Response getCharMatrix(@QueryParam("conflate") List<String> toConflate,
                                   @QueryParam("exclude_layers") String excludeLayers,
                                   @DefaultValue("8") @QueryParam("maxVars") int maxVars) {
         List<String> thisSection = new ArrayList<>(Collections.singletonList(sectId));

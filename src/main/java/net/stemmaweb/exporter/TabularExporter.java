@@ -29,7 +29,7 @@ public class TabularExporter {
         this.db = db;
     }
 
-    public Response exportAsJSON(String tradId, String conflate, List<String> sectionList, boolean excludeLayers) {
+    public Response exportAsJSON(String tradId, List<String> conflate, List<String> sectionList, boolean excludeLayers) {
         ArrayList<Node> traditionSections;
         try {
             traditionSections = getSections(tradId, sectionList);
@@ -47,7 +47,7 @@ public class TabularExporter {
     }
 
 
-    public Response exportAsCSV(String tradId, char separator, String conflate, List<String> sectionList,
+    public Response exportAsCSV(String tradId, char separator, List<String> conflate, List<String> sectionList,
                                 boolean excludeLayers) {
         AlignmentModel wholeTradition;
         try {
@@ -91,7 +91,7 @@ public class TabularExporter {
     }
 
 
-    public Response exportAsCharMatrix(String tradId, int maxVars, String conflate, List<String> sectionList,
+    public Response exportAsCharMatrix(String tradId, int maxVars, List<String> conflate, List<String> sectionList,
                                        boolean excludeLayers) {
         AlignmentModel wholeTradition;
         try {
@@ -167,7 +167,7 @@ public class TabularExporter {
         return Response.ok(charMatrix.toString()).build();
     }
 
-    private AlignmentModel returnFullAlignment(String tradId, String conflate, List<String> sectionList,
+    private AlignmentModel returnFullAlignment(String tradId, List<String> conflate, List<String> sectionList,
                                                boolean excludeLayers)
             throws Exception {
         ArrayList<Node> traditionSections = getSections(tradId, sectionList);
@@ -205,7 +205,7 @@ public class TabularExporter {
         return collectedSections;
     }
 
-    private AlignmentModel getTraditionAlignment(ArrayList<Node> traditionSections, String collapseRelated, boolean excludeLayers)
+    private AlignmentModel getTraditionAlignment(ArrayList<Node> traditionSections, List<String> collapseRelated, boolean excludeLayers)
             throws Exception {
         // Make a new alignment model that has a column for every witness layer across the requested sections.
 

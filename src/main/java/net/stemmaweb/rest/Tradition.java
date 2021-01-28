@@ -895,7 +895,7 @@ public class Tradition {
     @Path("/json")
     @Produces("application/json; charset=utf-8")
     @ReturnType(clazz = AlignmentModel.class)
-    public Response getJson(@QueryParam("conflate") String toConflate,
+    public Response getJson(@QueryParam("conflate") List<String> toConflate,
                             @QueryParam("section") List<String> sectionList,
                             @QueryParam("exclude_layers") String excludeLayers) {
         return new TabularExporter(db).exportAsJSON(traditionId, toConflate,
@@ -916,7 +916,7 @@ public class Tradition {
     @Path("/csv")
     @Produces("text/plain; charset=utf-8")
     @ReturnType("java.lang.Void")
-    public Response getCsv(@QueryParam("conflate") String toConflate,
+    public Response getCsv(@QueryParam("conflate") List<String> toConflate,
                            @QueryParam("section") List<String> sectionList,
                            @QueryParam("exclude_layers") String excludeLayers) {
         return new TabularExporter(db).exportAsCSV(traditionId, ',', toConflate,
@@ -937,7 +937,7 @@ public class Tradition {
     @Path("/tsv")
     @Produces("text/plain; charset=utf-8")
     @ReturnType("java.lang.Void")
-    public Response getTsv(@QueryParam("conflate") String toConflate,
+    public Response getTsv(@QueryParam("conflate") List<String> toConflate,
                            @QueryParam("section") List<String> sectionList,
                            @QueryParam("exclude_layers") String excludeLayers) {
         return new TabularExporter(db).exportAsCSV(traditionId, '\t', toConflate,
@@ -960,7 +960,7 @@ public class Tradition {
     @Path("/matrix")
     @Produces("text/plain; charset=utf-8")
     @ReturnType("java.lang.Void")
-    public Response getCharMatrix(@QueryParam("conflate") String toConflate,
+    public Response getCharMatrix(@QueryParam("conflate") List<String> toConflate,
                                   @QueryParam("section") List<String> sectionList,
                                   @QueryParam("exclude_layers") String excludeLayers,
                                   @DefaultValue("8") @QueryParam("maxVars") int maxVars) {
@@ -969,4 +969,3 @@ public class Tradition {
     }
 
 }
-
