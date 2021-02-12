@@ -39,6 +39,10 @@ public class VariantListModel {
      */
     private String basisText;
     /**
+     * the chain of readings in the base text.
+     */
+    private List<ReadingModel> baseChain;
+    /**
      * the relation name, if any, that the text was normalized on prior to producing the variant list
      */
     private List<String> conflateOnRelation;
@@ -143,9 +147,9 @@ public class VariantListModel {
 
             // Filter readings by regex / nonsense flag as needed. Pass the base text in case
             // any before/after reading settings need to be altered.
-            List<ReadingModel> baseChain = baseText.stream().map(x -> new ReadingModel(x.getEndNode())).collect(Collectors.toList());
-            baseChain.add(0, new ReadingModel(baseText.get(0).getStartNode()));
-            this.filterReadings(baseChain);
+            this.baseChain = baseText.stream().map(x -> new ReadingModel(x.getEndNode())).collect(Collectors.toList());
+            this.baseChain.add(0, new ReadingModel(baseText.get(0).getStartNode()));
+            this.filterReadings(this.baseChain);
 
             // Filter for type1 variants
             if (filterTypeOne)
@@ -407,6 +411,10 @@ public class VariantListModel {
 
     public String getBasisText() {
         return basisText;
+    }
+
+    public List<ReadingModel> getBaseChain() {
+        return baseChain;
     }
 
     public List<String> getConflateOnRelation() {
