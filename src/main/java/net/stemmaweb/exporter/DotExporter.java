@@ -167,7 +167,7 @@ public class DotExporter
                         .traverse(sectionStartNode)
                         .relationships() ) {
                     if ( r.getType().name().equals(ERelations.COLLATED.name()) ) {
-                        System.out.println(String.format("Deleting relation %s", r.getType().name()));
+                        // System.out.println(String.format("Deleting relation %s", r.getType().name()));
                         r.delete();
                     }
                 }
