@@ -438,7 +438,7 @@ public class Section {
             return Response.serverError().entity(jsonerror(e.getMessage())).build();
         }
         TextSequenceModel lm = new TextSequenceModel(
-                ReadingService.textOfReadings(sectionLemmata, true, followFinal.equals("false")));
+                ReadingService.textOfReadings(sectionLemmata, false, followFinal.equals("false")));
         return Response.ok(lm).build();
     }
 
