@@ -142,12 +142,12 @@ public class DotExporter
                         .traverse(sectionStartNode)
                         .nodes()) {
                             for (Node collatedNode :  db.traversalDescription().breadthFirst()
-                              .relationships(ERelations.COLLATED)
+                              .relationships(ERelations.COLLATED,Direction.OUTGOING)
                               .uniqueness(Uniqueness.NODE_GLOBAL)
                               .traverse(node)
                               .nodes()) {
                                   if ((node == collatedNode) ||
-                                      (! node.hasRelationship(ERelations.COLLATED)) ||
+                                      (! node.hasRelationship(ERelations.COLLATED,Direction.OUTGOING)) ||
                                       (node.getId() > collatedNode.getId())) { // avoid double
                                       continue;
                                   }
@@ -156,20 +156,13 @@ public class DotExporter
                                       newRelation.setProperty("type", "token-normal-form");
                                       newRelation.setProperty("scope", "local");
                                   }
+                                  //delete COLLATED relation, no longer needed
+                                  for ( Relationship r: node.getRelationships(ERelations.COLLATED,Direction.OUTGOING) ) {
+                                      if ( r.getEndNode().getId() == collatedNode.getId() ) {
+                                        r.delete();
+                                      }
+                                  }
                             }
-                }
-                tx.success();
-
-                // cleanup: delete COLLATED relations, no longer needed
-                for ( Relationship r: db.traversalDescription()
-                        .depthFirst()
-                        .uniqueness(Uniqueness.RELATIONSHIP_GLOBAL)
-                        .traverse(sectionStartNode)
-                        .relationships() ) {
-                    if ( r.getType().name().equals(ERelations.COLLATED.name()) ) {
-                        // System.out.println(String.format("Deleting relation %s", r.getType().name()));
-                        r.delete();
-                    }
                 }
                 tx.success();
 
