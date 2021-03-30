@@ -134,6 +134,17 @@ public class DotExporter
                     subgraphWritten = true;
                 }
 
+                // Remove existing 'token-normal-form' relations (to avoid adding them each time the graph is displayed)
+                db.traversalDescription().breadthFirst()
+                        .relationships(ERelations.RELATED,Direction.OUTGOING)
+                        .uniqueness(Uniqueness.NODE_GLOBAL)
+                        .traverse(sectionStartNode).relationships()
+                        .forEach(r -> {
+                            if ( r.getProperty("type").toString() == "token-normal-form" ) {
+                                r.delete();
+                            }
+                        });
+
                 // Add specific relation ('token-normal-form') for collated readings sharing the same normal_form
                 for (Node node :  db.traversalDescription().breadthFirst()
                         .relationships(ERelations.SEQUENCE,Direction.OUTGOING)
