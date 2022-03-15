@@ -408,9 +408,9 @@ public class DotExporter
         if ( inputStr.length() < maxLineSize ) {
             return inputStr;
         }
-        int splitPoint = inputStr.lastIndexOf(",", maxLineSize) + 1; // go to previous comma
+        int splitPoint = inputStr.lastIndexOf(" ", maxLineSize);
         if ( splitPoint == 0 ) {
-            splitPoint = inputStr.indexOf(",", maxLineSize) + 1; // go to next comma
+            splitPoint = inputStr.indexOf(" ", maxLineSize);
         }
         if ( splitPoint == 0 ) {
             return inputStr;
@@ -436,10 +436,10 @@ public class DotExporter
             while (it.hasNext()) {
                 lex_str.append(it.next());
                 if (it.hasNext()) {
-                    lex_str.append(", ");
+                    lex_str.append(" ");
                 }
             }
-            label = multiline(lex_str.toString(), 60, "<BR />");
+            label = multiline(lex_str.toString(), 30, "<BR />");
         }
         // Add on the layer witnesses where applicable
         lex_str = new StringBuilder();
