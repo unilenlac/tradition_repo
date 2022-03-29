@@ -457,7 +457,7 @@ public class DotExporter
                 lex_str.append(")");
             }
         }
-        label = lex_str.toString();
+        label = lex_str.toString().replaceAll("\\s", ""); // remove blanks
 
         return(label);
     }
