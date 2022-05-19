@@ -1033,6 +1033,7 @@ public class Reading {
 
         // Change the first reading
         originalReading.setProperty("text", splitWords[0]);
+        originalReading.setProperty("display", splitWords[0].replaceAll("<", "&lt;").replaceAll(">", "&gt;"));
         createdOrChangedReadings.add(new ReadingModel(originalReading));
 
         // Add the new readings
@@ -1043,6 +1044,8 @@ public class Reading {
 
             ReadingService.copyReadingProperties(lastReading, newReading);
             newReading.setProperty("text", splitWords[i]);
+            newReading.setProperty("display", splitWords[i].replaceAll("<", "&lt;").replaceAll(">", "&gt;"));
+            newReading.setProperty("normal_form", " ");
             if (splitWords[i].equals("")) {
               newReading.setProperty("normal_form", "");
               newReading.setProperty("display", "");
