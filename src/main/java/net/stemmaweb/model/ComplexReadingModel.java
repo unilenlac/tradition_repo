@@ -31,6 +31,10 @@ public class ComplexReadingModel {
     */
     private List<ComplexReadingModel> components;
 
+    private String note;
+
+    private String source;
+
     public String getId() {
         return id;
     }
@@ -53,6 +57,22 @@ public class ComplexReadingModel {
 
     public List<ComplexReadingModel> getComponents() {
         return components;
+    }
+
+    public String getNote() {
+        return note;
+    }
+
+    public void setNote(String note) {
+        this.note = note;
+    }
+
+    public String getSource() {
+        return source;
+    }
+
+    public void setSource(String source) {
+        this.source = source;
     }
 
     @SuppressWarnings("unused")
@@ -78,6 +98,8 @@ public class ComplexReadingModel {
         this.id = "";
         this.reading = null;
         this.components = null;
+        this.note = node.hasProperty("note") ? node.getProperty("note").toString() : null;
+        this.source = node.hasProperty("source") ? node.getProperty("source").toString() : null; 
         try (Transaction tx = node.getGraphDatabase().beginTx()) {
             setId(Long.toString(node.getId()));
             List<ComplexReadingModel> compReadings = new ArrayList<>();

@@ -1312,6 +1312,12 @@ public class Reading {
     public Response complexReading(ComplexReadingModel skeleton) {
         try (Transaction tx = db.beginTx()) {
             Node hyperNode = db.createNode(Nodes.READING, Nodes.HYPERREADING);
+            if (skeleton.getSource() != null && !skeleton.getSource().trim().isEmpty()) {
+              hyperNode.setProperty("source", skeleton.getSource());
+            }
+            if (skeleton.getNote() != null && !skeleton.getNote().trim().isEmpty()) {
+              hyperNode.setProperty("note", skeleton.getNote());
+            }
             Node thisNode = db.getNodeById(readId);
             thisNode.createRelationshipTo(hyperNode, ERelations.HAS_HYPERNODE);
             for (ComplexReadingModel comp: skeleton.getComponents())  {
