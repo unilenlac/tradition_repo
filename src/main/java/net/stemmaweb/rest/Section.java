@@ -102,10 +102,13 @@ public class Section {
             return Response.status(Response.Status.NOT_FOUND).entity(jsonerror("Tradition and/or section not found")).build();
         try (Transaction tx = db.beginTx()) {
             Node thisSection = db.getNodeById(Long.parseLong(sectId));
-            if (newInfo.getName() != null)
+            if (newInfo.getName() != null && !newInfo.getName().trim().isEmpty())
                 thisSection.setProperty("name", newInfo.getName());
-            if (newInfo.getLanguage() != null)
+            if (newInfo.getLanguage() != null && !newInfo.getLanguage().trim().isEmpty())
                 thisSection.setProperty("language", newInfo.getLanguage());
+                System.out.println("Updating section metadata; translation:" + newInfo.getTranslation());
+            if (newInfo.getTranslation() != null && !newInfo.getTranslation().trim().isEmpty())
+                thisSection.setProperty("translation", newInfo.getTranslation());
             tx.success();
         } catch (Exception e) {
             e.printStackTrace();
@@ -1603,6 +1606,26 @@ public class Section {
        List<String> thisSection = new ArrayList<>(Collections.singletonList(sectId));
        return new TabularExporter(db).exportAsTEICat(tradId, thisSection, significant, excludeType1,
              excludeNonsense, combine, suppressMatching, baseWitness, conflate, excWitnesses, "true".equals(excludeLayers));
+    }
+
+
+    @GET
+    @Path("/translation")
+    @Produces("text/plain; charset=utf-8")
+    @ReturnType(clazz = String.class)
+    public Response getTranslation() {
+      SectionModel result;
+      if (!sectionInTradition())
+          return Response.status(Response.Status.NOT_FOUND).entity("Tradition and/or section not found").build();
+
+      try (Transaction tx = db.beginTx()) {
+          result = new SectionModel(db.getNodeById(Long.parseLong(sectId)));
+          tx.success();
+      } catch (Exception e) {
+          e.printStackTrace();
+          return Response.serverError().entity(jsonerror(e.getMessage())).build();
+      }
+      return Response.ok().entity(result.getTranslation()).build();
     }
 
     /**
