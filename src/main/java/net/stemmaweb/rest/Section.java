@@ -106,8 +106,7 @@ public class Section {
                 thisSection.setProperty("name", newInfo.getName());
             if (newInfo.getLanguage() != null && !newInfo.getLanguage().trim().isEmpty())
                 thisSection.setProperty("language", newInfo.getLanguage());
-                System.out.println("Updating section metadata; translation:" + newInfo.getTranslation());
-            if (newInfo.getTranslation() != null && !newInfo.getTranslation().trim().isEmpty())
+            if (newInfo.getTranslation() != null)
                 thisSection.setProperty("translation", newInfo.getTranslation());
             tx.success();
         } catch (Exception e) {
