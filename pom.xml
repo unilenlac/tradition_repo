@@ -12,6 +12,26 @@
 		<plugins>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-install-plugin</artifactId>
+				<version>2.4</version>
+				<executions>
+					<execution>
+						<phase>initialize</phase>
+						<goals>
+							<goal>install-file</goal>
+						</goals>
+						<configuration>
+							<file>lib/com.alexmerz.graphviz.jar</file>
+							<groupId>com.alexmerz</groupId>
+							<artifactId>graphviz</artifactId>
+							<version>0.8.6</version>
+							<packaging>jar</packaging>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
 				<version>2.5.1</version>
 				<inherited>true</inherited>
@@ -326,6 +346,4 @@
 			<url>http://nexus.qmino.com/content/repositories/miredot</url>
 		</pluginRepository>
 	</pluginRepositories>
-
-
 </project>
