@@ -163,6 +163,12 @@ public class StemmawebParser {
                                         relship.setProperty("displayform", currentRelModel.getDisplayform());
                                     if (currentRelModel.getIs_significant() != null)
                                         relship.setProperty("is_significant", currentRelModel.getIs_significant());
+                                    if (currentRelModel.getHSource() != null)
+                                        relship.setProperty("hsource", currentRelModel.getHSource());
+                                    if (currentRelModel.getHTarget() != null)
+                                        relship.setProperty("htarget", currentRelModel.getHTarget());
+                                    if (currentRelModel.getIs_hyperrelation() != null)
+                                        relship.setProperty("is_hyperrelation", currentRelModel.getIs_hyperrelation());
                                     if (currentRelModel.getNon_independent() != null)
                                         relship.setProperty("non_independent", currentRelModel.getNon_independent());
                                     if (currentRelModel.getScope() != null)

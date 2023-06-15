@@ -29,6 +29,18 @@ public class RelationModel {
      */
     private String target;              // target
     /**
+     * True if the relation connects hyperreadings
+     */
+    private Boolean is_hyperrelation = false;  // de0
+    /**
+     * The ID of the source hyperreading, if the first reading is part of a hypernode
+     */
+    private String hsource;              // source hyperreading
+    /**
+     * The ID of the target hyperreading, if the second reading is part of a hypernode
+     */
+    private String htarget;              // target hyperreading
+    /**
      * The ReadingModel object for the source reading (only if requested)
      */
     private ReadingModel source_reading;
@@ -126,6 +138,15 @@ public class RelationModel {
                 case "extra":
                     extra = rel.getProperty("extra").toString();
                     break;
+                case "hsource":
+                    hsource = rel.getProperty("hsource").toString();
+                    break;
+                case "htarget":
+                    htarget = rel.getProperty("htarget").toString();
+                    break;
+                case "is_hyperrelation":
+                    is_hyperrelation = (Boolean) rel.getProperty("is_hyperrelation");
+                    break;
                 case "is_significant":
                     is_significant = Significance.valueOf(rel.getProperty("is_significant").toString());
                     break;
@@ -158,6 +179,22 @@ public class RelationModel {
 
     public void setTarget(String target) {
         this.target = target;
+    }
+
+    public String getHSource() {
+        return hsource;
+    }
+
+    public void setHSource(String hsource) {
+        this.hsource = hsource;
+    }
+
+    public String getHTarget() {
+        return htarget;
+    }
+
+    public void setHTarget(String htarget) {
+        this.htarget = htarget;
     }
 
     public ReadingModel getSource_reading() {
@@ -222,6 +259,15 @@ public class RelationModel {
 
     public void setExtra(String extra) {
         this.extra = extra;
+    }
+
+
+    public Boolean getIs_hyperrelation() {
+        return is_hyperrelation;
+    }
+
+    public void setIs_hyperrelation(Boolean is_hyperrelation) {
+        this.is_hyperrelation = is_hyperrelation;
     }
 
     public String getIs_significant() {

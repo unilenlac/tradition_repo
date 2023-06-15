@@ -213,7 +213,7 @@ public class VariantLocationTest extends TestCase {
         assertFalse(vlist.isNonsenseSuppressed());
         assertEquals("^(\\p{IsPunctuation}+)$", vlist.getSuppressedReadingsRegex());
         assertEquals("majority", vlist.getBasisText());
-        assertEquals("spelling", vlist.getConflateOnRelation());
+        assertEquals("spelling", vlist.getConflateOnRelation().get(0));
         assertEquals("no", vlist.getSignificant());
         assertEquals(1, vlist.getDislocationTypes().size());
         assertTrue(vlist.getDislocationTypes().contains("transposition"));

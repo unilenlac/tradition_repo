@@ -11,10 +11,10 @@ public class DisplayOptionModel {
     private boolean showRank;
     private boolean displayAllSigla;
     // private boolean showEmendations;
-    private String normaliseOn;
+    private List<String> normaliseOn;
     private List<String> excludeWitnesses;
 
-    public DisplayOptionModel(Boolean ir, Boolean snf, Boolean sr, Boolean das, String n, List<String> ew) {
+    public DisplayOptionModel(Boolean ir, Boolean snf, Boolean sr, Boolean das, List<String> n, List<String> ew) {
         includeRelated = ir;
         showNormalForm = snf;
         showRank = sr;
@@ -42,7 +42,7 @@ public class DisplayOptionModel {
 
     // public boolean getShowEmendations() { return showEmendations; }
 
-    public String getNormaliseOn() { return normaliseOn; }
+    public List<String> getNormaliseOn() { return normaliseOn; }
 
     public List<String> getExcludeWitnesses() { return excludeWitnesses; }
 }
