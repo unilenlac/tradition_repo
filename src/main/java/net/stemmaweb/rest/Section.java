@@ -102,10 +102,12 @@ public class Section {
             return Response.status(Response.Status.NOT_FOUND).entity(jsonerror("Tradition and/or section not found")).build();
         try (Transaction tx = db.beginTx()) {
             Node thisSection = db.getNodeById(Long.parseLong(sectId));
-            if (newInfo.getName() != null)
+            if (newInfo.getName() != null && !newInfo.getName().trim().isEmpty())
                 thisSection.setProperty("name", newInfo.getName());
-            if (newInfo.getLanguage() != null)
+            if (newInfo.getLanguage() != null && !newInfo.getLanguage().trim().isEmpty())
                 thisSection.setProperty("language", newInfo.getLanguage());
+            if (newInfo.getTranslation() != null)
+                thisSection.setProperty("translation", newInfo.getTranslation());
             tx.success();
         } catch (Exception e) {
             e.printStackTrace();
@@ -288,6 +290,42 @@ public class Section {
         return readingModels;
     }
 
+    /*
+    Get a list of all complex readings in the given tradition section.
+     *
+     */
+    @GET
+    @Path("/complex")
+    @Produces("application/json; charset=utf-8")
+    @ReturnType("java.util.List<net.stemmaweb.model.ComplexReadingModel>")
+    public Response getAllComplexReadings() {
+        if (!sectionInTradition())
+            return Response.status(Response.Status.NOT_FOUND).entity(jsonerror("Tradition and/or section not found")).build();
+
+        List<ComplexReadingModel> complexReadingModels = sectionComplexReadings();
+        if (complexReadingModels == null)
+            return Response.serverError().entity(jsonerror("No complex readings found in section")).build();
+        return Response.ok(complexReadingModels).build();
+    }
+
+    List<ComplexReadingModel> sectionComplexReadings() {
+        ArrayList<ComplexReadingModel> complexReadingModels = new ArrayList<>();
+        try (Transaction tx = db.beginTx()) {
+            Node startNode = VariantGraphService.getStartNode(sectId, db);
+            if (startNode == null) throw new Exception("Section " + sectId + " has no start node");
+
+            Set<Node> sectionNodes = VariantGraphService.returnTraditionSection(startNode).nodes()
+                    .stream()
+                    .filter(x -> x.hasLabel(Label.label("HYPERREADING"))).collect(Collectors.toSet());
+            sectionNodes.forEach(x -> complexReadingModels.add(new ComplexReadingModel(x)));
+            tx.success();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+        return complexReadingModels;
+    }
+
     /**
      * Gets a list of all relations defined within the given section.
      *
@@ -402,7 +440,7 @@ public class Section {
             return Response.serverError().entity(jsonerror(e.getMessage())).build();
         }
         TextSequenceModel lm = new TextSequenceModel(
-                ReadingService.textOfReadings(sectionLemmata, true, followFinal.equals("false")));
+                ReadingService.textOfReadings(sectionLemmata, false, followFinal.equals("false")));
         return Response.ok(lm).build();
     }
 
@@ -565,7 +603,7 @@ public class Section {
      *                 variant list. Defaults to punctuation-only readings.
      * @param excludeNonsense - Whether
      * @param baseWitness  - Use the path of the given witness as the base path.
-     * @param conflate - The name of a relation type that should be used for normalization
+     * @param conflate - The name of relations that should be used for normalization
      * @param excWitnesses - One or more witnesses that should be excluded from the variant list
      *
      * @return A list of VariantLocationModels
@@ -581,7 +619,7 @@ public class Section {
                                      @DefaultValue("no") @QueryParam("combine_dislocations") String combine,
                                      @DefaultValue("punct") @QueryParam("suppress_matching") String suppressMatching,
                                                          @QueryParam("base_witness") String baseWitness,
-                                                         @QueryParam("normalize") String conflate,
+                                                         @QueryParam("normalize") List<String> conflate,
                                                          @QueryParam("exclude_witness") List<String> excWitnesses) {
         if (!sectionInTradition())
             return Response.status(Response.Status.NOT_FOUND).entity("Tradition and/or section not found").build();
@@ -1442,7 +1480,7 @@ public class Section {
      * @param showNormalForms - Display normal form of readings alongside "raw" text form, if true
      * @param showRank - Display the rank of readings, if true
      * @param displayAllSigla - Avoid the 'majority' contraction of long witness labels, if true
-     * @param normalise - A RelationType name to normalise on, if desired
+     * @param normalise - RelationType names to normalise on, if desired
      * @param excWitnesses - Exclude the given witness from the dot output. Can be specified multiple times
      * @return Plaintext dot format
      * @statuscode 200 - on success
@@ -1457,7 +1495,7 @@ public class Section {
                            @DefaultValue("false") @QueryParam("show_normal") Boolean showNormalForms,
                            @DefaultValue("false") @QueryParam("show_rank") Boolean showRank,
                            @DefaultValue("false") @QueryParam("expand_sigla") Boolean displayAllSigla,
-                                                  @QueryParam("normalise") String normalise,
+                                                  @QueryParam("normalise") List<String> normalise,
                                                   @QueryParam("exclude_witness") List<String> excWitnesses) {
         if (VariantGraphService.getTraditionNode(tradId, db) == null)
             return Response.status(Response.Status.NOT_FOUND).entity("No such tradition found").build();
@@ -1483,7 +1521,7 @@ public class Section {
     @Path("/json")
     @Produces("application/json; charset=utf-8")
     @ReturnType(clazz = AlignmentModel.class)
-    public Response getJson(@QueryParam("conflate") String toConflate,
+    public Response getJson(@QueryParam("conflate") List<String> toConflate,
                             @QueryParam("exclude_layers") String excludeLayers) {
         List<String> thisSection = new ArrayList<>(Collections.singletonList(sectId));
         return new TabularExporter(db).exportAsJSON(tradId, toConflate, thisSection, "true".equals(excludeLayers));
@@ -1502,7 +1540,7 @@ public class Section {
     @Path("/csv")
     @Produces("text/plain; charset=utf-8")
     @ReturnType("java.lang.Void")
-    public Response getCsv(@QueryParam("conflate") String toConflate,
+    public Response getCsv(@QueryParam("conflate") List<String> toConflate,
                            @QueryParam("exclude_layers") String excludeLayers) {
         List<String> thisSection = new ArrayList<>(Collections.singletonList(sectId));
         return new TabularExporter(db).exportAsCSV(tradId, ',', toConflate,
@@ -1522,11 +1560,71 @@ public class Section {
     @Path("/tsv")
     @Produces("text/plain; charset=utf-8")
     @ReturnType(clazz = String.class)
-    public Response getTsv(@QueryParam("conflate") String toConflate,
+    public Response getTsv(@QueryParam("conflate") List<String> toConflate,
                            @QueryParam("exclude_layers") String excludeLayers) {
         List<String> thisSection = new ArrayList<>(Collections.singletonList(sectId));
         return new TabularExporter(db).exportAsCSV(tradId, '\t', toConflate,
                 thisSection, "true".equals(excludeLayers));
+    }
+
+    /**
+     * Returns a TEI Critical Apparatus formatted XML file that contains the base text and the variants.
+     *
+     * @summary Download a TEI Critical Apparatus XML file
+     *
+     * @param significant - Restrict the variant groups to the given significance level or above
+     * @param excludeType1 - If true, exclude type 1 (i.e. singleton) variants from the groupings
+     * @param combine - If true, attempt to combine non-colocated variants (e.g. transpositions) into
+     *                the VariantLocationModel of the corresponding base
+     * @param suppressMatching - A regular expression to match readings that should be disregarded in the
+     *                 variant list. Defaults to punctuation-only readings.
+     * @param excludeNonsense - Whether
+     * @param baseWitness  - Use the path of the given witness as the base path.
+     * @param conflate - The name of relations that should be used for normalization
+     * @param excWitnesses - One or more witnesses that should be excluded from the variant list
+     * @param excludeLayers - If "true", exclude witness layers from the output.
+     * @return the TEI Critical Apparatus  as plaintext
+     */
+    @GET
+    @Path("/teicat")
+    @Produces("application/xml; charset=utf-8")
+    @ReturnType("java.lang.Void")
+    public Response getTeicat(@DefaultValue("no") @QueryParam("significant") String significant,
+                             @DefaultValue("no") @QueryParam("exclude_type1") String excludeType1,
+                             @DefaultValue("no") @QueryParam("exclude_nonsense") String excludeNonsense,
+                             @DefaultValue("no") @QueryParam("combine_dislocations") String combine,
+                             @DefaultValue("punct") @QueryParam("suppress_matching") String suppressMatching,
+                             @QueryParam("base_witness") String baseWitness,
+                             @QueryParam("normalize") List<String> conflate,
+                             @QueryParam("exclude_witness") List<String> excWitnesses,
+                             @QueryParam("exclude_layers") String excludeLayers) {
+
+       if (!sectionInTradition())
+           return Response.status(Response.Status.NOT_FOUND).entity("Tradition and/or section not found").build();
+
+       List<String> thisSection = new ArrayList<>(Collections.singletonList(sectId));
+       return new TabularExporter(db).exportAsTEICat(tradId, thisSection, significant, excludeType1,
+             excludeNonsense, combine, suppressMatching, baseWitness, conflate, excWitnesses, "true".equals(excludeLayers));
+    }
+
+
+    @GET
+    @Path("/translation")
+    @Produces("text/plain; charset=utf-8")
+    @ReturnType(clazz = String.class)
+    public Response getTranslation() {
+      SectionModel result;
+      if (!sectionInTradition())
+          return Response.status(Response.Status.NOT_FOUND).entity("Tradition and/or section not found").build();
+
+      try (Transaction tx = db.beginTx()) {
+          result = new SectionModel(db.getNodeById(Long.parseLong(sectId)));
+          tx.success();
+      } catch (Exception e) {
+          e.printStackTrace();
+          return Response.serverError().entity(jsonerror(e.getMessage())).build();
+      }
+      return Response.ok().entity(result.getTranslation()).build();
     }
 
     /**
@@ -1544,7 +1642,7 @@ public class Section {
     @Path("/matrix")
     @Produces("text/plain; charset=utf-8")
     @ReturnType(clazz = String.class)
-    public Response getCharMatrix(@QueryParam("conflate") String toConflate,
+    public Response getCharMatrix(@QueryParam("conflate") List<String> toConflate,
                                   @QueryParam("exclude_layers") String excludeLayers,
                                   @DefaultValue("8") @QueryParam("maxVars") int maxVars) {
         List<String> thisSection = new ArrayList<>(Collections.singletonList(sectId));

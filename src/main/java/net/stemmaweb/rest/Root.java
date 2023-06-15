@@ -94,6 +94,13 @@ public class Root {
     public Reading getReading(@PathParam("readingId") String readingId) {
         return new Reading(readingId);
     }
+    /**
+     * @param readingId - the ID of the complex reading being queried
+     */
+    @Path("/complexreading/{readingId}")
+    public ComplexReading getComplexReading(@PathParam("readingId") String readingId) {
+        return new ComplexReading(readingId);
+    }
 
     /*
      * Resource creation calls

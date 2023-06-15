@@ -538,6 +538,42 @@ public class Tradition {
     }
 
     /**
+     * Gets a list of all complex readings in the given tradition.
+     *
+     * @summary Get readings
+     * @return A list of complex reading metadata
+     * @statuscode 200 - on success
+     * @statuscode 404 - if no such tradition exists
+     * @statuscode 500 - on failure, with an error message
+     */
+    @GET
+    @Path("/complex")
+    @Produces("application/json; charset=utf-8")
+    @ReturnType("java.util.List<net.stemmaweb.model.ComplexReadingModel>")
+    public Response getAllComplexReadings() {
+        Node traditionNode = VariantGraphService.getTraditionNode(traditionId, db);
+        if (traditionNode == null)
+            return Response.status(Status.NOT_FOUND)
+                    .entity(jsonerror("There is no tradition with this id")).build();
+
+        ArrayList<SectionModel> allSections = produceSectionList(traditionNode);
+        if (allSections == null)
+            return Response.serverError()
+                    .entity(jsonerror("Tradition has no sections")).build();
+
+        ArrayList<ComplexReadingModel> complexReadingModels = new ArrayList<>();
+        for (SectionModel sm : allSections) {
+            Section sectRest = new Section(traditionId, sm.getId());
+            List<ComplexReadingModel> sectionReadings = sectRest.sectionComplexReadings();
+            if (sectionReadings == null)
+                return Response.serverError().entity(jsonerror("section lookup failed")).build();
+            complexReadingModels.addAll(sectionReadings);
+
+        }
+        return Response.ok(complexReadingModels).build();
+    }
+
+    /**
      * Return a list of the annotations that have been made on this tradition.
      *
      * @summary Get annotations on tradition
@@ -821,7 +857,7 @@ public class Tradition {
      * @param showNormalForms - Display normal form of readings alongside "raw" text form, if true
      * @param showRank - Display the rank of readings, if true
      * @param displayAllSigla - Avoid the 'majority' contraction of long witness labels, if true
-     * @param normalise - A RelationType name to normalise on, if desired
+     * @param normalise - RelationType names to normalise on, if desired
      * @param excWitnesses - Exclude the given witness from the dot output. Can be specified multiple times
      * @return Plaintext dot format
      */
@@ -833,7 +869,7 @@ public class Tradition {
                            @DefaultValue("false") @QueryParam("show_normal") Boolean showNormalForms,
                            @DefaultValue("false") @QueryParam("show_rank") Boolean showRank,
                            @DefaultValue("false") @QueryParam("expand_sigla") Boolean displayAllSigla,
-                                                  @QueryParam("normalise") String normalise,
+                                                  @QueryParam("normalise") List<String> normalise,
                                                   @QueryParam("include_witness") List<String> excWitnesses) {
         if (VariantGraphService.getTraditionNode(traditionId, db) == null)
             return Response.status(Status.NOT_FOUND).entity("No such tradition found").build();
@@ -859,7 +895,7 @@ public class Tradition {
     @Path("/json")
     @Produces("application/json; charset=utf-8")
     @ReturnType(clazz = AlignmentModel.class)
-    public Response getJson(@QueryParam("conflate") String toConflate,
+    public Response getJson(@QueryParam("conflate") List<String> toConflate,
                             @QueryParam("section") List<String> sectionList,
                             @QueryParam("exclude_layers") String excludeLayers) {
         return new TabularExporter(db).exportAsJSON(traditionId, toConflate,
@@ -880,7 +916,7 @@ public class Tradition {
     @Path("/csv")
     @Produces("text/plain; charset=utf-8")
     @ReturnType("java.lang.Void")
-    public Response getCsv(@QueryParam("conflate") String toConflate,
+    public Response getCsv(@QueryParam("conflate") List<String> toConflate,
                            @QueryParam("section") List<String> sectionList,
                            @QueryParam("exclude_layers") String excludeLayers) {
         return new TabularExporter(db).exportAsCSV(traditionId, ',', toConflate,
@@ -901,11 +937,49 @@ public class Tradition {
     @Path("/tsv")
     @Produces("text/plain; charset=utf-8")
     @ReturnType("java.lang.Void")
-    public Response getTsv(@QueryParam("conflate") String toConflate,
+    public Response getTsv(@QueryParam("conflate") List<String> toConflate,
                            @QueryParam("section") List<String> sectionList,
                            @QueryParam("exclude_layers") String excludeLayers) {
         return new TabularExporter(db).exportAsCSV(traditionId, '\t', toConflate,
                 sectionList, "true".equals(excludeLayers));
+    }
+
+
+    /**
+     * Returns a TEI Critical Apparatus formatted XML file that contains the base text and the variants.
+     *
+     * @summary Download a TEI Critical Apparatus XML file
+     *
+     * @param significant - Restrict the variant groups to the given significance level or above
+     * @param excludeType1 - If true, exclude type 1 (i.e. singleton) variants from the groupings
+     * @param combine - If true, attempt to combine non-colocated variants (e.g. transpositions) into
+     *                the VariantLocationModel of the corresponding base
+     * @param suppressMatching - A regular expression to match readings that should be disregarded in the
+     *                 variant list. Defaults to punctuation-only readings.
+     * @param excludeNonsense - Whether
+     * @param baseWitness  - Use the path of the given witness as the base path.
+     * @param conflate - The name of relations that should be used for normalization
+     * @param excWitnesses - One or more witnesses that should be excluded from the variant list
+     * @param excludeLayers - If "true", exclude witness layers from the output.
+     * @return the TEI Critical Apparatus  as plaintext
+     */
+    @GET
+    @Path("/teicat")
+    @Produces("application/xml; charset=utf-8")
+    @ReturnType("java.lang.Void")
+    public Response getTeicat(@QueryParam("section") List<String> sectionList,
+                              @DefaultValue("no") @QueryParam("significant") String significant,
+                              @DefaultValue("no") @QueryParam("exclude_type1") String excludeType1,
+                              @DefaultValue("no") @QueryParam("exclude_nonsense") String excludeNonsense,
+                              @DefaultValue("no") @QueryParam("combine_dislocations") String combine,
+                              @DefaultValue("punct") @QueryParam("suppress_matching") String suppressMatching,
+                              @QueryParam("base_witness") String baseWitness,
+                              @QueryParam("normalize") List<String> conflate,
+                              @QueryParam("exclude_witness") List<String> excWitnesses,
+                              @QueryParam("exclude_layers") String excludeLayers) {
+
+      return new TabularExporter(db).exportAsTEICat(traditionId, sectionList, significant, excludeType1,
+        excludeNonsense, combine, suppressMatching, baseWitness, conflate, excWitnesses, "true".equals(excludeLayers));
     }
 
     /**
@@ -924,7 +998,7 @@ public class Tradition {
     @Path("/matrix")
     @Produces("text/plain; charset=utf-8")
     @ReturnType("java.lang.Void")
-    public Response getCharMatrix(@QueryParam("conflate") String toConflate,
+    public Response getCharMatrix(@QueryParam("conflate") List<String> toConflate,
                                   @QueryParam("section") List<String> sectionList,
                                   @QueryParam("exclude_layers") String excludeLayers,
                                   @DefaultValue("8") @QueryParam("maxVars") int maxVars) {
@@ -933,4 +1007,3 @@ public class Tradition {
     }
 
 }
-

@@ -31,6 +31,11 @@ public class SectionModel {
      */
     private String language;
     /**
+     * The modern translation of the section's text
+     */
+    private String translation;
+
+    /**
      * The graph rank of the section's end node. This is a rough indication of the length of the section.
      */
     private Long endRank;
@@ -54,6 +59,8 @@ public class SectionModel {
                 if (tn.hasProperty("language"))
                     setLanguage(tn.getProperty("language").toString());
             }
+            if (node.hasProperty("translation"))
+                setTranslation(node.getProperty("translation").toString());
             Relationship sectionEnd = node.getSingleRelationship(ERelations.HAS_END, Direction.OUTGOING);
             setEndRank(Long.valueOf(sectionEnd.getEndNode().getProperty("rank").toString()));
 
@@ -78,6 +85,12 @@ public class SectionModel {
     }
     public void setLanguage(String language) {
         this.language = language;
+    }
+    public String getTranslation() {
+        return translation;
+    }
+    public void setTranslation(String translation) {
+        this.translation = translation;
     }
     public Long getEndRank() {
         return endRank;

@@ -936,8 +936,8 @@ public class Reading {
         try (Transaction tx = db.beginTx()) {
             originalReading = db.getNodeById(readId);
             String originalText = originalReading.getProperty("text").toString();
-            if (splitIndex >= originalText.length())
-                errorMessage = "The index must be smaller than the text length";
+            if (splitIndex > originalText.length())
+                errorMessage = "The index must not be bigger than the text length";
 
             else if (model.getIsRegex()) {
                 // Test that the regex matches on the original text
@@ -1033,6 +1033,7 @@ public class Reading {
 
         // Change the first reading
         originalReading.setProperty("text", splitWords[0]);
+        originalReading.setProperty("display", splitWords[0].replaceAll("<", "&lt;").replaceAll(">", "&gt;"));
         createdOrChangedReadings.add(new ReadingModel(originalReading));
 
         // Add the new readings
@@ -1043,6 +1044,12 @@ public class Reading {
 
             ReadingService.copyReadingProperties(lastReading, newReading);
             newReading.setProperty("text", splitWords[i]);
+            newReading.setProperty("display", splitWords[i].replaceAll("<", "&lt;").replaceAll(">", "&gt;"));
+            newReading.setProperty("normal_form", " ");
+            if (splitWords[i].equals("")) {
+              newReading.setProperty("normal_form", "");
+              newReading.setProperty("display", "");
+            } // special case, when we split to create empty node
             // Set the rank here, even though we re-rank above, so that the ReadingModels we produce are right
             Long previousRank = (Long) lastReading.getProperty("rank");
             newReading.setProperty("rank", previousRank + 1);
@@ -1266,6 +1273,94 @@ public class Reading {
         return errorResponse(Status.CONFLICT);
     }
 
+    /*
+    Get all complex readings containing this reading.
+     *
+     */
+    @GET
+    @Path("complex")
+    @Produces("application/json; charset=utf-8")
+    @ReturnType("java.util.List<net.stemmaweb.model.ComplexReadingModel>")
+    public Response getComplexReadings() {
+        List<ComplexReadingModel> crList = new ArrayList<>();
+        try (Transaction tx = db.beginTx()) {
+            Node myReading = db.getNodeById(readId);
+            for (Node node : db.traversalDescription().depthFirst()
+                    .relationships(ERelations.HAS_HYPERNODE, Direction.OUTGOING)
+                    .uniqueness(Uniqueness.RELATIONSHIP_GLOBAL).traverse(myReading)
+                    .nodes()) {
+              if (node != myReading) {
+                crList.add(new ComplexReadingModel(node));
+              }
+            }
+            tx.success();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Response.serverError().entity(jsonerror(e.getMessage())).build();
+        }
+        return Response.ok(crList).build();
+    }
+
+    /*
+    Create a complex reading from the specified reading ids.
+     */
+    @PUT
+    @Path("complex")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces("application/json; charset=utf-8")
+    @ReturnType(clazz = ComplexReadingModel.class)
+    public Response complexReading(ComplexReadingModel skeleton) {
+        try (Transaction tx = db.beginTx()) {
+            Node hyperNode = db.createNode(Nodes.READING, Nodes.HYPERREADING);
+            if (skeleton.getSource() != null) {
+              hyperNode.setProperty("source", skeleton.getSource());
+            }
+            if (skeleton.getNote() != null) {
+              hyperNode.setProperty("note", skeleton.getNote());
+            }
+            Node thisNode = db.getNodeById(readId);
+            thisNode.createRelationshipTo(hyperNode, ERelations.HAS_HYPERNODE);
+            for (ComplexReadingModel comp: skeleton.getComponents())  {
+                if (comp.getReading() != null) { // create relationship from actual reading
+                  Node otherNode = db.getNodeById(Long.parseLong(comp.getReading().getId()));
+                  otherNode.createRelationshipTo(hyperNode, ERelations.HAS_HYPERNODE);
+                } else { // create relationship from embedded complex reading
+                  System.out.println("create relationship to embedded complex reading");
+                  Node embeddedHyperNode = db.getNodeById(Long.parseLong(comp.getId()));
+                  embeddedHyperNode.createRelationshipTo(hyperNode, ERelations.HAS_HYPERNODE);
+                }
+            }
+            tx.success();
+            return Response.ok(new ComplexReadingModel(hyperNode)).build();
+        } catch (NotFoundException e) {
+            errorMessage = e.getMessage();
+            return errorResponse(Status.NOT_FOUND);
+        } catch (Exception e) {
+            e.printStackTrace();
+            errorMessage = e.getMessage();
+            return errorResponse(Status.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    /**
+     * Removes a complex reading and all its relationships.
+     *
+     */
+    @DELETE
+    @Path("complex/{cid}")
+    @ReturnType("java.lang.Void")
+    public Response deleteComplex(@PathParam("cid") String cid) {
+        try (Transaction tx = db.beginTx()) {
+            Node removableNode = db.getNodeById(Long.parseLong(cid));
+            removableNode.getRelationships().forEach(Relationship::delete);
+            removableNode.delete();
+            tx.success();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Response.serverError().entity(jsonerror(e.getMessage())).build();
+        }
+        return Response.ok().build();
+    }
     /**
      * compress two readings
      *

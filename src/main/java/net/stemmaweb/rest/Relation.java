@@ -248,7 +248,7 @@ public class Relation {
             // We are finally ready to write a relation.
             readingsAndRelationModel = createSingleRelation(readingA, readingB, relationModel, rmodel);
             // We can also write any transitive relationships.
-            propagateRelation(readingsAndRelationModel, rmodel);
+            // propagateRelation(readingsAndRelationModel, rmodel);
             tx.success();
         } catch (Exception e) {
             e.printStackTrace();
@@ -282,6 +282,9 @@ public class Relation {
         relationAtoB.setProperty("a_derivable_from_b", relModel.getA_derivable_from_b());
         relationAtoB.setProperty("b_derivable_from_a", relModel.getB_derivable_from_a());
         relationAtoB.setProperty("alters_meaning", relModel.getAlters_meaning());
+        relationAtoB.setProperty("is_hyperrelation", relModel.getIs_hyperrelation());
+        relationAtoB.setProperty("hsource", relModel.getHSource());
+        relationAtoB.setProperty("htarget", relModel.getHTarget());
         relationAtoB.setProperty("is_significant", relModel.getIs_significant());
         relationAtoB.setProperty("non_independent", relModel.getNon_independent());
         relationAtoB.setProperty("reading_a", readingA.getProperty("text"));
@@ -418,6 +421,7 @@ public class Relation {
             Node readingA = db.getNodeById(Long.parseLong(relationModel.getSource()));
             Node readingB = db.getNodeById(Long.parseLong(relationModel.getTarget()));
 
+            if (relationModel.getScope() == null) relationModel.setScope(SCOPE_LOCAL);
             switch (relationModel.getScope()) {
                 case SCOPE_LOCAL:
                     ArrayList<Relationship> findRel = DatabaseService.getRelationshipTo(readingA, readingB, ERelations.RELATED);

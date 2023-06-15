@@ -17,6 +17,7 @@ RUN mkdir -p /var/lib/stemmarest/conf \
 COPY target/stemmarest.war /usr/local/tomcat/webapps/
 COPY build/server.xml /usr/local/tomcat/conf/
 COPY build/tomcat-users.xml /usr/local/tomcat/conf/
+COPY build/web.xml /usr/local/tomcat/conf/
 
 # Set the appropriate environment variable
 ENV STEMMAREST_HOME /var/lib/stemmarest

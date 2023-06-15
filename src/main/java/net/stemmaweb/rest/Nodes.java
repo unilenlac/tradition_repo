@@ -10,6 +10,7 @@ import org.neo4j.graphdb.Label;
 public enum Nodes implements Label {
     ROOT,            // is a the root node of the db
     READING,         // is a reading in the db
+    HYPERREADING,    // is a complex reading (hyperreading)
     EMENDATION,      // is a reading that appears in no witness
     WITNESS,         // is a witness in a stemma tree
     TRADITION,       // is a tradition root node

@@ -32,7 +32,9 @@ public enum ERelations implements RelationshipType {
     HAS_ANNOTATION_TYPE,    // links a user to his/her defined annotation types
     HAS_PROPERTIES, // links an annotation type to its allowed properties
     HAS_LINKS,      // links an annotation type to its allowed outbound relationships
+    HAS_HYPERNODE,  // links a reading to its hypernode if the reading is part of a more complex reading
 
     // Undirected types
     RELATED,        // this type is used to show relations between readings (undirected)
+    COLLATED,       // collation link between words
 }

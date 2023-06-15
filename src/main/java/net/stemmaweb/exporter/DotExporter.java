@@ -134,6 +134,49 @@ public class DotExporter
                     subgraphWritten = true;
                 }
 
+                // Remove existing 'token-normal-form' relations (to avoid adding them each time the graph is displayed)
+                db.traversalDescription().breadthFirst()
+                        .relationships(ERelations.RELATED,Direction.OUTGOING)
+                        .uniqueness(Uniqueness.NODE_GLOBAL)
+                        .traverse(sectionStartNode).relationships()
+                        .forEach(r -> {
+                            if ( r.getProperty("type").toString() == "token-normal-form" ) {
+                                r.delete();
+                            }
+                        });
+
+                // Add specific relation ('token-normal-form') for collated readings sharing the same normal_form
+                for (Node node :  db.traversalDescription().breadthFirst()
+                        .relationships(ERelations.SEQUENCE,Direction.OUTGOING)
+                        .relationships(ERelations.LEMMA_TEXT,Direction.OUTGOING)
+                        .uniqueness(Uniqueness.NODE_GLOBAL)
+                        .traverse(sectionStartNode)
+                        .nodes()) {
+                            for (Node collatedNode :  db.traversalDescription().breadthFirst()
+                              .relationships(ERelations.COLLATED,Direction.OUTGOING)
+                              .uniqueness(Uniqueness.NODE_GLOBAL)
+                              .traverse(node)
+                              .nodes()) {
+                                  if ((node == collatedNode) ||
+                                      (! node.hasRelationship(ERelations.COLLATED,Direction.OUTGOING)) ||
+                                      (node.getId() > collatedNode.getId())) { // avoid double
+                                      continue;
+                                  }
+                                  if (node.getProperty("normal_form").equals(collatedNode.getProperty("normal_form"))) {
+                                      Relationship newRelation = node.createRelationshipTo(collatedNode, ERelations.RELATED);
+                                      newRelation.setProperty("type", "token-normal-form");
+                                      newRelation.setProperty("scope", "local");
+                                  }
+                                  //delete COLLATED relation, no longer needed
+                                  for ( Relationship r: node.getRelationships(ERelations.COLLATED,Direction.OUTGOING) ) {
+                                      if ( r.getEndNode().getId() == collatedNode.getId() ) {
+                                        r.delete();
+                                      }
+                                  }
+                            }
+                }
+                tx.success();
+
                 // Find our representative nodes, in case we are producing a normalised form of the graph
                 HashMap<Node, Node> representatives = getRepresentatives(sectionNode, dm.getNormaliseOn());
                 RelationshipType seqLabel = dm.getNormaliseOn() == null ? ERelations.SEQUENCE : ERelations.NSEQUENCE;
@@ -287,12 +330,14 @@ public class DotExporter
      * Helper functions for variant graph production
      */
 
-    private static HashMap<Node, Node> getRepresentatives(Node sectionNode, String normaliseOn)
+    private static HashMap<Node, Node> getRepresentatives(Node sectionNode, List<String> normaliseOn)
             throws Exception {
         if (normaliseOn == null) {
             HashMap<Node, Node> representatives = new HashMap<>();
             List<Node> sectionNodes = VariantGraphService.returnTraditionSection(sectionNode).nodes().stream()
-                    .filter(x -> x.hasLabel(Label.label("READING"))).collect(Collectors.toList());
+                    .filter(x -> x.hasLabel(Label.label("READING")))
+                    .filter(x -> ! x.hasLabel(Label.label("HYPERREADING")))
+                    .collect(Collectors.toList());
             for (Node n: sectionNodes) {
                 representatives.put(n, n);
             }
@@ -322,7 +367,7 @@ public class DotExporter
             nodeLabel = String.format("%s%s(%s)", nodeLabel, hasHTML ? "&nbsp;" : " ", node.getProperty("rank").toString());
         if (dm.getShowNormalForm() && node.hasProperty("normal_form")
             && !node.getProperty("normal_form").toString().equals(node.getProperty("text").toString())) {
-            String labelExtra = "<BR/><FONT COLOR=\"grey\">"
+            String labelExtra = "<BR ALIGN=\"LEFT\"/><FONT COLOR=\"grey\">"
                     + escapeHtml4(node.getProperty("normal_form").toString()) + "</FONT>";
             if (hasHTML)
                 // We have to glom the normal_form HTML onto the existing HTML label
@@ -338,8 +383,39 @@ public class DotExporter
             // Escape double quotes since we are wrapping in double quotes
             nodeLabel = "\"" + nodeLabel.replace("\"", "\\\"") + "\"";
 
+        if ( nodeLabel.startsWith("<") ) {
+            // first, delete extra tabs on last line of token before normal form
+            int tokenEndPos = nodeLabel.lastIndexOf("<BR");
+            if ( tokenEndPos > 0 ) { // we have a normal form
+                int lineStartPos = nodeLabel.lastIndexOf("\n", tokenEndPos);
+                if ( lineStartPos > 0 ) {
+                    String newLine = nodeLabel.substring(lineStartPos, tokenEndPos).replaceAll("\t", "");
+                    nodeLabel = nodeLabel.substring(0, lineStartPos) + newLine + nodeLabel.substring(tokenEndPos);
+                }
+            }
+            // preserve linebreaks and tabs; left-justify
+            nodeLabel = nodeLabel.replaceAll("\n", "<BR ALIGN=\"LEFT\"/>");
+            nodeLabel = nodeLabel.replaceAll("\t", "  ");
+            // add final alignement option to justify the last line too
+            nodeLabel = nodeLabel.substring(0, nodeLabel.length() - 1) + "<BR ALIGN=\"LEFT\"/>" + nodeLabel.substring(nodeLabel.length() - 1);
+        }
+
         // Put it all together
         return("\t" + node.getId() + " [id=\"" + nodeDotId + "\", label=" + nodeLabel + "];\n");
+    }
+
+    private static String multiline(String inputStr, int maxLineSize, String separator) {
+        if ( inputStr.length() < maxLineSize ) {
+            return inputStr;
+        }
+        int splitPoint = inputStr.lastIndexOf(" ", maxLineSize);
+        if ( splitPoint == 0 ) {
+            splitPoint = inputStr.indexOf(" ", maxLineSize);
+        }
+        if ( splitPoint == 0 ) {
+            return inputStr;
+        }
+        return inputStr.substring(0, splitPoint) + separator + multiline(inputStr.substring(splitPoint + 1), maxLineSize, separator);
     }
 
     private static String sequenceLabel(Map<String, String[]> witnessInfo, int numWits, DisplayOptionModel dm) {
@@ -360,10 +436,10 @@ public class DotExporter
             while (it.hasNext()) {
                 lex_str.append(it.next());
                 if (it.hasNext()) {
-                    lex_str.append(", ");
+                    lex_str.append(" ");
                 }
             }
-            label = lex_str.toString();
+            label = multiline(lex_str.toString(), 30, "<BR />");
         }
         // Add on the layer witnesses where applicable
         lex_str = new StringBuilder();
@@ -381,7 +457,7 @@ public class DotExporter
                 lex_str.append(")");
             }
         }
-        label = lex_str.toString();
+        label = lex_str.toString().replaceAll("\\s", ""); // remove blanks
 
         return(label);
     }
@@ -391,7 +467,7 @@ public class DotExporter
         int hits = 0;
         for (String prop : witnessInfo.keySet())
             hits += (witnessInfo.get(prop)).length;
-        return df2.format(0.8 + 0.2 * hits);
+        return df2.format(Math.max(1, Math.log(0.8 + 0.2 * hits)));
     }
 
     private static String relshipText(Long sNodeId, Long eNodeId, String label, long edgeId, String pWidth, Long rankDiff, boolean isLemmaLink)
@@ -400,8 +476,8 @@ public class DotExporter
         try {
             String idStr = isLemmaLink ? "l" : "e";
             idStr += edgeId;
-            text = "\t" + sNodeId + "->" + eNodeId + " [label=\"" + label
-                    + "\", id=\"" + idStr + "\", penwidth=\"" + pWidth + "\"";
+            text = "\t" + sNodeId + "->" + eNodeId + " [label=<" + label
+                    + ">, id=\"" + idStr + "\", penwidth=\"" + pWidth + "\"";
             if (rankDiff > 1)
                 text += ", minlen=\"" + rankDiff + "\"";
             text += "];\n";

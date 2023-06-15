@@ -39,9 +39,13 @@ public class VariantListModel {
      */
     private String basisText;
     /**
+     * the chain of readings in the base text.
+     */
+    private List<ReadingModel> baseChain;
+    /**
      * the relation name, if any, that the text was normalized on prior to producing the variant list
      */
-    private String conflateOnRelation;
+    private List<String> conflateOnRelation;
     /**
      * the minimum level of relation significance that the variants in this list are linked with
      */
@@ -58,7 +62,7 @@ public class VariantListModel {
     public VariantListModel() {
         variantlist = new ArrayList<>();
         suppressedReadingsRegex = "^$";
-        conflateOnRelation = "";
+        conflateOnRelation = null;
     }
 
     /**
@@ -66,7 +70,7 @@ public class VariantListModel {
      *
      * @param sectionNode - the section to generate the list for
      * @param baseWitness - the witness sigil to indicate the base text, if any
-     * @param conflate    - the name of a relation that should be the basis for text normalisation, if any
+     * @param conflate    - the name of the relations that should be the basis for text normalisation, if any
      * @param suppress    - a regular expression of readings that should be excluded from the variant list
      * @param filterNonsense - whether to exclude readings marked as nonsense readings
      * @param filterTypeOne - whether to filter out so-called "type 1" variants
@@ -75,7 +79,7 @@ public class VariantListModel {
      * @param combine     - whether to move variants marked as dislocations to the variant location of
      *                    their corresponding base readings
      */
-    public VariantListModel(Node sectionNode, String baseWitness, List<String> excludeWitnesses, String conflate,
+    public VariantListModel(Node sectionNode, String baseWitness, List<String> excludeWitnesses, List<String> conflate,
                             String suppress, Boolean filterNonsense, Boolean filterTypeOne, String significant,
                             Boolean combine) throws Exception {
         // Initialize our instance properties
@@ -92,11 +96,10 @@ public class VariantListModel {
         this.filterTypeOne = filterTypeOne;
         this.significant = RelationModel.Significance.valueOf(significant);
         this.dislocationCombined = combine;
-        if (conflate == null) conflate = "";
         GraphDatabaseService db = sectionNode.getGraphDatabase();
         try (Transaction tx = db.beginTx()) {
             RelationshipType follow = ERelations.SEQUENCE;
-            if (!conflate.equals("")) {
+            if (conflate != null && !conflate.isEmpty()) {
                 VariantGraphService.normalizeGraph(sectionNode, conflate);
                 follow = ERelations.NSEQUENCE;
             }
@@ -144,9 +147,9 @@ public class VariantListModel {
 
             // Filter readings by regex / nonsense flag as needed. Pass the base text in case
             // any before/after reading settings need to be altered.
-            List<ReadingModel> baseChain = baseText.stream().map(x -> new ReadingModel(x.getEndNode())).collect(Collectors.toList());
-            baseChain.add(0, new ReadingModel(baseText.get(0).getStartNode()));
-            this.filterReadings(baseChain);
+            this.baseChain = baseText.stream().map(x -> new ReadingModel(x.getEndNode())).collect(Collectors.toList());
+            this.baseChain.add(0, new ReadingModel(baseText.get(0).getStartNode()));
+            this.filterReadings(this.baseChain);
 
             // Filter for type1 variants
             if (filterTypeOne)
@@ -160,7 +163,7 @@ public class VariantListModel {
             if (combine) this.combineDisplacements();
 
             // Clean up if we normalised
-            if (!conflate.equals(""))
+            if (conflate != null && !conflate.isEmpty())
                 VariantGraphService.clearNormalization(sectionNode);
 
             tx.success();
@@ -410,7 +413,11 @@ public class VariantListModel {
         return basisText;
     }
 
-    public String getConflateOnRelation() {
+    public List<ReadingModel> getBaseChain() {
+        return baseChain;
+    }
+
+    public List<String> getConflateOnRelation() {
         return conflateOnRelation;
     }
 

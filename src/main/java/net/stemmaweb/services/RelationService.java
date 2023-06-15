@@ -15,9 +15,9 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
- * 
+ *
  * Provides helper methods related to reading relations.
- * 
+ *
  * @author PSE FS 2015 Team2
  *
  */
@@ -135,26 +135,30 @@ public class RelationService {
      * @param tradId - the UUID of the relevant tradition
      * @param sectionId - the ID (as a string) of the relevant section
      * @param db - the GraphDatabaseService to use
-     * @param thresholdName - the name of a RelationType; all of these relations and ones more closely bound will be clustered.
+     * @param thresholdNameList - RelationType names; all of these relations and ones more closely bound will be clustered.
      * @return - a list of sets, where each set represents a group of closely related readings
      * @throws Exception - if the relation types can't be collected, or if something goes wrong with the algorithm
      */
     static List<Set<Node>> getCloselyRelatedClusters(
-            String tradId, String sectionId, GraphDatabaseService db, String thresholdName)
+            String tradId, String sectionId, GraphDatabaseService db, List<String> thresholdNameList)
             throws Exception {
         // Is it a no-op?
-        if (thresholdName == null) return new ArrayList<>();
+        if (thresholdNameList == null) return new ArrayList<>();
         // Then we have some work to do.
         HashSet<String> closeRelations = new HashSet<>();
         Node traditionNode = VariantGraphService.getTraditionNode(tradId, db);
         List<RelationTypeModel> rtmlist = ourRelationTypes(traditionNode);
-        int bindlevel = 0;
-        Optional<RelationTypeModel> thresholdModel = rtmlist.stream().filter(x -> x.getName().equals(thresholdName)).findFirst();
-        if (thresholdModel.isPresent())
-            bindlevel = thresholdModel.get().getBindlevel();
-        for (RelationTypeModel rtm : rtmlist)
-            if (rtm.getBindlevel() <= bindlevel)
-                closeRelations.add(String.format("\"%s\"", rtm.getName()));
+
+        for (String thresholdName : thresholdNameList) {
+            closeRelations.add(String.format("\"%s\"", thresholdName));
+            // int bindlevel = 0;
+            // Optional<RelationTypeModel> thresholdModel = rtmlist.stream().filter(x -> x.getName().equals(thresholdName)).findFirst();
+            // if (thresholdModel.isPresent())
+            //     bindlevel = thresholdModel.get().getBindlevel();
+            // for (RelationTypeModel rtm : rtmlist)
+            //     if (rtm.getBindlevel() <= bindlevel)
+            //         closeRelations.add(String.format("\"%s\"", rtm.getName()));
+        }
 
         return collectSpecifiedClusters(sectionId, db, closeRelations);
     }

@@ -5,6 +5,10 @@ import com.opencsv.ICSVWriter;
 import net.stemmaweb.model.AlignmentModel;
 import net.stemmaweb.model.WitnessTokensModel;
 import net.stemmaweb.model.ReadingModel;
+import net.stemmaweb.model.VariantModel;
+import net.stemmaweb.model.VariantListModel;
+import net.stemmaweb.model.VariantLocationModel;
+import net.stemmaweb.services.ReadingService;
 import net.stemmaweb.services.VariantGraphService;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Node;
@@ -15,6 +19,10 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import java.io.IOException;
 import java.io.StringWriter;
+import javax.xml.stream.XMLOutputFactory;
+import javax.xml.stream.XMLStreamException;
+import javax.xml.stream.XMLStreamWriter;
+import com.sun.xml.txw2.output.IndentingXMLStreamWriter;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
@@ -29,7 +37,7 @@ public class TabularExporter {
         this.db = db;
     }
 
-    public Response exportAsJSON(String tradId, String conflate, List<String> sectionList, boolean excludeLayers) {
+    public Response exportAsJSON(String tradId, List<String> conflate, List<String> sectionList, boolean excludeLayers) {
         ArrayList<Node> traditionSections;
         try {
             traditionSections = getSections(tradId, sectionList);
@@ -46,8 +54,29 @@ public class TabularExporter {
         }
     }
 
+    public Response exportAsTEICat(String tradId, List<String> sectionList, String significant, String excludeType1,
+          String excludeNonsense, String combine, String suppressMatching, String baseWitness, List<String> conflate,
+          List<String> excWitnesses, boolean excludeLayers) {
 
-    public Response exportAsCSV(String tradId, char separator, String conflate, List<String> sectionList,
+        ArrayList<Node> traditionSections;
+        try {
+            traditionSections = getSections(tradId, sectionList);
+            if(traditionSections==null) {
+                return Response.status(Response.Status.NOT_FOUND).build();
+            }
+
+            return getCriticalApparatus(tradId, traditionSections, significant, excludeType1,
+                  excludeNonsense, combine, suppressMatching, baseWitness, conflate, excWitnesses, excludeLayers);
+        } catch (TabularExporterException e) {
+            return Response.status(Response.Status.BAD_REQUEST).entity(e.getMessage()).build();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Response.serverError().entity(e.getMessage()).build();
+        }
+
+    }
+
+    public Response exportAsCSV(String tradId, char separator, List<String> conflate, List<String> sectionList,
                                 boolean excludeLayers) {
         AlignmentModel wholeTradition;
         try {
@@ -91,7 +120,7 @@ public class TabularExporter {
     }
 
 
-    public Response exportAsCharMatrix(String tradId, int maxVars, String conflate, List<String> sectionList,
+    public Response exportAsCharMatrix(String tradId, int maxVars, List<String> conflate, List<String> sectionList,
                                        boolean excludeLayers) {
         AlignmentModel wholeTradition;
         try {
@@ -167,7 +196,7 @@ public class TabularExporter {
         return Response.ok(charMatrix.toString()).build();
     }
 
-    private AlignmentModel returnFullAlignment(String tradId, String conflate, List<String> sectionList,
+    private AlignmentModel returnFullAlignment(String tradId, List<String> conflate, List<String> sectionList,
                                                boolean excludeLayers)
             throws Exception {
         ArrayList<Node> traditionSections = getSections(tradId, sectionList);
@@ -205,7 +234,7 @@ public class TabularExporter {
         return collectedSections;
     }
 
-    private AlignmentModel getTraditionAlignment(ArrayList<Node> traditionSections, String collapseRelated, boolean excludeLayers)
+    private AlignmentModel getTraditionAlignment(ArrayList<Node> traditionSections, List<String> collapseRelated, boolean excludeLayers)
             throws Exception {
         // Make a new alignment model that has a column for every witness layer across the requested sections.
 
@@ -266,6 +295,87 @@ public class TabularExporter {
         // Record the length of the whole alignment
         wholeTradition.setLength(length);
         return wholeTradition;
+    }
+
+    private Response getCriticalApparatus(String tradId, ArrayList<Node> traditionSections, String significant, String excludeType1,
+          String excludeNonsense, String combine, String suppressMatching, String baseWitness, List<String> conflate,
+          List<String> excWitnesses, boolean excludeLayers) throws Exception {
+
+      try (Transaction tx = db.beginTx()) {
+          StringWriter result = new StringWriter();
+          XMLOutputFactory output = XMLOutputFactory.newInstance();
+          XMLStreamWriter writer;
+          try {
+              writer = new IndentingXMLStreamWriter(output.createXMLStreamWriter(result));
+          } catch (XMLStreamException e) {
+              e.printStackTrace();
+              return Response.serverError().build();
+          }
+          writer.writeStartDocument();
+          writer.writeStartElement("TEI");
+          writer.writeAttribute("xmlns", "http://www.tei-c.org/ns/1.0");
+
+          writer.writeStartElement("text");
+          writer.writeStartElement("body");
+          for (Node sectionNode : traditionSections) {
+              writer.writeStartElement("div");
+              writer.writeStartElement("p");
+              VariantListModel vlm = new VariantListModel(
+                      sectionNode, baseWitness, excWitnesses, conflate, suppressMatching,
+                      !excludeNonsense.equals("no"), !excludeType1.equals("no"), significant, !combine.equals("no"));
+              vlm.getBaseChain().forEach(x -> {
+                  List<VariantLocationModel> variantLocationFound = vlm.getVariantlist().stream().filter(y -> y.getRankIndex().equals(x.getRank())).collect(Collectors.toList());
+                  if (!variantLocationFound.isEmpty()) {
+                    try {
+                      writer.writeStartElement("app");
+                      writer.writeStartElement("lem");
+                      writer.writeCharacters(x.getText());
+                      writer.writeEndElement(); // lem
+                      VariantLocationModel vloc = variantLocationFound.get(0);
+                      for (VariantModel vm : vloc.getVariants()) {
+                          writer.writeStartElement("rdg");
+                          // getWitnessList
+                          Map<String, List<String>> wits = vm.getWitnesses();
+                          ArrayList<String> sigList = new ArrayList<>();
+                          for (String l : wits.keySet())
+                              for (String s : wits.get(l))
+                                  sigList.add(l.equals("witnesses") ? "#" + s : "#" + String.format("%s (%s)", s, l));
+                          Collections.sort(sigList);
+                          String witnessList = String.join(" ", sigList);
+                          writer.writeAttribute("wit", witnessList);
+                          String varText = ReadingService.textOfReadings(vm.getReadings(), vloc.isNormalised(), false);
+                          writer.writeCharacters(varText);
+                          writer.writeEndElement(); // rdg
+                      }
+                      writer.writeEndElement(); // app
+                      writer.writeCharacters(" ");
+                    } catch (XMLStreamException e) {
+                        e.printStackTrace();
+                    }
+                  } else {
+                      try {
+                        writer.writeCharacters(x.getText() + " ");
+                      } catch (XMLStreamException e) {
+                          e.printStackTrace();
+                      }
+                  }
+              });
+              writer.writeEndElement(); // p
+              writer.writeEndElement(); // div
+          }
+
+          writer.writeEndElement(); // body
+          writer.writeEndElement(); // text
+          writer.writeEndElement(); // TEI
+
+          writer.flush();
+
+          return Response.ok(result.toString(), MediaType.APPLICATION_XML).build();
+          // MediaType.APPLICATION_JSON_TYPE).build()
+      } catch (Exception e) {
+          e.printStackTrace();
+          return Response.serverError().entity(e.getMessage()).build();
+      }
     }
 
     private static class TabularExporterException extends Exception {
