@@ -1,4 +1,4 @@
-FROM tomcat:9-jre8
+FROM tomcat:9.0.76-jre8-temurin-jammy
 LABEL vendor=DHUniWien
 
 # Update packages, install Graphviz
