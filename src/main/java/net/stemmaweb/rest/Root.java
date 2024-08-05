@@ -9,12 +9,12 @@ import net.stemmaweb.services.GraphDatabaseServiceProvider;
 
 import net.stemmaweb.services.VariantGraphService;
 import org.apache.tika.Tika;
-import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
+import org.glassfish.jersey.media.multipart.FormDataMultiPart;
 import org.glassfish.jersey.media.multipart.FormDataParam;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.neo4j.exceptions.KernelException;
 import org.neo4j.graphdb.*;
-
 import javax.servlet.ServletContext;
 import javax.ws.rs.*;
 import javax.ws.rs.Path;
@@ -42,8 +42,7 @@ public class Root {
     @Context ServletContext context;
     @Context UriInfo uri;
     private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
-    private final GraphDatabaseService db = dbServiceProvider.getDatabase();
-
+    private GraphDatabaseService db = dbServiceProvider.getDatabase();
     /*
      * Delegated API calls
      */
@@ -140,8 +139,12 @@ public class Root {
                                   @FormDataParam("empty") String empty,
                                   @FormDataParam("filetype") String filetype,
                                   @FormDataParam("file") InputStream uploadedInputStream,
-                                  @FormDataParam("file") FormDataContentDisposition fileDetail) {
+                                  @FormDataParam("file") FormDataMultiPart fileDetail) throws KernelException {
 
+
+        if(db == null){
+            this.db = new GraphDatabaseServiceProvider("test").getDatabase();
+        }
         if (!DatabaseService.userExists(userId, db)) {
             return Response.status(Response.Status.CONFLICT)
                     .entity(jsonerror("No user with this id exists"))
@@ -255,7 +258,7 @@ public class Root {
 
             tx.findNodes(Nodes.USER)
                     .forEachRemaining(t -> userList.add(new UserModel(t)));
-            tx.close();
+            //tx.close();
         } catch (Exception e) {
             return Response.serverError().entity(jsonerror(e.getMessage())).build();
         }

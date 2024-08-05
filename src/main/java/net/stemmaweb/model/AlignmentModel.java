@@ -82,7 +82,7 @@ public class AlignmentModel {
             alignment = new ArrayList<>();
             // For each witness, we make a 'tokens' array of the length of the tradition
             // Get the witnesses in the database
-            ArrayList<Node> witnesses = DatabaseService.getRelated(traditionNode, ERelations.HAS_WITNESS);
+            ArrayList<Node> witnesses = DatabaseService.getRelated(traditionNode, ERelations.HAS_WITNESS, tx);
             for (Node w : witnesses) {
                 String sigil = w.getProperty("sigil").toString();
                 // Find out which witness layers we need to deal with

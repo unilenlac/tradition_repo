@@ -9,7 +9,6 @@ import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
-import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -43,33 +42,35 @@ public class Util {
 
     // Start and end node creation
     static Node createStartNode(Node parentNode) {
-//        GraphDatabaseService db = parentNode.getGraphDatabase();
         GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
         Node startNode;
         try (Transaction tx = db.beginTx()) {
-	        startNode = tx.createNode(Nodes.READING);
+	        Node parentNodeTx = tx.getNodeByElementId(parentNode.getElementId());
+            startNode = tx.createNode(Nodes.READING);
 	        startNode.setProperty("is_start", true);
 	        startNode.setProperty("section_id", parentNode.getElementId());
 	        startNode.setProperty("rank", 0L);
 	        startNode.setProperty("text", "#START#");
-	        parentNode.createRelationshipTo(startNode, ERelations.COLLATION);
-	        tx.close();
+	        parentNodeTx.createRelationshipTo(startNode, ERelations.COLLATION);
+	        tx.commit();
         }
         return startNode;
     }
 
     // Start and end node creation
-    static Node createEndNode(Node parentNode) {
+    static Node createEndNode(Node parentNode, Long rank) {
 //        GraphDatabaseService db = parentNode.getGraphDatabase();
         GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
         Node endNode;
         try (Transaction tx = db.beginTx()) {
+            Node parentNodeTx = tx.getNodeByElementId(parentNode.getElementId());
 	        endNode = tx.createNode(Nodes.READING);
 	        endNode.setProperty("is_end", true);
 	        endNode.setProperty("section_id", parentNode.getElementId());
 	        endNode.setProperty("text", "#END#");
-	        parentNode.createRelationshipTo(endNode, ERelations.HAS_END);
-	        tx.close();
+            endNode.setProperty("rank", rank);
+	        parentNodeTx.createRelationshipTo(endNode, ERelations.HAS_END);
+	        tx.commit();
         }
         return endNode;
     }
@@ -81,29 +82,27 @@ public class Util {
             if (sigil.contains(illegal))
                 throw new IllegalArgumentException("The character " + illegal + " may not appear in a sigil name.");
         Node witnessNode;
-//        GraphDatabaseService db = traditionNode.getGraphDatabase();
+
         GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
         try (Transaction tx = db.beginTx()) {
+            Node trad = tx.getNodeByElementId(traditionNode.getElementId());
 	        witnessNode = tx.createNode(Nodes.WITNESS);
 	        witnessNode.setProperty("sigil", sigil);
 	        witnessNode.setProperty("hypothetical", hypothetical);
 	        witnessNode.setProperty("quotesigil", !isDotId(sigil));
-	        tx.close();
+            trad.createRelationshipTo(witnessNode, ERelations.HAS_WITNESS);
+	        tx.commit();
         }
         return witnessNode;
     }
 
-    static Node findOrCreateExtant(Node traditionNode, String sigil) {
+    static Node findOrCreateExtant(Node traditionNode, String sigil, Transaction tx) {
         // This list should contain either zero or one items.
-        ArrayList<Node> existingWit = DatabaseService.getRelated(traditionNode, ERelations.HAS_WITNESS)
-                .stream().filter(x -> x.hasProperty("hypothetical")
-                        && x.getProperty("hypothetical").equals(false)
-                        && x.getProperty("sigil").equals(sigil))
-                .collect(Collectors.toCollection(ArrayList::new));
+
+        ArrayList<Node> existingWit = DatabaseService.getRelatedWitness(traditionNode, ERelations.HAS_WITNESS, sigil, tx);
+
         if (existingWit.size() == 0) {
-            Node witnessNode = createWitness(traditionNode, sigil, false);
-            traditionNode.createRelationshipTo(witnessNode, ERelations.HAS_WITNESS);
-            return witnessNode;
+            return createWitness(traditionNode, sigil, false);
         } else {
             return existingWit.get(0);
         }
@@ -120,7 +119,6 @@ public class Util {
                 if (!tsections.isEmpty())
                     tsections.get(tsections.size()-1).createRelationshipTo(sectionNode, ERelations.NEXT);
             }
-            tx.close();
         }
     }
 

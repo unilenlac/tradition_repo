@@ -361,7 +361,7 @@ public class GraphMLParser {
                 Util.ensureSectionLink(traditionNode, thisSection);
 
             // Ensure that all witnesses exist
-            witnessSigla.forEach(x -> Util.findOrCreateExtant(traditionNode, x));
+            witnessSigla.forEach(x -> Util.findOrCreateExtant(traditionNode, x, tx));
 
             // Ensure that all relation types exist
             for (String rt : relationTypesUsed)
@@ -480,7 +480,7 @@ public class GraphMLParser {
     // TODO do we still need this?
     private boolean annoLabelExists(Node tradition, Node alabel) {
         String name = alabel.getProperty("name").toString();
-        Optional<Node> matching = DatabaseService.getRelated(tradition, ERelations.HAS_WITNESS).stream()
+        Optional<Node> matching = DatabaseService.getRelated(tradition, ERelations.HAS_WITNESS, null).stream()
                 .filter(x -> x.getProperty("name", "").equals(name)).findFirst();
         if (matching.isEmpty()) return false;
 

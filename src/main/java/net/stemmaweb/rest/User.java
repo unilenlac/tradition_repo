@@ -27,11 +27,11 @@ import static net.stemmaweb.Util.jsonerror;
  */
 
 public class User {
-    private GraphDatabaseService db;
+    private final GraphDatabaseService db;
     /**
      * The ID of a stemmarest user; this is usually either an email address or a Google ID token.
      */
-    private String userId;
+    private final String userId;
 
     public User (String requestedId) {
         GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
@@ -60,7 +60,7 @@ public class User {
             } else {
                 return Response.noContent().build();
             }
-            tx.close();
+            //tx.close();
         } catch (Exception e) {
             return Response.serverError().entity(jsonerror(e.getMessage())).build();
         }
@@ -87,7 +87,7 @@ public class User {
         Node extantUser;
         try (Transaction tx = db.beginTx()) {
             extantUser = tx.findNode(Nodes.USER, "id", userId);
-            tx.close();
+            //tx.close();
         }
 
         Status returnedStatus;
@@ -127,8 +127,12 @@ public class User {
             }
             returnedStatus = Response.Status.CREATED;
         }
-        UserModel returnedModel = new UserModel(extantUser);
-        return Response.status(returnedStatus).entity(returnedModel).build();
+        try (Transaction tx = db.beginTx()) {
+            extantUser = tx.findNode(Nodes.USER, "id", userId);
+            UserModel returnedModel = new UserModel(extantUser);
+            tx.close();
+            return Response.status(returnedStatus).entity(returnedModel).build();
+        }
     }
 
 
@@ -155,7 +159,7 @@ public class User {
             if (foundUser != null) {
                 removed = new UserModel(foundUser);
                 // See if the user owns any traditions
-                ArrayList<Node> userTraditions = DatabaseService.getRelated(foundUser, ERelations.OWNS_TRADITION);
+                ArrayList<Node> userTraditions = DatabaseService.getRelated(foundUser, ERelations.OWNS_TRADITION, tx);
                 if (userTraditions.size() > 0)
                     return Response.status(Status.PRECONDITION_FAILED)
                             .entity("User's traditions must be deleted first")
@@ -193,7 +197,7 @@ public class User {
         ArrayList<TraditionModel> traditions = new ArrayList<>();
         try {
             Node thisUser = getUserNode();
-            DatabaseService.getRelated(thisUser, ERelations.OWNS_TRADITION)
+            DatabaseService.getRelated(thisUser, ERelations.OWNS_TRADITION, null)
                     .forEach(x -> traditions.add(new TraditionModel(x)));
         } catch (Exception e) {
             return Response.serverError().entity(jsonerror(e.getMessage())).build();
@@ -205,7 +209,7 @@ public class User {
         Node foundUser;
         try (Transaction tx = db.beginTx()) {
             foundUser = tx.findNode(Nodes.USER, "id", userId);
-            tx.close();
+            //tx.close();
         }
         return foundUser;
     }

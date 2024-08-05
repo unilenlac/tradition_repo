@@ -69,7 +69,7 @@ public class Witness {
             }
             if (found != null)
                 foundSigil = found.getProperty("sigil").toString();
-            tx.close();
+            //tx.close();
         }
         return foundSigil;
     }
@@ -85,7 +85,7 @@ public class Witness {
                     break;
                 }
             }
-            tx.close();
+            //tx.close();
         }
         return found;
     }
@@ -143,6 +143,7 @@ public class Witness {
                         ReadingService.removeWitnessLink(start, end, sigil, layer, "none");
                     }
                     // Was this the last outgoing for the start, or the last incoming for the end?
+
                     if (!start.getRelationships(Direction.OUTGOING, ERelations.SEQUENCE, ERelations.LEMMA_TEXT).iterator().hasNext())
                         orphanReadings.add(start);
                     if (!end.getRelationships(Direction.INCOMING, ERelations.SEQUENCE, ERelations.LEMMA_TEXT).iterator().hasNext())
@@ -242,7 +243,7 @@ public class Witness {
 
             if (end.equals("E")) {
                 // Find the rank of the graph's end.
-                Node endNode = DatabaseService.getRelated(currentSection, ERelations.HAS_END).get(0);
+                Node endNode = DatabaseService.getRelated(currentSection, ERelations.HAS_END, null).get(0);
                 try (Transaction tx = db.beginTx()) {
                     endRank = Long.parseLong(endNode.getProperty("rank").toString());
                     tx.close();

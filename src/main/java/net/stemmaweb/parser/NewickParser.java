@@ -44,7 +44,7 @@ public class NewickParser {
 
         // Do we already have a stemma by this name? If so, abort.
         try (Transaction tx = db.beginTx()) {
-            for (Node priorStemma : DatabaseService.getRelated(traditionNode, ERelations.HAS_STEMMA))
+            for (Node priorStemma : DatabaseService.getRelated(traditionNode, ERelations.HAS_STEMMA, tx))
                 if (priorStemma.getProperty("name").equals(stemmaSpec.getIdentifier())) return Response.status(Response.Status.CONFLICT)
                         .entity(jsonerror("A stemma by this name already exists for this tradition.")).build();
             tx.close();
@@ -69,7 +69,7 @@ public class NewickParser {
             for (TreeNode n : nTree.nodes) {
                 Node wit;
                 if (n.isLeaf()) {
-                    wit = findOrCreateExtant(traditionNode, n.getName());
+                    wit = findOrCreateExtant(traditionNode, n.getName(), tx);
                 } else {
                     // It's a hypothetical node, so make it from scratch.
                     wit = Util.createWitness(traditionNode, String.valueOf(n.getKey()), true);

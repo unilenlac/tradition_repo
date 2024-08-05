@@ -495,7 +495,7 @@ public class DotExporter
         try (Transaction tx = db.beginTx()) {
             Node traditionNode = tx.findNode(Nodes.TRADITION, "id", tradId);
             Node startNodeStemma = null;
-            for (Node stemma : DatabaseService.getRelated(traditionNode, ERelations.HAS_STEMMA)) {
+            for (Node stemma : DatabaseService.getRelated(traditionNode, ERelations.HAS_STEMMA, tx)) {
                 if (stemma.getProperty("name").equals(stemmaTitle)) {
                     startNodeStemma = stemma;
                     break;
@@ -510,7 +510,7 @@ public class DotExporter
             outputLines.add(String.format("%s \"%s\" {", stemmaType, stemmaTitle));
 
             // Output all the nodes associated with this stemma.
-            for (Node witness : DatabaseService.getRelated(startNodeStemma, ERelations.HAS_WITNESS)) {
+            for (Node witness : DatabaseService.getRelated(startNodeStemma, ERelations.HAS_WITNESS, tx)) {
                 String witnessSigil = sigilDotString(witness);
                 Boolean hypothetical = (Boolean) witness.getProperty("hypothetical");
 
@@ -525,7 +525,7 @@ public class DotExporter
 
             // Now output all the edges associated with this stemma, starting with the
             // archetype if we have one.
-            ArrayList<Node> foundRoots = DatabaseService.getRelated(startNodeStemma, ERelations.HAS_ARCHETYPE);
+            ArrayList<Node> foundRoots = DatabaseService.getRelated(startNodeStemma, ERelations.HAS_ARCHETYPE, tx);
             if (foundRoots.isEmpty()) {
                 // No archetype, so we don't know where is okay to start traversal;
                 // just output the list of edges from this stemma in any order.

@@ -3,6 +3,8 @@ package net.stemmaweb.services;
 
 import java.io.File;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.neo4j.common.DependencyResolver.SelectionStrategy;
 import org.neo4j.configuration.GraphDatabaseSettings;
@@ -10,10 +12,8 @@ import org.neo4j.dbms.api.DatabaseManagementService;
 import org.neo4j.dbms.api.DatabaseManagementServiceBuilder;
 import org.neo4j.exceptions.KernelException;
 import org.neo4j.gds.wcc.WccStreamProc;
-//import org.neo4j.graphdb.DependencyResolver;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.kernel.api.procedure.GlobalProcedures;
-//import org.neo4j.internal.kernel.api.exceptions.KernelException;
 import org.neo4j.kernel.internal.GraphDatabaseAPI;
 import org.neo4j.test.TestDatabaseManagementServiceBuilder;
 
@@ -32,23 +32,40 @@ public class GraphDatabaseServiceProvider {
     public GraphDatabaseServiceProvider() {
     }
 
+	public GraphDatabaseServiceProvider(Boolean test){
+		if (test){
+			List<String> unrestricted_list = new ArrayList<>();
+			unrestricted_list.add("gds.*");
+			dbService = new TestDatabaseManagementServiceBuilder(Path.of("/Users/rdiaz/coderepos/stemmaweb-workdir/data"))
+					.setConfig(GraphDatabaseSettings.plugin_dir, Path.of("/Users/rdiaz/coderepos/datastore/stemmarest/prod/plugins"))
+					.setConfig(GraphDatabaseSettings.procedure_unrestricted, unrestricted_list)
+					//.impermanent()
+					//.setDatabaseRootDirectory(null)
+					.build();
+			db = dbService.database(GraphDatabaseSettings.DEFAULT_DATABASE_NAME);
+		}
+	}
+
     // Connect to a DB at a particular path
     public GraphDatabaseServiceProvider(String db_location) throws KernelException {
 
 //        GraphDatabaseFactory dbFactory = new GraphDatabaseFactory();
 //        GraphDatabaseBuilder dbbuilder = dbFactory.newEmbeddedDatabaseBuilder(new File(db_location + "/data/databases/graph.db"));
-    	if (db_location == null) {
-        	dbService = new TestDatabaseManagementServiceBuilder()
-        			.impermanent()
-        			.setDatabaseRootDirectory(null)
-        			.build();
-        	db = dbService.database(GraphDatabaseSettings.DEFAULT_DATABASE_NAME);
-    	} else {
-    		dbService = new DatabaseManagementServiceBuilder(Path.of(db_location + "/data/databases/graph.db")).build();
+		if (db_location == "test") {
+			dbService = new TestDatabaseManagementServiceBuilder(Path.of("/Users/rdiaz/coderepos/stemmaweb-workdir/data"))
+					.setConfig(GraphDatabaseSettings.plugin_dir, Path.of("/Users/rdiaz/coderepos/datastore/stemmarest/prod/plugins"))
+					//.impermanent()
+					//.setDatabaseRootDirectory(null)
+					.build();
+			db = dbService.database(GraphDatabaseSettings.DEFAULT_DATABASE_NAME);
+		}else {
+    		dbService = new DatabaseManagementServiceBuilder(Path.of(db_location + "/"))
+					.loadPropertiesFromFile( Path.of( db_location + "/conf/neo4j.conf" ) )
+					.build();
 
     		File config = new File(db_location + "/conf/neo4j.conf");
     		if (config.exists())
-    			db = dbService.database(config.toString());
+    			db = dbService.database(GraphDatabaseSettings.DEFAULT_DATABASE_NAME);
     		else
     			db = dbService.database("stemma");
     	}
@@ -74,7 +91,7 @@ public class GraphDatabaseServiceProvider {
         api.getDependencyResolver()
                 .resolveDependency(GlobalProcedures.class, SelectionStrategy.SINGLE)
 //                .registerProcedure(UnionGraphIntersectFactory.class, true);
-                .registerProcedure(WccStreamProc.class, true);
+                .registerProcedure(WccStreamProc.class);
     }
     
     public static void shutdown() {

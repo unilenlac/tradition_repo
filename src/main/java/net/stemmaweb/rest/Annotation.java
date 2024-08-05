@@ -92,7 +92,7 @@ public class Annotation {
         Node tradNode = VariantGraphService.getTraditionNode(tradId, db);
         try (Transaction tx = db.beginTx()) {
             // Find the relevant annotation label
-            Optional<Node> al = DatabaseService.getRelated(tradNode, ERelations.HAS_ANNOTATION_TYPE)
+            Optional<Node> al = DatabaseService.getRelated(tradNode, ERelations.HAS_ANNOTATION_TYPE, tx)
                     .stream().filter(x -> x.getProperty("name").equals(newAnno.getLabel())).findFirst();
             if (al.isEmpty())
                 return Response.status(Response.Status.BAD_REQUEST)

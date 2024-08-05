@@ -102,7 +102,7 @@ public class RelationTypeModel implements Comparable<RelationTypeModel> {
                 this.setIs_generalizable((Boolean) n.getProperty("is_generalizable"));
             if (n.hasProperty("use_regular"))
                 this.setUse_regular((Boolean) n.getProperty("use_regular"));
-            tx.close();
+            tx.commit();
         }
     }
 

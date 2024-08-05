@@ -267,7 +267,7 @@ public class Section {
         HashSet<Node> witnessList = new HashSet<>();
         Node traditionNode = VariantGraphService.getTraditionNode(tradId, db);
         Node sectionStart = VariantGraphService.getStartNode(sectId, db);
-        ArrayList<Node> traditionWitnesses = DatabaseService.getRelated(traditionNode, ERelations.HAS_WITNESS);
+        ArrayList<Node> traditionWitnesses = DatabaseService.getRelated(traditionNode, ERelations.HAS_WITNESS, null);
         try (Transaction tx = db.beginTx()) {
             for (Relationship relationship : sectionStart.getRelationships(ERelations.SEQUENCE)) {
                 for (String witClass : relationship.getPropertyKeys()) {

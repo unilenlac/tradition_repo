@@ -119,8 +119,8 @@ public class TabularParser {
         try (Transaction tx = db.beginTx()) {
             // Make the start node
             Node startNode = Util.createStartNode(parentNode);
-            Node endNode = Util.createEndNode(parentNode);
-            endNode.setProperty("rank", (long) tableData.size());
+            Node endNode = Util.createEndNode(parentNode, (long) tableData.size());
+            // endNode.setProperty("rank", (long) tableData.size());
 
             // Make the COLLATED relation type
             RelationTypeModel rtm = new RelationTypeModel();
@@ -141,7 +141,7 @@ public class TabularParser {
                 // See if it is a layered witness, of the form XX (YY)
                 String[] sigilParts = sigil.split("\\s+\\(");  // now we have ["XX", "YY)"]
                 if (sigilParts.length == 1) // it is not a layered witness
-                    Util.findOrCreateExtant(traditionNode, sigil);
+                    Util.findOrCreateExtant(traditionNode, sigil, tx);
                 else if (sigilParts.length == 2) // it is a layered witness; store a ref to its base
                     layerWitnesses.put(sigil, sigilParts);
                 else   // what is this i don't even

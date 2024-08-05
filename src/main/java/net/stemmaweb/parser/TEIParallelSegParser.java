@@ -96,7 +96,7 @@ public class TEIParallelSegParser {
 
                             case "text":
                                 // End of the text; add the end node.
-                                endNode = Util.createEndNode(parentNode);
+                                endNode = Util.createEndNode(parentNode, 0L);
                                 // endNode.setProperty("rank", 0L);
                                 Relationship endLink = documentPrior.createRelationshipTo(endNode, ERelations.SEQUENCE);
                                 setAllWitnesses(endLink);
@@ -118,7 +118,7 @@ public class TEIParallelSegParser {
                             case "witness":
                                 if(inHeader) {
                                     String sigil = reader.getAttributeValue(reader.getNamespaceURI("xml"), "id");
-                                    Util.findOrCreateExtant(traditionNode, sigil);
+                                    Util.findOrCreateExtant(traditionNode, sigil, tx);
                                     // All witnesses start active by default; if we encounter a witStart
                                     // we will start to use an explicit app siglorum.
                                     activeWitnesses.put(sigil, true);

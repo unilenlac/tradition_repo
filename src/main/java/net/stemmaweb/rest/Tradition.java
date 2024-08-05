@@ -295,13 +295,13 @@ public class Tradition {
                 try (Transaction tx = db.beginTx()) {
                     Node lastSection = tx.getNodeByElementId(ls.getId());
                     lastSection.createRelationshipTo(sectionNode, ERelations.NEXT);
-                    tx.close();
+                    tx.commit();
                 } catch (Exception e) {
                     e.printStackTrace();
                     return Response.serverError().build();
                 }
             }
-            return Response.status(Status.CREATED).entity(jsonresp("sectionId", internResponse.getLong("parentId"))).build();
+            return Response.status(Status.CREATED).entity(jsonresp("sectionId", (String) internResponse.get("parentId"))).build();
         }
     }
 
@@ -496,7 +496,7 @@ public class Tradition {
 
         ArrayList<WitnessModel> witnessList = new ArrayList<>();
         try (Transaction tx = db.beginTx()) {
-            DatabaseService.getRelated(traditionNode, ERelations.HAS_WITNESS)
+            DatabaseService.getRelated(traditionNode, ERelations.HAS_WITNESS, tx)
                     .forEach(r -> witnessList.add(new WitnessModel(r)));
             tx.close();
         } catch (Exception e) {
@@ -527,7 +527,7 @@ public class Tradition {
         // find all stemmata associated with this tradition
         ArrayList<StemmaModel> stemmata = new ArrayList<>();
         try (Transaction tx = db.beginTx()) {
-            DatabaseService.getRelated(traditionNode, ERelations.HAS_STEMMA)
+            DatabaseService.getRelated(traditionNode, ERelations.HAS_STEMMA, tx)
                     .forEach(x -> stemmata.add(new StemmaModel(x)));
             tx.close();
         } catch (Exception e) {
@@ -723,7 +723,7 @@ public class Tradition {
             return Response.status(Status.NOT_FOUND).entity(jsonerror("No such tradition found")).build();
         List<AnnotationModel> deleted = new ArrayList<>();
         try (Transaction tx = db.beginTx()) {
-            for (Node a : DatabaseService.getRelated(traditionNode, ERelations.HAS_ANNOTATION)) {
+            for (Node a : DatabaseService.getRelated(traditionNode, ERelations.HAS_ANNOTATION, tx)) {
                 boolean isPrimary = a.getProperty("primary", false).equals(true);
                 if (!a.hasRelationship(Direction.OUTGOING) && !isPrimary) {
                     deleted.add(new AnnotationModel(a));

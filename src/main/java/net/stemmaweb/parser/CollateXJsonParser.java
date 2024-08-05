@@ -127,7 +127,7 @@ public class CollateXJsonParser {
             for (String witString : collationWitnesses) {
                 List<String> wit = parseWitnessSigil(witString);
                 String sigil = wit.get(0);
-                Util.findOrCreateExtant(traditionNode, sigil);
+                Util.findOrCreateExtant(traditionNode, sigil, tx);
             }
 
             // Create the start node for the section
@@ -152,30 +152,40 @@ public class CollateXJsonParser {
                     }
                     Node thisReading;
                     if (createdReadings.containsKey(lookupKey)) {
-                        thisReading = createdReadings.get(lookupKey);
-                        thisReading.setProperty("extra",
-                                expandExtraField(thisReading.getProperty("extra").toString(),
-                                        witParts, rm.getExtra()));
-                    } else {
-                        thisReading = tx.createNode(Nodes.READING);
-                        thisReading.setProperty("text", rm.getText());
-                        thisReading.setProperty("normal_form", rm.getNormal_form());
-                        if (rm.getDisplay() != null)
-                            thisReading.setProperty("display", rm.getDisplay());
-                        thisReading.setProperty("join_prior", rm.getJoin_prior());
-                        thisReading.setProperty("join_next", rm.getJoin_next());
-                        if (rm.getAnnotation() != null)
-                            thisReading.setProperty("annotation", rm.getAnnotation());
-                        if (rm.getExtra() != null) {
-                            // Wrap the reading's "extra" value in a hash value keyed on the witness.
-                            JSONObject thisExtra = new JSONObject();
-                            thisExtra.put(thisWitness, new JSONObject(rm.getExtra()));
-                            thisReading.setProperty("extra", thisExtra.toString());
+                        try(Transaction subTx = db.beginTx()){
+                            Node thisReadingTmp = createdReadings.get(lookupKey);
+                            thisReading = subTx.getNodeByElementId(thisReadingTmp.getElementId());
+                            thisReading.setProperty("extra",
+                                    expandExtraField(thisReading.getProperty("extra").toString(),
+                                            witParts, rm.getExtra()));
+                            subTx.commit();
                         }
-                        thisReading.setProperty("rank", rank);
-                        thisReading.setProperty("section_id", parentNode.getElementId());
+                    } else {
+                        try(Transaction subTx = db.beginTx()){
+
+                            thisReading = subTx.createNode(Nodes.READING);
+                            thisReading.setProperty("text", rm.getText());
+                            thisReading.setProperty("normal_form", rm.getNormal_form());
+                            if (rm.getDisplay() != null)
+                                thisReading.setProperty("display", rm.getDisplay());
+                            thisReading.setProperty("join_prior", rm.getJoin_prior());
+                            thisReading.setProperty("join_next", rm.getJoin_next());
+                            if (rm.getAnnotation() != null)
+                                thisReading.setProperty("annotation", rm.getAnnotation());
+                            if (rm.getExtra() != null) {
+                                // Wrap the reading's "extra" value in a hash value keyed on the witness.
+                                JSONObject thisExtra = new JSONObject();
+                                thisExtra.put(thisWitness, new JSONObject(rm.getExtra()));
+                                thisReading.setProperty("extra", thisExtra.toString());
+                            }
+                            thisReading.setProperty("rank", rank);
+                            thisReading.setProperty("section_id", parentNode.getElementId());
+                            subTx.commit();
+                        }
+
                         createdReadings.put(lookupKey, thisReading);
                         distinct++;
+
                     }
                     Node lastReading = lastWitnessReading.get(thisWitness);
                     ReadingService.addWitnessLink(lastReading, thisReading, witParts.get(0), witParts.get(1));
@@ -186,18 +196,25 @@ public class CollateXJsonParser {
                     rank++;
                     // Set commonality attribute on all readings created
                     boolean common = distinct == 1;
-                    createdReadings.values().forEach(x -> x.setProperty("is_common", common));
+                    try (Transaction subTx = db.beginTx()){
+
+                        createdReadings.values().forEach(x -> {
+                            Node tmp = subTx.getNodeByElementId(x.getElementId());
+                            tmp.setProperty("is_common", common);
+                        });
+                        subTx.commit();
+                    }
                 }
             }
 
-            Node endNode = Util.createEndNode(parentNode);
-            endNode.setProperty("rank", rank);
+            Node endNode = Util.createEndNode(parentNode, rank);
+
             for (String witString : collationWitnesses) {
                 List<String> witParts = parseWitnessSigil(witString);
                 Node lastReading = lastWitnessReading.get(witString);
                 ReadingService.addWitnessLink(lastReading, endNode, witParts.get(0), witParts.get(1));
             }
-            tx.close();
+            tx.commit();
             return Response.status(Response.Status.CREATED).entity(jsonresp("parentId", parentNode.getElementId())).build();
         } catch (IllegalArgumentException e) {
             return Response.status(Response.Status.BAD_REQUEST).entity(jsonerror(e.getMessage())).build();

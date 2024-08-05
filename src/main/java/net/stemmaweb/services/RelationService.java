@@ -187,8 +187,16 @@ public class RelationService {
 //            		+ "YIELD nodeId, componentId"
 //            		+ "RETURN gds.util.asNode(nodeId).name AS name, componentId"
 //            		+ "ORDER BY componentId, name");traditionNode.getProperty("name")
+        Result graph = tx.execute("CALL gds.graph.project(" +
+                "'myGraph'," +
+                "'READING'," +
+                "'RELATED'," +
+                "{" +
+                "relationshipProperties: %s" +
+                "}" +
+                ")");
         Node traditionNode = VariantGraphService.getTraditionNode(tradId, tx);
-        Result r = tx.execute(String.format("CALL gds.wcc.stream('%s')", "" + traditionNode.getProperty("name")));
+        Result r = tx.execute(String.format("CALL gds.wcc.stream('%s')", "" + graph));
         while(r.hasNext()) {
             Map<String, Object> row = r.next();
             String setId = row.get("setId").toString();

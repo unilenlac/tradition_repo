@@ -58,7 +58,7 @@ public class VariantGraphService {
     		return false;
     	
     	boolean found = false;
-		for (Node s : DatabaseService.getRelated(traditionNode, ERelations.PART)) {
+		for (Node s : DatabaseService.getRelated(traditionNode, ERelations.PART, tx)) {
 			if (s.getElementId().equals(aSectionId)) {
 				found = true;
 				break;

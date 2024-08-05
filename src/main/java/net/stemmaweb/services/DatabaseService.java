@@ -2,6 +2,7 @@ package net.stemmaweb.services;
 
 import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.stream.Collectors;
 
 import org.neo4j.graphdb.Direction;
 import org.neo4j.graphdb.Entity;
@@ -32,6 +33,7 @@ public class DatabaseService {
             if (result == null) {
                 Node node = tx.createNode(Nodes.ROOT);
                 node.setProperty("name", "Root node");
+                tx.commit();
             }
             tx.close();
         }
@@ -45,21 +47,45 @@ public class DatabaseService {
      * @param relType - the relationship type to follow
      * @return a list of all nodes related to startNode by the given relationship
      */
-    public static ArrayList<Node> getRelated (Node startNode, RelationshipType relType) {
+    public static ArrayList<Node> getRelated (Node startNode, RelationshipType relType, Transaction tx) {
 //        GraphDatabaseService db = startNode.getGraphDatabase();
     	GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
     	ArrayList<Node> result = null;
-        try (Transaction tx = db.beginTx()) {
-        	result = getRelated(startNode, relType, tx);
-        	tx.close();
-        }
+
+        result = getRelatedNode(startNode, relType, tx);
+
         return result;
     }
-    public static ArrayList<Node> getRelated (Node startNode, RelationshipType relType, Transaction tx) {
+
+    public static ArrayList<Node> getRelatedWitness (Node startNode, RelationshipType relType, String sigil, Transaction tx) {
+
+        ArrayList<Node> result = null;
+        result = getRelatedNode(startNode, relType, tx)
+                .stream().filter(x -> x.hasProperty("hypothetical")
+                         && x.getProperty("hypothetical").equals(false)
+                         && x.getProperty("sigil").equals(sigil))
+                 .collect(Collectors.toCollection(ArrayList::new));
+        return result;
+    }
+
+
+    public static ArrayList<Node> getRelatedNode (Node startNode, RelationshipType relType, Transaction tx) {
+
+//        try (Transaction tx = node.getGraphDatabase().beginTx()) {
         ArrayList<Node> result = new ArrayList<>();
-    	Node startNode2 = tx.getNodeByElementId(startNode.getElementId());
-        Iterator<Relationship> allRels = startNode2.getRelationships(relType).iterator();
-        allRels.forEachRemaining(x -> result.add(x.getOtherNode(startNode2)));
+        if (tx == null) {
+            GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+            try (Transaction ntx = db.beginTx()) {
+                Node startNode2 = ntx.getNodeByElementId(startNode.getElementId());
+                Iterator<Relationship> allRels = startNode2.getRelationships(relType).iterator();
+                allRels.forEachRemaining(x -> result.add(x.getOtherNode(startNode2)));
+                ntx.close();
+            };
+        }else{
+            Node startNode2 = tx.getNodeByElementId(startNode.getElementId());
+            Iterator<Relationship> allRels = startNode2.getRelationships(relType).iterator();
+            allRels.forEachRemaining(x -> result.add(x.getOtherNode(startNode2)));
+        };
         return result;
     }
 

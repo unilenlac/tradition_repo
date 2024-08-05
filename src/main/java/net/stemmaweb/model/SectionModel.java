@@ -61,8 +61,9 @@ public class SectionModel {
                     setLanguage(tn.getProperty("language").toString());
             }
             Relationship sectionEnd = node.getSingleRelationship(ERelations.HAS_END, Direction.OUTGOING);
-            setEndRank(Long.valueOf(sectionEnd.getEndNode().getProperty("rank").toString()));
-
+            if(sectionEnd != null){
+                setEndRank(Long.valueOf(sectionEnd.getEndNode().getProperty("rank").toString()));
+            }
             tx.close();
         }
     }

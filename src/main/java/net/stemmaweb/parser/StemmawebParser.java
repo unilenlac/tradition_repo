@@ -95,10 +95,10 @@ public class StemmawebParser {
             while (true) {
                 // START READING THE GRAPHML FILE
                 int event = reader.next(); // gets the next <element>
-
                 switch (event) {
                     case XMLStreamConstants.END_ELEMENT:
-                        switch (reader.getLocalName()) {
+                        String tmp_local_name = reader.getLocalName();
+                        switch (tmp_local_name) {
                             case "graph":
                                 // Clear out the currentGraph string.
                                 currentGraph = null;
@@ -333,7 +333,7 @@ public class StemmawebParser {
             VariantGraphService.calculateCommon(parentNode);
 
             // Create the witness nodes.
-            witnesses.keySet().forEach(x -> Util.findOrCreateExtant(traditionNode, x));
+            witnesses.keySet().forEach(x -> Util.findOrCreateExtant(traditionNode, x, tx));
             // Set colocation information on relation types
             Util.setColocationFlags(traditionNode);
             tx.commit();
