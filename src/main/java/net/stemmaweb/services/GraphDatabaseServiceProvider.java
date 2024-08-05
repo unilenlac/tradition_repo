@@ -49,26 +49,16 @@ public class GraphDatabaseServiceProvider {
     // Connect to a DB at a particular path
     public GraphDatabaseServiceProvider(String db_location) throws KernelException {
 
-//        GraphDatabaseFactory dbFactory = new GraphDatabaseFactory();
-//        GraphDatabaseBuilder dbbuilder = dbFactory.newEmbeddedDatabaseBuilder(new File(db_location + "/data/databases/graph.db"));
-		if (db_location == "test") {
-			dbService = new TestDatabaseManagementServiceBuilder(Path.of("/Users/rdiaz/coderepos/stemmaweb-workdir/data"))
-					.setConfig(GraphDatabaseSettings.plugin_dir, Path.of("/Users/rdiaz/coderepos/datastore/stemmarest/prod/plugins"))
-					//.impermanent()
-					//.setDatabaseRootDirectory(null)
-					.build();
-			db = dbService.database(GraphDatabaseSettings.DEFAULT_DATABASE_NAME);
-		}else {
-    		dbService = new DatabaseManagementServiceBuilder(Path.of(db_location + "/"))
+		File config = new File(db_location + "/conf/neo4j.conf");
+		if (config.exists()){
+			dbService = new DatabaseManagementServiceBuilder(Path.of(db_location + "/"))
 					.loadPropertiesFromFile( Path.of( db_location + "/conf/neo4j.conf" ) )
 					.build();
+		}else{
+			dbService = new DatabaseManagementServiceBuilder(Path.of(db_location + "/")).build();
+		}
+		db = dbService.database(GraphDatabaseSettings.DEFAULT_DATABASE_NAME);
 
-    		File config = new File(db_location + "/conf/neo4j.conf");
-    		if (config.exists())
-    			db = dbService.database(GraphDatabaseSettings.DEFAULT_DATABASE_NAME);
-    		else
-    			db = dbService.database("stemma");
-    	}
     	registerShutdownHook(dbService);
     	registerExtensions();
 

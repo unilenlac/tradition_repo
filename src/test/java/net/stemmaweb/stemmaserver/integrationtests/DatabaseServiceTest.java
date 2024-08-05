@@ -57,7 +57,7 @@ public class DatabaseServiceTest {
     @Test
     public void getRelatedTest() {
         Node tradition = VariantGraphService.getTraditionNode(traditionId, db);
-        ArrayList<Node> witnesses = DatabaseService.getRelated(tradition, ERelations.HAS_WITNESS);
+        ArrayList<Node> witnesses = DatabaseService.getRelated(tradition, ERelations.HAS_WITNESS, null);
         assertEquals(3, witnesses.size());
     }
 

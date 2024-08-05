@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import javax.ws.rs.client.Entity;
+import javax.ws.rs.core.Form;
 import javax.ws.rs.core.GenericType;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
@@ -32,6 +33,7 @@ import org.glassfish.jersey.media.multipart.FormDataMultiPart;
 import org.glassfish.jersey.test.JerseyTest;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.neo4j.exceptions.KernelException;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.Transaction;
@@ -214,20 +216,21 @@ public class Util {
     }
 
     public static Response createTraditionDirectly(String tName, String tDir,
-                                                   String userId, String fName, String fType) {
+                                                   String userId, String fName, String fType) throws KernelException {
         Root appRest = new Root();
         InputStream input = null;
-        FormDataContentDisposition fdcd = null;
+        FormDataMultiPart fdcd = new FormDataMultiPart();
         String empty = "true";
         if (fName != null) {
             empty = null;
             input = getFileOrStringContent(fName);
-            fdcd = new FormDataBodyPart("file", input,
-                    MediaType.APPLICATION_OCTET_STREAM_TYPE).getFormDataContentDisposition();
+            FormDataBodyPart body_part = new FormDataBodyPart("file", input,
+                    MediaType.APPLICATION_OCTET_STREAM_TYPE);
+            fdcd.bodyPart(body_part);
         }
-
         return appRest.importGraphMl(tName, userId, "false", "Default",
                 tDir, empty, fType, input, fdcd);
+
     }
 
     public static Response createTraditionFromFileOrString(JerseyTest jerseyTest, String tName, String tDir,

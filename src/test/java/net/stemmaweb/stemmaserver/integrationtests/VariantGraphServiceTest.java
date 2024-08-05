@@ -16,6 +16,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.neo4j.dbms.api.DatabaseManagementService;
+import org.neo4j.exceptions.KernelException;
 import org.neo4j.graphdb.Direction;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Label;
@@ -103,7 +104,7 @@ public class VariantGraphServiceTest {
     }
 
     @Test
-    public void normalizeGraphTest() {
+    public void normalizeGraphTest() throws KernelException {
         String newTradId = Util.getValueFromJson(
                 Util.createTraditionDirectly("Tradition", "LR", userId,
                         "src/TestFiles/globalrel_test.xml", "stemmaweb"),
@@ -145,7 +146,7 @@ public class VariantGraphServiceTest {
     }
 
     @Test
-    public void calculateMajorityTest() {
+    public void calculateMajorityTest() throws KernelException {
         String newTradId = Util.getValueFromJson(
                 Util.createTraditionDirectly("Tradition", "LR", userId,
                         "src/TestFiles/globalrel_test.xml", "stemmaweb"),
