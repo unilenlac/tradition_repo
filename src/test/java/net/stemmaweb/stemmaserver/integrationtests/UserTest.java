@@ -7,6 +7,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import java.nio.file.Path;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Optional;
@@ -21,11 +22,11 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.neo4j.dbms.api.DatabaseManagementService;
+import org.neo4j.dbms.api.DatabaseManagementServiceBuilder;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.Result;
 import org.neo4j.graphdb.Transaction;
-import org.neo4j.test.TestDatabaseManagementServiceBuilder;
 
 import net.stemmaweb.model.TraditionModel;
 import net.stemmaweb.model.UserModel;
@@ -57,9 +58,7 @@ public class UserTest {
         /*
          * Populate the test database with the root node
          */
-//        db = new GraphDatabaseServiceProvider(new TestGraphDatabaseFactory().newImpermanentDatabase()).getDatabase();
-    	dbbuilder = new TestDatabaseManagementServiceBuilder().build();
-    	dbbuilder.createDatabase("stemmatest");
+        dbbuilder = new DatabaseManagementServiceBuilder(Path.of("")).build();    	dbbuilder.createDatabase("stemmatest");
     	db = dbbuilder.database("stemmatest");
         DatabaseService.createRootNode(db);
 

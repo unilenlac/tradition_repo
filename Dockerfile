@@ -10,6 +10,7 @@ RUN apt-get update \
 
 # Make the data directories
 RUN mkdir -p /var/lib/stemmarest/conf \
+    && mkdir -p /var/lib/stemmarest/plugins \
     && chmod -R g+w /var/lib/stemmarest \
     && chmod -R +2000 /var/lib/stemmarest
 

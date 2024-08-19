@@ -38,12 +38,11 @@ public class WitnessModel implements Comparable<WitnessModel> {
      */
     public WitnessModel(Node node) {
         GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
-//        try (Transaction tx = node.getGraphDatabase().beginTx()) {
         try (Transaction tx = db.beginTx()) {
-            id = node.getElementId();
-            if (node.hasProperty("sigil"))
-                sigil = (String) node.getProperty("sigil");
-            tx.close();
+            Node requested_node = tx.getNodeByElementId(node.getElementId());
+            id = requested_node.getElementId();
+            if (requested_node.hasProperty("sigil"))
+                sigil = requested_node.getProperty("sigil").toString();
         }
     }
 

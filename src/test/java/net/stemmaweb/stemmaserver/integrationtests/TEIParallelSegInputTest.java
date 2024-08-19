@@ -4,6 +4,7 @@ package net.stemmaweb.stemmaserver.integrationtests;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -14,8 +15,8 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.neo4j.dbms.api.DatabaseManagementService;
+import org.neo4j.dbms.api.DatabaseManagementServiceBuilder;
 import org.neo4j.graphdb.GraphDatabaseService;
-import org.neo4j.test.TestDatabaseManagementServiceBuilder;
 
 import net.stemmaweb.model.ReadingModel;
 import net.stemmaweb.model.TextSequenceModel;
@@ -38,9 +39,7 @@ public class TEIParallelSegInputTest {
 
     @Before
     public void setUp() throws Exception {
-//        db = new GraphDatabaseServiceProvider(new TestGraphDatabaseFactory().newImpermanentDatabase()).getDatabase();
-    	dbbuilder = new TestDatabaseManagementServiceBuilder().build();
-    	dbbuilder.createDatabase("stemmatest");
+        dbbuilder = new DatabaseManagementServiceBuilder(Path.of("")).build();    	dbbuilder.createDatabase("stemmatest");
     	db = dbbuilder.database("stemmatest");
         Util.setupTestDB(db, "1");
 

@@ -112,7 +112,7 @@ public class Relation {
                     Relationship thisRelation = tx.getRelationshipByElementId(thisRelId);
 
                     // Get all the readings that belong to our tradition or section
-                    Iterable<Node> tradReadings = VariantGraphService.returnEntireTradition(startingPoint).nodes();
+                    Iterable<Node> tradReadings = VariantGraphService.returnEntireTradition(startingPoint, tx).nodes();
                     // Pick out the ones that share the readingA text
                     Function<Node, Object> nodefilter = (n) -> use_normal && n.hasProperty("normal_form")
                             ? n.getProperty("normal_form") : (n.hasProperty("text") ? n.getProperty("text"): "");
@@ -265,7 +265,7 @@ public class Relation {
             readingsAndRelationModel = createSingleRelation(readingA, readingB, relationModel, rmodel);
             // We can also write any transitive relationships.
             propagateRelation(readingsAndRelationModel, rmodel);
-            tx.close();
+            tx.commit();
         } catch (Exception e) {
             e.printStackTrace();
             return Response.serverError().entity(jsonerror(e.getMessage())).build();
@@ -452,7 +452,7 @@ public class Relation {
                 case SCOPE_SECTION:
                 case SCOPE_TRADITION:
                     Traverser toCheck = relationModel.getScope().equals(SCOPE_SECTION)
-                            ? VariantGraphService.returnTraditionSection(readingA.getProperty("section_id").toString(), db)
+                            ? VariantGraphService.returnTraditionSection(readingA.getProperty("section_id").toString(), tx)
                             : VariantGraphService.returnEntireTradition(tradId, db);
 
                     for (Relationship rel : toCheck.relationships()) {
@@ -475,7 +475,7 @@ public class Relation {
                 default:
                     return Response.status(Status.BAD_REQUEST).entity(jsonerror("Undefined Scope")).build();
             }
-            tx.close();
+            tx.commit();
         }
         return Response.status(Response.Status.OK).entity(deleted).build();
     }
@@ -505,7 +505,7 @@ public class Relation {
             } else {
                 return Response.status(Status.FORBIDDEN).entity(jsonerror("This is not a relation link")).build();
             }
-            tx.close();
+            tx.commit();
         } catch (Exception e) {
             return Response.serverError().entity(jsonerror(e.getMessage())).build();
         }

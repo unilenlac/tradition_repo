@@ -5,6 +5,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -19,6 +20,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.neo4j.dbms.api.DatabaseManagementService;
+import org.neo4j.dbms.api.DatabaseManagementServiceBuilder;
 import org.neo4j.graphdb.Direction;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Node;
@@ -27,7 +29,6 @@ import org.neo4j.graphdb.Result;
 import org.neo4j.graphdb.Transaction;
 import org.neo4j.graphdb.traversal.Evaluators;
 import org.neo4j.graphdb.traversal.Uniqueness;
-import org.neo4j.test.TestDatabaseManagementServiceBuilder;
 
 import net.stemmaweb.exporter.StemmawebExporter;
 import net.stemmaweb.model.ReadingBoundaryModel;
@@ -58,9 +59,7 @@ public class StemmawebInputOutputTest {
     @Before
     public void setUp() throws Exception {
 
-//        db = new GraphDatabaseServiceProvider(new TestGraphDatabaseFactory().newImpermanentDatabase()).getDatabase();
-    	dbbuilder = new TestDatabaseManagementServiceBuilder().build();
-    	dbbuilder.createDatabase("stemmatest");
+        dbbuilder = new DatabaseManagementServiceBuilder(Path.of("")).build();    	dbbuilder.createDatabase("stemmatest");
     	db = dbbuilder.database("stemmatest");
         Util.setupTestDB(db, "1");
 

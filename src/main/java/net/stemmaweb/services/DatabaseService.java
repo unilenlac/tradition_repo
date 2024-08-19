@@ -98,14 +98,9 @@ public class DatabaseService {
      */
     public static ArrayList<Relationship> getRelationshipTo(Node startNode, Node endNode, RelationshipType rtype) {
         ArrayList<Relationship> found = new ArrayList<>();
-//        GraphDatabaseService db = startNode.getGraphDatabase();
-        GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
-        try (Transaction tx = db.beginTx()) {
-            for (Relationship r : startNode.getRelationships(Direction.BOTH, rtype))
-                if (r.getOtherNode(startNode).equals(endNode))
-                    found.add(r);
-            tx.close();
-        }
+        for (Relationship r : startNode.getRelationships(Direction.BOTH, rtype))
+            if (r.getOtherNode(startNode).equals(endNode))
+                found.add(r);
         return found;
     }
 

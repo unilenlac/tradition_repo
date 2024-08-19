@@ -266,16 +266,16 @@ public class Witness {
                 startRank = endRank;
                 endRank = tempRank;
             }
-
-            Node startNode = VariantGraphService.getStartNode(currentSection.getElementId(), db);
+            Node startNode;
             try (Transaction tx = db.beginTx()) {
+                startNode = VariantGraphService.getStartNode(currentSection.getElementId(), tx);
                 final long sr = startRank;
                 final long er = endRank;
                 witnessReadings.addAll(traverseReadings(startNode, layer).stream()
                         .filter(x -> Long.parseLong(x.getProperty("rank").toString()) >= sr
                                 && Long.parseLong(x.getProperty("rank").toString()) <= er)
                         .collect(Collectors.toList()));
-                tx.close();
+                tx.commit();
             } catch (Exception e) {
                 if (e.getMessage().equals("CONFLICT"))
                     return Response.status(Status.CONFLICT).entity(jsonerror("Traversal end node not reached")).build();

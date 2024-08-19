@@ -3,6 +3,7 @@ package net.stemmaweb.stemmaserver.integrationtests;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 
 import javax.ws.rs.core.Response;
@@ -11,9 +12,10 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.neo4j.dbms.api.DatabaseManagementService;
+import org.neo4j.dbms.api.DatabaseManagementServiceBuilder;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Node;
-import org.neo4j.test.TestDatabaseManagementServiceBuilder;
+// import org.neo4j.test.TestDatabaseManagementServiceBuilder;
 
 import net.stemmaweb.rest.ERelations;
 import net.stemmaweb.services.DatabaseService;
@@ -36,7 +38,7 @@ public class DatabaseServiceTest {
     public void setUp() throws Exception {
 
 //      db = new GraphDatabaseServiceProvider(new TestGraphDatabaseFactory().newImpermanentDatabase()).getDatabase();
-    	dbbuilder = new TestDatabaseManagementServiceBuilder().build();
+    	dbbuilder = new DatabaseManagementServiceBuilder(Path.of("")).build();
     	dbbuilder.createDatabase("stemmatest");
     	db = dbbuilder.database("stemmatest");
         userId = "simon";

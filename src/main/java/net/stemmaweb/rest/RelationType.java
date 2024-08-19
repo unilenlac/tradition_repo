@@ -61,10 +61,11 @@ public class RelationType {
     @ReturnType("net.stemmaweb.model.RelationTypeModel")
     public Response getRelationType() {
         RelationTypeModel rtModel = new RelationTypeModel(typeName);
-        Node foundRelType = rtModel.lookup(VariantGraphService.getTraditionNode(traditionId, db));
+        Node foundRelType = rtModel.lookup(VariantGraphService.getTraditionNode(traditionId, db), db.beginTx());
         if (foundRelType == null) {
             return Response.noContent().build();
         }
+
         return Response.ok(new RelationTypeModel(foundRelType)).build();
     }
 
@@ -86,7 +87,7 @@ public class RelationType {
     public Response create(RelationTypeModel rtModel) {
         // Find any existing relation type on this tradition
         Node traditionNode = VariantGraphService.getTraditionNode(traditionId, db);
-        Node extantRelType = rtModel.lookup(traditionNode);
+        Node extantRelType = rtModel.lookup(traditionNode, db.beginTx());
 
         // Were we asked for the secret Stemmaweb defaults?
         if (rtModel.getDefaultsettings() != null) {
@@ -125,7 +126,7 @@ public class RelationType {
     public Response delete() {
         RelationTypeModel rtModel = new RelationTypeModel(typeName);
         Node tradition = VariantGraphService.getTraditionNode(traditionId, db);
-        Node foundRelType = rtModel.lookup(tradition);
+        Node foundRelType = rtModel.lookup(tradition, db.beginTx());
         if (foundRelType == null) {
             return Response.status(Response.Status.NOT_FOUND).build();
         }
@@ -177,7 +178,7 @@ public class RelationType {
         Node tradNode = VariantGraphService.getTraditionNode(traditionId, db);
         RelationTypeModel relType = new RelationTypeModel(typeName);
         // Does this already exist?
-        Node extantRelType = relType.lookup(tradNode);
+        Node extantRelType = relType.lookup(tradNode, db.beginTx());
         if (extantRelType != null)
             return Response.notModified().build();
 

@@ -56,9 +56,19 @@ public class TabularExporter {
         }
     }
 
-    public Response exportAsTEICat(String tradId, List<String> sectionList, String significant, String excludeType1,
-          String excludeNonsense, String combine, String suppressMatching, String baseWitness, List<String> conflate,
-          List<String> excWitnesses, boolean excludeLayers) {
+    public Response exportAsTEICat(
+            String tradId,
+            List<String> sectionList,
+            String significant,
+            String excludeType1,
+            String excludeNonsense,
+            String combine,
+            String suppressMatching,
+            String baseWitness,
+            List<String> conflate,
+            List<String> excWitnesses,
+            boolean excludeLayers
+    ) {
 
         ArrayList<Node> traditionSections;
         try {
@@ -247,7 +257,7 @@ public class TabularExporter {
         ArrayList<AlignmentModel> tables = new ArrayList<>();
         int length = 0;
         for (Node sectionNode : traditionSections) {
-            if (collapseRelated != null) VariantGraphService.normalizeGraph(sectionNode, collapseRelated);
+            if (collapseRelated != null) VariantGraphService.normalizeGraph(sectionNode, collapseRelated, db.beginTx());
             AlignmentModel asJson = new AlignmentModel(sectionNode, excludeLayers);
             if (collapseRelated != null) VariantGraphService.clearNormalization(sectionNode);
             // Save the alignment to our tables list
@@ -299,6 +309,7 @@ public class TabularExporter {
         wholeTradition.setLength(length);
         return wholeTradition;
     }
+
 
     private Response getCriticalApparatus(String tradId, ArrayList<Node> traditionSections, String significant, String excludeType1,
           String excludeNonsense, String combine, String suppressMatching, String baseWitness, List<String> conflate,

@@ -472,7 +472,7 @@ public class ReadingService {
 
         // TEMPORARY: Test that our colocated groups are actually colocated
         Node ourSection = tx.getNodeByElementId(startNode.getProperty("section_id").toString());
-        String tradId = VariantGraphService.getTraditionNode(ourSection).getProperty("id").toString();
+        String tradId = VariantGraphService.getTraditionNode(ourSection, tx).getProperty("id").toString();
         List<Set<Node>> clusters = RelationService.getClusters(tradId, ourSection.getElementId(), tx, true);
         for (Set<Node> cluster : clusters) {
             Long clusterRank = null;
@@ -536,7 +536,7 @@ public class ReadingService {
     	
     	// TEMPORARY: Test that our colocated groups are actually colocated
     	Node ourSection = tx.getNodeByElementId(startNode.getProperty("section_id").toString());
-    	String tradId = VariantGraphService.getTraditionNode(ourSection).getProperty("id").toString();
+    	String tradId = VariantGraphService.getTraditionNode(ourSection, tx).getProperty("id").toString();
     	List<Set<Node>> clusters = RelationService.getClusters(tradId, ourSection.getElementId(), tx, true);
     	for (Set<Node> cluster : clusters) {
     		Long clusterRank = null;
@@ -573,7 +573,8 @@ public class ReadingService {
         // Walk the graph of sequences and colocated relations
         public AlignmentTraverse(Node referenceNode) throws Exception {
             // Get the colocated types for this node's tradition
-            List<RelationTypeModel> rtms = RelationService.ourRelationTypes(referenceNode);
+            GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+            List<RelationTypeModel> rtms = RelationService.ourRelationTypes(referenceNode, db.beginTx());
             for (RelationTypeModel rtm : rtms)
                 if (rtm.getIs_colocation())
                     includeRelationTypes.add(rtm.getName());
@@ -650,9 +651,10 @@ public class ReadingService {
         Transaction tx = db.beginTx();
         // Get our list of colocations
         Node sectionNode = tx.getNodeByElementId(firstReading.getProperty("section_id").toString());
-        Node traditionNode = VariantGraphService.getTraditionNode(sectionNode);
+        Node traditionNode = VariantGraphService.getTraditionNode(sectionNode, tx);
         Map<String, Set<Node>> colocatedLookup = buildColocationLookup(
-                traditionNode.getProperty("id").toString(), sectionNode.getElementId(), tx);
+                traditionNode.getProperty("id").toString(), sectionNode.getElementId(), tx
+        ); // break
 
         // Get the relevant cluster sets
         Set<Node> firstCluster = colocatedLookup.containsKey(firstReading.getElementId()) ?

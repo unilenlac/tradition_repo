@@ -6,16 +6,20 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.neo4j.common.DependencyResolver.SelectionStrategy;
+// import org.neo4j.common.DependencyResolver.SelectionStrategy;
+import org.neo4j.common.DependencyResolver;
 import org.neo4j.configuration.GraphDatabaseSettings;
 import org.neo4j.dbms.api.DatabaseManagementService;
 import org.neo4j.dbms.api.DatabaseManagementServiceBuilder;
 import org.neo4j.exceptions.KernelException;
-import org.neo4j.gds.wcc.WccStreamProc;
+//import org.neo4j.gds.wcc.WccStreamProc;
+//import org.neo4j.gds.metrics.MetricsFacade;
+//import org.neo4j.gds.ml.pipeline.node.regression.configure.NodeRegressionPipelineConfigureSplitProc;
 import org.neo4j.graphdb.GraphDatabaseService;
-import org.neo4j.kernel.api.procedure.GlobalProcedures;
+//import org.neo4j.kernel.api.procedure.GlobalProcedures;
 import org.neo4j.kernel.internal.GraphDatabaseAPI;
-import org.neo4j.test.TestDatabaseManagementServiceBuilder;
+//import org.neo4j.test.TestDatabaseManagementServiceBuilder;
+//import scala.reflect.runtime.Settings;
 
 /**
  * Creates a global DatabaseService provider, which holds a reference to the
@@ -36,8 +40,8 @@ public class GraphDatabaseServiceProvider {
 		if (test){
 			List<String> unrestricted_list = new ArrayList<>();
 			unrestricted_list.add("gds.*");
-			dbService = new TestDatabaseManagementServiceBuilder(Path.of("/Users/rdiaz/coderepos/stemmaweb-workdir/data"))
-					.setConfig(GraphDatabaseSettings.plugin_dir, Path.of("/Users/rdiaz/coderepos/datastore/stemmarest/prod/plugins"))
+			dbService = new DatabaseManagementServiceBuilder(Path.of("/somewhere/on/disk"))
+					.setConfig(GraphDatabaseSettings.plugin_dir, Path.of("/location/of/plugins"))
 					.setConfig(GraphDatabaseSettings.procedure_unrestricted, unrestricted_list)
 					//.impermanent()
 					//.setDatabaseRootDirectory(null)
@@ -51,6 +55,8 @@ public class GraphDatabaseServiceProvider {
 
 		File config = new File(db_location + "/conf/neo4j.conf");
 		if (config.exists()){
+			List<String> unrestricted_list = new ArrayList<>();
+			unrestricted_list.add("gds.*");
 			dbService = new DatabaseManagementServiceBuilder(Path.of(db_location + "/"))
 					.loadPropertiesFromFile( Path.of( db_location + "/conf/neo4j.conf" ) )
 					.build();
@@ -78,10 +84,13 @@ public class GraphDatabaseServiceProvider {
     private static void registerExtensions() throws KernelException {
         GraphDatabaseAPI api = (GraphDatabaseAPI) db;
         // See if our procedure is already registered
-        api.getDependencyResolver()
-                .resolveDependency(GlobalProcedures.class, SelectionStrategy.SINGLE)
-//                .registerProcedure(UnionGraphIntersectFactory.class, true);
-                .registerProcedure(WccStreamProc.class);
+        // api.getDependencyResolver()
+		// 		.resolveDependency(NodeRegressionPipelineConfigureSplitProc.class).metricsFacade.projectionMetrics();
+		// api.getDependencyResolver()
+		// 		.resolveDependency(MetricsFacade.class).algorithmMetrics();
+                //.resolveDependency(GlobalProcedures.class, SelectionStrategy.SINGLE);
+				//.registerProcedure(UnionGraphIntersectFactory.class, true);
+                //.registerProcedure(WccStreamProc.class);
     }
     
     public static void shutdown() {

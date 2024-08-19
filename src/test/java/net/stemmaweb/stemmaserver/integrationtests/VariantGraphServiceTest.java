@@ -5,7 +5,9 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -16,13 +18,13 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.neo4j.dbms.api.DatabaseManagementService;
+import org.neo4j.dbms.api.DatabaseManagementServiceBuilder;
 import org.neo4j.exceptions.KernelException;
 import org.neo4j.graphdb.Direction;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Label;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.Transaction;
-import org.neo4j.test.TestDatabaseManagementServiceBuilder;
 
 import net.stemmaweb.model.RelationModel;
 import net.stemmaweb.rest.ERelations;
@@ -40,9 +42,7 @@ public class VariantGraphServiceTest {
     @Before
     public void setUp() throws Exception {
 
-//        db = new GraphDatabaseServiceProvider(new TestGraphDatabaseFactory().newImpermanentDatabase()).getDatabase();
-    	dbbuilder = new TestDatabaseManagementServiceBuilder().build();
-    	dbbuilder.createDatabase("stemmatest");
+        dbbuilder = new DatabaseManagementServiceBuilder(Path.of("")).build();    	dbbuilder.createDatabase("stemmatest");
     	db = dbbuilder.database("stemmatest");
         userId = "simon";
         Util.setupTestDB(db, userId);
@@ -100,7 +100,7 @@ public class VariantGraphServiceTest {
         // Now by section node
         ArrayList<Node> sectionNodes = VariantGraphService.getSectionNodes(traditionId, db);
         assertEquals(1, sectionNodes.size());
-        assertEquals(foundTradition, VariantGraphService.getTraditionNode(sectionNodes.get(0)));
+        assertEquals(foundTradition, VariantGraphService.getTraditionNode(sectionNodes.get(0), db.beginTx()));
     }
 
     @Test
@@ -112,7 +112,7 @@ public class VariantGraphServiceTest {
         );
         ArrayList<Node> sections = VariantGraphService.getSectionNodes(newTradId, db);
         try (Transaction tx = db.beginTx()) {
-            HashMap<Node,Node> representatives = VariantGraphService.normalizeGraph(sections.get(0), Arrays.asList("collated"));
+            HashMap<Node,Node> representatives = VariantGraphService.normalizeGraph(sections.get(0), List.of("collated"), tx);
             for (Node n : representatives.keySet()) {
                 // If it is represented by itself, it should have an NSEQUENCE both in and out; if not, not.
                 if (!n.hasProperty("is_end"))
@@ -155,7 +155,7 @@ public class VariantGraphServiceTest {
         ArrayList<Node> sections = VariantGraphService.getSectionNodes(newTradId, db);
         String expectedMajority = "sanoi herra Heinärickus Erjkillen weljellensä Läckämme Hämehen maallen";
         try (Transaction tx = db.beginTx()) {
-            List<Node> majorityReadings = VariantGraphService.calculateMajorityText(sections.get(0));
+            List<Node> majorityReadings = VariantGraphService.calculateMajorityText(sections.get(0), tx);
             List<String> words = majorityReadings.stream()
                     .filter(x -> !x.hasProperty("is_start") && !x.hasProperty("is_end"))
                     .map(x -> x.getProperty("text").toString())
@@ -184,8 +184,8 @@ public class VariantGraphServiceTest {
             Relation relRest = new Relation(newTradId);
             Response r = relRest.create(rm);
             assertEquals(Response.Status.CREATED.getStatusCode(), r.getStatus());
-            VariantGraphService.normalizeGraph(sections.get(0), Arrays.asList("collated")); // TODO not sure this has an effect??
-            List<Node> majorityReadings = VariantGraphService.calculateMajorityText(sections.get(0));
+            VariantGraphService.normalizeGraph(sections.get(0), List.of("collated"), tx); // TODO not sure this has an effect??
+            List<Node> majorityReadings = VariantGraphService.calculateMajorityText(sections.get(0), tx);
             List<String> words = majorityReadings.stream()
                     .filter(x -> !x.hasProperty("is_start") && !x.hasProperty("is_end"))
                     .map(x -> x.getProperty("text").toString())

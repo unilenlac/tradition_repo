@@ -13,13 +13,7 @@ import java.util.stream.Collectors;
 
 import javax.ws.rs.core.Response;
 
-import org.neo4j.graphdb.Direction;
-import org.neo4j.graphdb.GraphDatabaseService;
-import org.neo4j.graphdb.Node;
-import org.neo4j.graphdb.Path;
-import org.neo4j.graphdb.Relationship;
-import org.neo4j.graphdb.Result;
-import org.neo4j.graphdb.Transaction;
+import org.neo4j.graphdb.*;
 import org.neo4j.graphdb.traversal.Evaluation;
 import org.neo4j.graphdb.traversal.Evaluator;
 
@@ -82,11 +76,10 @@ public class RelationService {
      * @return - a list of RelationTypeModels for the tradition in question
      * @throws Exception - if the tradition node can't be determined from the referenceNode
      */
-    public static List<RelationTypeModel> ourRelationTypes(Node referenceNode) throws Exception {
-//        GraphDatabaseService db = referenceNode.getGraphDatabase();
-    	GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+    public static List<RelationTypeModel> ourRelationTypes(Node referenceNode, Transaction tx) throws Exception {
+
         List<RelationTypeModel> result = new ArrayList<>();
-        try (Transaction tx = db.beginTx()) {
+        try {
         	// Must be under control of the same transaction!
         	referenceNode = tx.getNodeByElementId(referenceNode.getElementId());
             // Find the tradition node
@@ -94,17 +87,20 @@ public class RelationService {
             if (referenceNode.hasLabel(Nodes.TRADITION))
                 traditionNode = referenceNode;
             else if (referenceNode.hasLabel(Nodes.SECTION))
-                traditionNode = VariantGraphService.getTraditionNode(referenceNode);
+                traditionNode = VariantGraphService.getTraditionNode(referenceNode, tx);
             else if (referenceNode.hasLabel(Nodes.READING)) {
                 Node sectionNode = tx.getNodeByElementId(referenceNode.getProperty("section_id").toString());
-                traditionNode = VariantGraphService.getTraditionNode(sectionNode);
+                traditionNode = VariantGraphService.getTraditionNode(sectionNode, tx);
             }
             assert(traditionNode != null);
             // ...and query its relation types.
+            ResourceIterable<Relationship> tmpRel = traditionNode.getRelationships(Direction.OUTGOING, ERelations.HAS_RELATION_TYPE);
             traditionNode.getRelationships(Direction.OUTGOING, ERelations.HAS_RELATION_TYPE).forEach(
-                    x -> result.add(new RelationTypeModel(x.getEndNode()))
+                    x -> {
+                        String tmp = x.getEndNode().getRelationshipTypes().toString();
+                        result.add(new RelationTypeModel(x.getEndNode()));
+                    }
             );
-            tx.close();
         } catch (Exception e) {
             e.printStackTrace();
             throw new Exception("Could not collect relation types", e);
@@ -128,7 +124,7 @@ public class RelationService {
         // Get the tradition node and find the relevant relation types
         HashSet<String> useRelationTypes = new HashSet<>();
         Node traditionNode = VariantGraphService.getTraditionNode(tradId, tx);
-        for (RelationTypeModel rtm : ourRelationTypes(traditionNode))
+        for (RelationTypeModel rtm : ourRelationTypes(traditionNode, tx))
             if (rtm.getIs_colocation() == colocations)
                 useRelationTypes.add(String.format("\"%s\"", rtm.getName()));
 
@@ -142,26 +138,33 @@ public class RelationService {
      * @param tradId - the UUID of the relevant tradition
      * @param sectionId - the ID (as a string) of the relevant section
      * @param tx - the GraphDatabaseService to use
-     * @param thresholdName - the name of a RelationType; all of these relations and ones more closely bound will be clustered.
+     * @param thresholdNameList - the name of a RelationType; all of these relations and ones more closely bound will be clustered.
      * @return - a list of sets, where each set represents a group of closely related readings
      * @throws Exception - if the relation types can't be collected, or if something goes wrong with the algorithm
      */
     static List<Set<Node>> getCloselyRelatedClusters(
-            String tradId, String sectionId, Transaction tx, String thresholdName)
+            String tradId, String sectionId, Transaction tx, List<String> thresholdNameList)
             throws Exception {
         // Is it a no-op?
-        if (thresholdName == null) return new ArrayList<>();
+        if (thresholdNameList == null) return new ArrayList<>();
         // Then we have some work to do.
         HashSet<String> closeRelations = new HashSet<>();
         Node traditionNode = VariantGraphService.getTraditionNode(tradId, tx);
-        List<RelationTypeModel> rtmlist = ourRelationTypes(traditionNode);
-        int bindlevel = 0;
-        Optional<RelationTypeModel> thresholdModel = rtmlist.stream().filter(x -> x.getName().equals(thresholdName)).findFirst();
-        if (thresholdModel.isPresent())
-            bindlevel = thresholdModel.get().getBindlevel();
-        for (RelationTypeModel rtm : rtmlist)
-            if (rtm.getBindlevel() <= bindlevel)
-                closeRelations.add(String.format("\"%s\"", rtm.getName()));
+        List<RelationTypeModel> rtmlist = ourRelationTypes(traditionNode, tx);
+        for (RelationTypeModel thresholdName : rtmlist) {
+            closeRelations.add(thresholdName.getName());
+        }
+
+        for (String thresholdName : thresholdNameList) {
+
+            int bindlevel = 0;
+            Optional<RelationTypeModel> thresholdModel = rtmlist.stream().filter(x -> x.getName().equals(thresholdName)).findFirst();
+            if (thresholdModel.isPresent())
+                bindlevel = thresholdModel.get().getBindlevel();
+            for (RelationTypeModel rtm : rtmlist)
+                if (rtm.getBindlevel() <= bindlevel)
+                    closeRelations.add(String.format("%s", rtm.getName()));
+        }
 
         return collectSpecifiedClusters(tradId, sectionId, tx, closeRelations);
     }
@@ -169,47 +172,52 @@ public class RelationService {
     private static List<Set<Node>> collectSpecifiedClusters(
             String tradId, String sectionId, Transaction tx, Set<String> relatedTypes)
             throws Exception {
-        // Now run the unionFind algorithm on the relevant subset of relation types
+        // Now run the unionFind algo - which is now the wcc algorithm - on the relevant subset of relation types
         List<Set<Node>> result = new ArrayList<>();
-        // Make the arguments
-        String cypherNodes = String.format("MATCH (n:READING {section_id:%s}) RETURN id(n) AS id", sectionId);
-        String cypherRels = String.format("MATCH (n:READING)-[r:RELATED]-(m) WHERE r.type IN [%s] RETURN id(n) AS source, id(m) AS target",
-                String.join(",", relatedTypes));
-        // A struct to store the results
         Map<String, Set<String>> clusters = new HashMap<>();
-        // Stream the results and collect the clusters
-//            Result r = tx.execute(String.format("CALL algo.unionFind.stream('%s', '%s', {graph:'cypher'}) YIELD nodeId, setId", cypherNodes, cypherRels));
-//            HashMap<String, Object> queryParams = new HashMap<String, Object>();
-//            queryParams.put("section_id", sectionId);
-//            Result nodes = tx.execute("MATCH (n:READING) RETURN id(n) AS id", queryParams);
-//            Result r = tx.execute("CALL gds.wcc.stream('cypher')", nodes.next());
-//            Result r = tx.execute("CALL gds.wcc.stream('cypher')"
-//            		+ "YIELD nodeId, componentId"
-//            		+ "RETURN gds.util.asNode(nodeId).name AS name, componentId"
-//            		+ "ORDER BY componentId, name");traditionNode.getProperty("name")
-        Result graph = tx.execute("CALL gds.graph.project(" +
-                "'myGraph'," +
-                "'READING'," +
-                "'RELATED'," +
-                "{" +
-                "relationshipProperties: %s" +
-                "}" +
-                ")");
-        Node traditionNode = VariantGraphService.getTraditionNode(tradId, tx);
-        Result r = tx.execute(String.format("CALL gds.wcc.stream('%s')", "" + graph));
-        while(r.hasNext()) {
-            Map<String, Object> row = r.next();
-            String setId = row.get("setId").toString();
-            Set<String> cl = clusters.getOrDefault(setId, new HashSet<>());
-            String nodeId = row.get("nodeId").toString();
-            cl.add(nodeId);
-            clusters.put(setId, cl);
+        // Make the arguments
+        // A struct to store the results
+        String related_graph = "RETURN gds.graph.exists('related') AS exists";
+        Result g = tx.execute(related_graph);
+        if (g.hasNext() && (Boolean) g.next().get("exists")) {
+            String drop_graph = "CALL gds.graph.drop('related') YIELD graphName";
+            Result drop_res = tx.execute(drop_graph);
+            if(drop_res.hasNext()){
+                // enforce graph drop
+                drop_res.resultAsString();
+            }
+        }
+        relatedTypes = relatedTypes.stream().map(x -> x.replace(x, String.format("'%s'", x))).collect(Collectors.toSet());
+        String rtypes = String.join(", ", relatedTypes);
+        String graph = String.format("MATCH (source:READING)-[r:RELATED]->(target:READING)\n " +
+                "WHERE source.section_id = '%s' AND target.section_id = '%s' AND r.type IN [%s] \n" +
+                "WITH gds.graph.project('related', source, target) AS g\n " +
+                "RETURN g.graphName AS graph, g.nodeCount AS nodes, g.relationshipCount AS rels", sectionId, sectionId, rtypes);
+        Result res = tx.execute(graph);
+        if (res.hasNext() && res.next().get("graph") != null) {
+            // Node traditionNode = VariantGraphService.getTraditionNode(tradId, tx);
+            String stream = "CALL gds.wcc.stream('related')\n " +
+                    "YIELD nodeId, componentId\n " +
+                    "RETURN elementId(gds.util.asNode(nodeId)) as nodeId, componentId as setId\n " +
+                    "ORDER BY setId, nodeId";
+            Result r = tx.execute(stream);
+            while (r.hasNext()) {
+                Map<String, Object> row = r.next();
+                String setId = row.get("setId").toString();
+                Set<String> cl = clusters.getOrDefault(setId, new HashSet<>());
+                String nodeId = row.get("nodeId").toString();
+                cl.add(nodeId);
+                clusters.put(setId, cl);
+            }
         }
 
         // Convert the map of setID -> set of nodeIDs into a list of nodesets
         clusters.keySet().stream().filter(x -> clusters.get(x).size() > 1)
                 .forEach(x -> result.add(clusters.get(x).stream().map(tx::getNodeByElementId).collect(Collectors.toSet())));
 
+        String drop_graph = "CALL gds.graph.drop('related', false) YIELD graphName";
+        Result drop = tx.execute(drop_graph);
+        assert drop.hasNext();
         return result;
     }
 
@@ -260,7 +268,7 @@ public class RelationService {
                 representative = alternatives.stream().sorted(RelationService::byWitnessesDescending)
                         .collect(Collectors.toList()).get(0);
 
-            tx.close();
+            tx.commit();
         }
         return representative;
     }
@@ -278,15 +286,15 @@ public class RelationService {
         private final HashMap<String, RelationTypeModel> ourTypes;
         private final Function<RelationTypeModel, Boolean> criterion;
 
-        public RelatedReadingsTraverser(Node fromReading) throws Exception {
-            this(fromReading, x -> true);
+        public RelatedReadingsTraverser(Node fromReading, Transaction tx) throws Exception {
+            this(fromReading, x -> true, tx);
         }
 
-        public RelatedReadingsTraverser(Node fromReading, Function<RelationTypeModel, Boolean> criterion) throws Exception {
+        public RelatedReadingsTraverser(Node fromReading, Function<RelationTypeModel, Boolean> criterion, Transaction tx) throws Exception {
             this.criterion = criterion;
             // Make a lookup table of relation types
             ourTypes = new HashMap<>();
-            ourRelationTypes(fromReading).forEach(x -> ourTypes.put(x.getName(), x));
+            ourRelationTypes(fromReading, tx).forEach(x -> ourTypes.put(x.getName(), x));
         }
 
         @Override

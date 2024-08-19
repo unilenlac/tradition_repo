@@ -8,13 +8,15 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.neo4j.dbms.api.DatabaseManagementService;
+import org.neo4j.dbms.api.DatabaseManagementServiceBuilder;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.Relationship;
 import org.neo4j.graphdb.Transaction;
-import org.neo4j.test.TestDatabaseManagementServiceBuilder;
 
 import net.stemmaweb.rest.ERelations;
+
+import java.nio.file.Path;
 
 /**
  * 
@@ -30,9 +32,7 @@ public class UnicodeTest {
 
     @Before
     public void prepareTestDatabase() {
-//        graphDb = new TestGraphDatabaseFactory().newImpermanentDatabase();
-    	dbbuilder = new TestDatabaseManagementServiceBuilder().build();
-    	dbbuilder.createDatabase("stemmatest");
+        dbbuilder = new DatabaseManagementServiceBuilder(Path.of("")).build();    	dbbuilder.createDatabase("stemmatest");
     	graphDb = dbbuilder.database("stemmatest");
         // create a new Graph Database
     }

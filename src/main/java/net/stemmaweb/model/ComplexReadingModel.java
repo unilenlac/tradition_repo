@@ -4,6 +4,8 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import net.stemmaweb.rest.ERelations;
 import net.stemmaweb.rest.Nodes;
+import net.stemmaweb.services.DatabaseService;
+import net.stemmaweb.services.GraphDatabaseServiceProvider;
 import org.neo4j.graphdb.*;
 
 import javax.xml.bind.annotation.XmlRootElement;
@@ -99,11 +101,12 @@ public class ComplexReadingModel {
         this.reading = null;
         this.components = null;
         this.note = node.hasProperty("note") ? node.getProperty("note").toString() : null;
-        this.source = node.hasProperty("source") ? node.getProperty("source").toString() : null; 
-        try (Transaction tx = node.getGraphDatabase().beginTx()) {
-            setId(Long.toString(node.getId()));
+        this.source = node.hasProperty("source") ? node.getProperty("source").toString() : null;
+        GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+        try (Transaction tx = db.beginTx()) {
+            setId(node.getElementId());
             List<ComplexReadingModel> compReadings = new ArrayList<>();
-              for (Relationship r: node.getRelationships(ERelations.HAS_HYPERNODE, Direction.INCOMING)) {
+              for (Relationship r: node.getRelationships(ERelations.HAS_HYPERNODE)) {
                   Node otherNode = r.getOtherNode(node);
                   if (otherNode.hasLabel(Nodes.HYPERREADING)) {
                     // if complex node: initialize reccursively with the component node
@@ -114,7 +117,7 @@ public class ComplexReadingModel {
                   }
               }
             this.setComponents(compReadings);
-            tx.success();
+            tx.commit();
         }
     }
 }

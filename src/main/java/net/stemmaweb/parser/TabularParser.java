@@ -114,9 +114,9 @@ public class TabularParser {
     private Response parseTableToCollation(ArrayList<String[]> tableData, Node parentNode) {
         String response;
         Response.Status result = Response.Status.OK;
-        Node traditionNode = VariantGraphService.getTraditionNode(parentNode);
-
+        Node traditionNode;
         try (Transaction tx = db.beginTx()) {
+            traditionNode = VariantGraphService.getTraditionNode(parentNode, tx);
             // Make the start node
             Node startNode = Util.createStartNode(parentNode);
             Node endNode = Util.createEndNode(parentNode, (long) tableData.size());

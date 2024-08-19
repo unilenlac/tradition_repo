@@ -58,12 +58,13 @@ public class TEIParallelSegParser {
         }
 
         // Main XML parser loop
-        Node traditionNode = VariantGraphService.getTraditionNode(parentNode);
         String tradId;
         String parentId;
         Node startNode;
         Node endNode = null;
+        Node traditionNode;
         try (Transaction tx = db.beginTx()) {
+            traditionNode = VariantGraphService.getTraditionNode(parentNode, tx);
             parentId = parentNode.getElementId();
             tradId = traditionNode.getProperty("id").toString();
             // Set up the start node

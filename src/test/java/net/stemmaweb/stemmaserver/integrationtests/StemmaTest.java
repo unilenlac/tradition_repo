@@ -8,6 +8,7 @@ import static org.junit.Assert.fail;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -25,13 +26,13 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.neo4j.dbms.api.DatabaseManagementService;
+import org.neo4j.dbms.api.DatabaseManagementServiceBuilder;
 import org.neo4j.graphdb.Direction;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.Relationship;
 import org.neo4j.graphdb.Result;
 import org.neo4j.graphdb.Transaction;
-import org.neo4j.test.TestDatabaseManagementServiceBuilder;
 
 import net.stemmaweb.model.StemmaModel;
 import net.stemmaweb.model.TraditionModel;
@@ -63,11 +64,7 @@ public class StemmaTest {
     @Before
     public void setUp() throws Exception {
 
-//        db = new GraphDatabaseServiceProvider(new TestGraphDatabaseFactory()
-//                .newImpermanentDatabase())
-//                .getDatabase();
-    	dbbuilder = new TestDatabaseManagementServiceBuilder().build();
-    	dbbuilder.createDatabase("stemmatest");
+        dbbuilder = new DatabaseManagementServiceBuilder(Path.of("")).build();    	dbbuilder.createDatabase("stemmatest");
     	db = dbbuilder.database("stemmatest");
         Util.setupTestDB(db, "1");
 

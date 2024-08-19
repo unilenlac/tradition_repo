@@ -1,6 +1,7 @@
 package net.stemmaweb.stemmaserver.integrationtests;
 
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -16,11 +17,12 @@ import org.glassfish.jersey.media.multipart.FormDataMultiPart;
 import org.glassfish.jersey.test.JerseyTest;
 import org.json.JSONObject;
 import org.neo4j.dbms.api.DatabaseManagementService;
+import org.neo4j.dbms.api.DatabaseManagementServiceBuilder;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Relationship;
 import org.neo4j.graphdb.Transaction;
 import org.neo4j.graphdb.traversal.Traverser;
-import org.neo4j.test.TestDatabaseManagementServiceBuilder;
+// import org.neo4j.test.TestDatabaseManagementServiceBuilder;
 
 import junit.framework.TestCase;
 import net.stemmaweb.model.ReadingModel;
@@ -43,7 +45,7 @@ public class CollateXJsonInputTest extends TestCase {
     public void setUp() throws Exception {
         super.setUp();
 //        db = new GraphDatabaseServiceProvider(new TestGraphDatabaseFactory().newImpermanentDatabase()).getDatabase();
-        dbbuilder = new TestDatabaseManagementServiceBuilder().build();
+        dbbuilder = new DatabaseManagementServiceBuilder(Path.of("")).build();
         dbbuilder.createDatabase("stemmatest");
         db = dbbuilder.database("stemmatest");
         Util.setupTestDB(db, "1");
@@ -90,7 +92,7 @@ public class CollateXJsonInputTest extends TestCase {
         try (Transaction tx = db.beginTx()) {
             List<Relationship> sequences =
 //            		VariantGraphService.returnTraditionSection(sectId, db).relationships().stream()
-            		StreamSupport.stream(VariantGraphService.returnTraditionSection(sectId, db).relationships().spliterator(), false)
+            		StreamSupport.stream(VariantGraphService.returnTraditionSection(sectId, tx).relationships().spliterator(), false)
             		.filter(x -> x.getType().toString().equals("SEQUENCE")).collect(Collectors.toList());
             for (Relationship r : sequences) {
                 if (r.hasProperty("witnesses")) {
@@ -171,8 +173,8 @@ public class CollateXJsonInputTest extends TestCase {
     }
 
     public void testNoRedundantWitnesses() {
-        Traverser sTrav = VariantGraphService.returnTraditionSection(sectId, db);
         try (Transaction tx = db.beginTx()) {
+            Traverser sTrav = VariantGraphService.returnTraditionSection(sectId, tx);
             for (Relationship r : sTrav.relationships())
                 if (r.getType().equals(ERelations.SEQUENCE) && r.hasProperty("witnesses")) {
                     Iterable<String> layers = r.getPropertyKeys();

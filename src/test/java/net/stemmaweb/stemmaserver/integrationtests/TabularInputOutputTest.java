@@ -3,6 +3,7 @@ package net.stemmaweb.stemmaserver.integrationtests;
 import static org.junit.Assert.assertNotEquals;
 
 import java.io.StringReader;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -24,11 +25,11 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.neo4j.dbms.api.DatabaseManagementService;
+import org.neo4j.dbms.api.DatabaseManagementServiceBuilder;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.Result;
 import org.neo4j.graphdb.Transaction;
-import org.neo4j.test.TestDatabaseManagementServiceBuilder;
 
 import com.opencsv.CSVParser;
 import com.opencsv.CSVParserBuilder;
@@ -64,9 +65,7 @@ public class TabularInputOutputTest extends TestCase {
 
     public void setUp() throws Exception {
         super.setUp();
-//        db = new GraphDatabaseServiceProvider(new TestGraphDatabaseFactory().newImpermanentDatabase()).getDatabase();
-    	dbbuilder = new TestDatabaseManagementServiceBuilder().build();
-    	dbbuilder.createDatabase("stemmatest");
+        dbbuilder = new DatabaseManagementServiceBuilder(Path.of("")).build();    	dbbuilder.createDatabase("stemmatest");
     	db = dbbuilder.database("stemmatest");
         Util.setupTestDB(db, "1");
 

@@ -2,6 +2,7 @@ package net.stemmaweb.stemmaserver.integrationtests;
 
 import static org.junit.Assert.assertNotEquals;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -22,13 +23,13 @@ import org.glassfish.jersey.test.JerseyTest;
 import org.junit.After;
 import org.junit.Before;
 import org.neo4j.dbms.api.DatabaseManagementService;
+import org.neo4j.dbms.api.DatabaseManagementServiceBuilder;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.MultipleFoundException;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.Relationship;
 import org.neo4j.graphdb.ResourceIterator;
 import org.neo4j.graphdb.Transaction;
-import org.neo4j.test.TestDatabaseManagementServiceBuilder;
 
 import junit.framework.TestCase;
 import net.stemmaweb.model.AnnotationLabelModel;
@@ -65,9 +66,7 @@ public class SectionTest extends TestCase {
     @Before
     public void setUp() throws Exception {
         super.setUp();
-//        db = new GraphDatabaseServiceProvider(new TestGraphDatabaseFactory().newImpermanentDatabase()).getDatabase();
-    	dbbuilder = new TestDatabaseManagementServiceBuilder().build();
-    	dbbuilder.createDatabase("stemmatest");
+        dbbuilder = new DatabaseManagementServiceBuilder(Path.of("")).build();    	dbbuilder.createDatabase("stemmatest");
     	db = dbbuilder.database("stemmatest");
         Util.setupTestDB(db, "user@example.com");
 
@@ -110,8 +109,8 @@ public class SectionTest extends TestCase {
 
     public void testAddSection() {
         // Get the existing start and end nodes
-        Node startNode = VariantGraphService.getStartNode(tradId, db);
-        Node endNode = VariantGraphService.getEndNode(tradId, db);
+        Node startNode = VariantGraphService.getStartNode(tradId, db.beginTx());
+        Node endNode = VariantGraphService.getEndNode(tradId, db.beginTx());
 
         String newSectId = Util.getValueFromJson(Util.addSectionToTradition(jerseyTest, tradId, "src/TestFiles/lf2.xml",
                 "stemmaweb", "section 2"), "sectionId");
@@ -641,7 +640,7 @@ public class SectionTest extends TestCase {
         // Lemmatize section 3 based on majority reading
         try (Transaction tx = db.beginTx()) {
             Node sect3 = tx.getNodeByElementId(flor3);
-            for (Node r : VariantGraphService.calculateMajorityText(sect3)) {
+            for (Node r : VariantGraphService.calculateMajorityText(sect3, tx)) {
                 if (r.hasProperty("is_start") || r.hasProperty("is_end"))
                     continue;
                 r.setProperty("is_lemma", true);

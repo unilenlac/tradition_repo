@@ -34,6 +34,7 @@ import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 
+import net.stemmaweb.model.*;
 import org.neo4j.graphdb.Direction;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Label;
@@ -50,18 +51,6 @@ import com.qmino.miredot.annotations.ReturnType;
 import net.stemmaweb.exporter.DotExporter;
 import net.stemmaweb.exporter.GraphMLExporter;
 import net.stemmaweb.exporter.TabularExporter;
-import net.stemmaweb.model.AlignmentModel;
-import net.stemmaweb.model.AnnotationModel;
-import net.stemmaweb.model.DisplayOptionModel;
-import net.stemmaweb.model.GraphModel;
-import net.stemmaweb.model.ProposedEmendationModel;
-import net.stemmaweb.model.ReadingModel;
-import net.stemmaweb.model.RelationModel;
-import net.stemmaweb.model.SectionModel;
-import net.stemmaweb.model.SequenceModel;
-import net.stemmaweb.model.TextSequenceModel;
-import net.stemmaweb.model.VariantListModel;
-import net.stemmaweb.model.WitnessModel;
 import net.stemmaweb.services.DatabaseService;
 import net.stemmaweb.services.GraphDatabaseServiceProvider;
 import net.stemmaweb.services.ReadingService;
@@ -197,7 +186,7 @@ public class Section {
                 // Collect all nodes and relationships that belong to this section.
                 Set<Relationship> removableRelations = new HashSet<>();
                 Set<Node> removableNodes = new HashSet<>();
-                VariantGraphService.returnTraditionSection(foundSection).nodes()
+                VariantGraphService.returnTraditionSection(foundSection.getElementId(), tx).nodes()
                         .forEach(x -> {
                             removableNodes.add(x);
                             x.getRelationships(Direction.BOTH).forEach(removableRelations::add);
@@ -266,10 +255,12 @@ public class Section {
     public ArrayList<Node> collectSectionWitnesses() {
         HashSet<Node> witnessList = new HashSet<>();
         Node traditionNode = VariantGraphService.getTraditionNode(tradId, db);
-        Node sectionStart = VariantGraphService.getStartNode(sectId, db);
-        ArrayList<Node> traditionWitnesses = DatabaseService.getRelated(traditionNode, ERelations.HAS_WITNESS, null);
+        Node sectionStart;
         try (Transaction tx = db.beginTx()) {
-            for (Relationship relationship : sectionStart.getRelationships(ERelations.SEQUENCE)) {
+            sectionStart = VariantGraphService.getStartNode(sectId, tx);
+            ArrayList<Node> traditionWitnesses = DatabaseService.getRelated(traditionNode, ERelations.HAS_WITNESS, tx);
+            Node sectionS = tx.getNodeByElementId(sectionStart.getElementId());
+            for (Relationship relationship : sectionS.getRelationships(ERelations.SEQUENCE)) {
                 for (String witClass : relationship.getPropertyKeys()) {
                     for (String sigil : (String[]) relationship.getProperty(witClass)) {
                         for (Node curWitness : traditionWitnesses) {
@@ -289,13 +280,51 @@ public class Section {
         }
         return new ArrayList<>(witnessList);
     }
+    /*
+    Get a list of all complex readings in the given tradition section.
+     *
+     */
+    @GET
+    @Path("/complex")
+    @Produces("application/json; charset=utf-8")
+    @ReturnType("java.util.List<net.stemmaweb.model.ComplexReadingModel>")
+    public Response getAllComplexReadings() {
+        if (!sectionInTradition())
+            return Response.status(Response.Status.NOT_FOUND).entity(jsonerror("Tradition and/or section not found")).build();
 
+        List<ComplexReadingModel> complexReadingModels = sectionComplexReadings();
+        if (complexReadingModels == null)
+            return Response.serverError().entity(jsonerror("No complex readings found in section")).build();
+        return Response.ok(complexReadingModels).build();
+    }
+
+    List<ComplexReadingModel> sectionComplexReadings() {
+        ArrayList<ComplexReadingModel> complexReadingModels = new ArrayList<>();
+        try (Transaction tx = db.beginTx()) {
+            Set<Node> sectionNodes = new HashSet<>();
+            Node startNode = VariantGraphService.getStartNode(sectId, tx);
+            if (startNode == null) throw new Exception("Section " + sectId + " has no start node");
+            Iterable<Node> tmpNodes = VariantGraphService.returnTraditionSection(startNode.getElementId(), tx).nodes();
+            tmpNodes.forEach(x -> {
+                if(x.hasLabel(Label.label("HYPERREADING"))){
+                    sectionNodes.add(x);
+                }
+            });
+                    // .filter(x -> x.hasLabel(Label.label("HYPERREADING"))).collect(Collectors.toSet());
+            sectionNodes.forEach(x -> complexReadingModels.add(new ComplexReadingModel(x)));
+            tx.close();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+        return complexReadingModels;
+    }
     private List<Node> collectSectionAnnotations(boolean collectReferents) {
         return VariantGraphService.collectAnnotationsOnSet(db,
 //                VariantGraphService.returnTraditionSection(sectId, db)
 //                        .nodes().stream().distinct().collect(Collectors.toList()),
 				StreamSupport
-						.stream(VariantGraphService.returnTraditionSection(sectId, db).nodes().spliterator(), false)
+						.stream(VariantGraphService.returnTraditionSection(sectId, db.beginTx()).nodes().spliterator(), false)
 						.collect(Collectors.toList()),
                 collectReferents);
     }
@@ -634,7 +663,7 @@ public class Section {
                                      @DefaultValue("no") @QueryParam("combine_dislocations") String combine,
                                      @DefaultValue("punct") @QueryParam("suppress_matching") String suppressMatching,
                                                          @QueryParam("base_witness") String baseWitness,
-                                                         @QueryParam("normalize") String conflate,
+                                                         @QueryParam("normalize") List<String> conflate,
                                                          @QueryParam("exclude_witness") List<String> excWitnesses) {
         if (!sectionInTradition())
             return Response.status(Response.Status.NOT_FOUND).entity("Tradition and/or section not found").build();
@@ -709,7 +738,7 @@ public class Section {
                 if (priorSection == null) {
                     return Response.status(Response.Status.NOT_FOUND).entity("Section " + priorSectID + "not found").build();
                 }
-                Node pnTradition = VariantGraphService.getTraditionNode(priorSection);
+                Node pnTradition = VariantGraphService.getTraditionNode(priorSection, tx);
                 if (!pnTradition.getProperty("id").equals(tradId))
                     return Response.status(Response.Status.BAD_REQUEST)
                             .entity("Section " + priorSectID + " doesn't belong to this tradition").build();
@@ -790,7 +819,7 @@ public class Section {
 
             // Make a new section node and insert it into the sequence
             Node newSection = tx.createNode(Nodes.SECTION);
-            VariantGraphService.getTraditionNode(thisSection).createRelationshipTo(newSection, ERelations.PART);
+            VariantGraphService.getTraditionNode(thisSection, tx).createRelationshipTo(newSection, ERelations.PART);
             newSection.setProperty("name", thisSection.getProperty("name") + " split");
             newSectionId = newSection.getElementId();
             Section newSectionRest = new Section(tradId, newSection.getElementId());
@@ -881,7 +910,7 @@ public class Section {
 
     @SuppressWarnings("SameParameterValue")
     private List<Relationship> sequencesCrossingRank(Long rank, Boolean leftfencepost) {
-        Node startNode = VariantGraphService.getStartNode(sectId, db);
+        Node startNode = VariantGraphService.getStartNode(sectId, db.beginTx());
 //        return VariantGraphService.returnAllSequences(startNode).relationships().stream()
         return StreamSupport.stream(VariantGraphService.returnAllSequences(startNode).relationships().spliterator(), false)
                 .filter(x -> crossesRank(x, rank, leftfencepost))
@@ -1071,7 +1100,7 @@ public class Section {
             @PathParam("endRank") String endRank,
             @DefaultValue("10") @QueryParam("threshold") long threshold,
             @DefaultValue("") @QueryParam("text") String limitText) {
-        Node startNode = VariantGraphService.getStartNode(sectId, db);
+        Node startNode = VariantGraphService.getStartNode(sectId, db.beginTx());
         if (startNode == null) {
             return Response.status(Response.Status.NOT_FOUND)
                     .entity(jsonerror("Tradition and/or section not found")).build();
@@ -1219,7 +1248,7 @@ public class Section {
 
     // We want access within net.stemmaweb.parser as well
     public ArrayList<List<ReadingModel>> collectIdenticalReadings(long startRank, long endRank) {
-        Node startNode = VariantGraphService.getStartNode(sectId, db);
+        Node startNode = VariantGraphService.getStartNode(sectId, db.beginTx());
         if (startNode == null) return null;
 
         ArrayList<List<ReadingModel>> identicalReadings;
@@ -1481,15 +1510,15 @@ public class Section {
         GraphModel thisSection = new GraphModel();
         try (Transaction tx = db.beginTx()) {
             // Add the readings
-            thisSection.addReadings(StreamSupport.stream(VariantGraphService.returnTraditionSection(sectId, db)
+            thisSection.addReadings(StreamSupport.stream(VariantGraphService.returnTraditionSection(sectId, tx)
                     .nodes().spliterator(), false).filter(x -> x.hasLabel(Nodes.READING))
                     .map(ReadingModel::new).collect(Collectors.toSet()));
             // Add the relations
-            thisSection.addRelations(StreamSupport.stream(VariantGraphService.returnTraditionSection(sectId, db)
+            thisSection.addRelations(StreamSupport.stream(VariantGraphService.returnTraditionSection(sectId, tx)
                     .relationships().spliterator(), false).filter(x -> x.isType(ERelations.RELATED))
                     .map(RelationModel::new).collect(Collectors.toSet()));
             // Add the sequences
-            thisSection.addSequences(StreamSupport.stream(VariantGraphService.returnTraditionSection(sectId, db)
+            thisSection.addSequences(StreamSupport.stream(VariantGraphService.returnTraditionSection(sectId, tx)
                     .relationships().spliterator(), false)
                     .filter(x -> x.isType(ERelations.SEQUENCE) || x.isType(ERelations.LEMMA_TEXT) || x.isType(ERelations.EMENDED))
                     .map(SequenceModel::new).collect(Collectors.toSet()));
@@ -1549,7 +1578,7 @@ public class Section {
                            @DefaultValue("false") @QueryParam("show_normal") Boolean showNormalForms,
                            @DefaultValue("false") @QueryParam("show_rank") Boolean showRank,
                            @DefaultValue("false") @QueryParam("expand_sigla") Boolean displayAllSigla,
-                                                  @QueryParam("normalise") String normalise,
+                                                  @QueryParam("normalise") List<String> normalise,
                                                   @QueryParam("exclude_witness") List<String> excWitnesses) {
         if (VariantGraphService.getTraditionNode(tradId, db) == null)
             return Response.status(Response.Status.NOT_FOUND).entity("No such tradition found").build();
@@ -1575,7 +1604,7 @@ public class Section {
     @Path("/json")
     @Produces("application/json; charset=utf-8")
     @ReturnType(clazz = AlignmentModel.class)
-    public Response getJson(@QueryParam("conflate") String toConflate,
+    public Response getJson(@QueryParam("conflate") List<String> toConflate,
                             @QueryParam("exclude_layers") String excludeLayers) {
         List<String> thisSection = new ArrayList<>(Collections.singletonList(sectId));
         return new TabularExporter(db).exportAsJSON(tradId, toConflate, thisSection, "true".equals(excludeLayers));
@@ -1594,7 +1623,7 @@ public class Section {
     @Path("/csv")
     @Produces("text/plain; charset=utf-8")
     @ReturnType("java.lang.Void")
-    public Response getCsv(@QueryParam("conflate") String toConflate,
+    public Response getCsv(@QueryParam("conflate") List<String> toConflate,
                            @QueryParam("exclude_layers") String excludeLayers) {
         List<String> thisSection = new ArrayList<>(Collections.singletonList(sectId));
         return new TabularExporter(db).exportAsCSV(tradId, ',', toConflate,
@@ -1614,11 +1643,61 @@ public class Section {
     @Path("/tsv")
     @Produces("text/plain; charset=utf-8")
     @ReturnType(clazz = String.class)
-    public Response getTsv(@QueryParam("conflate") String toConflate,
+    public Response getTsv(@QueryParam("conflate") List<String> toConflate,
                            @QueryParam("exclude_layers") String excludeLayers) {
         List<String> thisSection = new ArrayList<>(Collections.singletonList(sectId));
         return new TabularExporter(db).exportAsCSV(tradId, '\t', toConflate,
                 thisSection, "true".equals(excludeLayers));
+    }
+    /**
+     * Returns a TEI Critical Apparatus formatted XML file that contains the base text and the variants.
+     *
+     * @summary Download a TEI Critical Apparatus XML file
+     *
+     * @param significant - Restrict the variant groups to the given significance level or above
+     * @param excludeType1 - If true, exclude type 1 (i.e. singleton) variants from the groupings
+     * @param combine - If true, attempt to combine non-colocated variants (e.g. transpositions) into
+     *                the VariantLocationModel of the corresponding base
+     * @param suppressMatching - A regular expression to match readings that should be disregarded in the
+     *                 variant list. Defaults to punctuation-only readings.
+     * @param excludeNonsense - Whether
+     * @param baseWitness  - Use the path of the given witness as the base path.
+     * @param conflate - The name of relations that should be used for normalization
+     * @param excWitnesses - One or more witnesses that should be excluded from the variant list
+     * @param excludeLayers - If "true", exclude witness layers from the output.
+     * @return the TEI Critical Apparatus  as plaintext
+     */
+    @GET
+    @Path("/teicat")
+    @Produces("application/xml; charset=utf-8")
+    @ReturnType("java.lang.Void")
+    public Response getTeicat(@DefaultValue("no") @QueryParam("significant") String significant,
+                              @DefaultValue("no") @QueryParam("exclude_type1") String excludeType1,
+                              @DefaultValue("no") @QueryParam("exclude_nonsense") String excludeNonsense,
+                              @DefaultValue("no") @QueryParam("combine_dislocations") String combine,
+                              @DefaultValue("punct") @QueryParam("suppress_matching") String suppressMatching,
+                              @QueryParam("base_witness") String baseWitness,
+                              @QueryParam("normalize") List<String> conflate,
+                              @QueryParam("exclude_witness") List<String> excWitnesses,
+                              @QueryParam("exclude_layers") String excludeLayers) {
+
+        if (!sectionInTradition())
+            return Response.status(Response.Status.NOT_FOUND).entity("Tradition and/or section not found").build();
+
+        List<String> thisSection = new ArrayList<>(Collections.singletonList(sectId));
+        return new TabularExporter(db).exportAsTEICat(
+                tradId,
+                thisSection,
+                significant,
+                excludeType1,
+                excludeNonsense,
+                combine,
+                suppressMatching,
+                baseWitness,
+                conflate,
+                excWitnesses,
+                "true".equals(excludeLayers)
+        );
     }
 
     /**
@@ -1635,7 +1714,7 @@ public class Section {
     @Path("/matrix")
     @Produces("text/plain; charset=utf-8")
     @ReturnType(clazz = String.class)
-    public Response getCharMatrix(@QueryParam("conflate") String toConflate,
+    public Response getCharMatrix(@QueryParam("conflate") List<String> toConflate,
                                   @QueryParam("exclude_layers") String excludeLayers,
                                   @DefaultValue("8") @QueryParam("maxVars") int maxVars) {
         List<String> thisSection = new ArrayList<>(Collections.singletonList(sectId));

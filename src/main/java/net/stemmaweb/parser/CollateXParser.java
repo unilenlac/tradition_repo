@@ -60,8 +60,8 @@ public class CollateXParser {
             NamedNodeMap keyAttrs = keyNodes.item(i).getAttributes();
             dataKeys.put(keyAttrs.getNamedItem("id").getNodeValue(), keyAttrs.getNamedItem("attr.name").getNodeValue());
         }
-        Node traditionNode = VariantGraphService.getTraditionNode(parentNode);
         try (Transaction tx = db.beginTx()) {
+            Node traditionNode = VariantGraphService.getTraditionNode(parentNode, tx);
             // Create all the nodes from the graphml nodes
             NodeList readingNodes = rootEl.getElementsByTagName("node");
             HashMap<String,Node> createdReadings = new HashMap<>();

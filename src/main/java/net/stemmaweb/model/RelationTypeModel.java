@@ -83,27 +83,22 @@ public class RelationTypeModel implements Comparable<RelationTypeModel> {
 
     public RelationTypeModel (Node n) {
         this();
-        GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
-//        try (Transaction tx = n.getGraphDatabase().beginTx()) {
-        try (Transaction tx = db.beginTx()) {
-            if (n.hasProperty("name"))
-                this.setName(n.getProperty("name").toString());
-            if (n.hasProperty("description"))
-                this.setDescription(n.getProperty("description").toString());
-            if (n.hasProperty("bindlevel"))
-                this.setBindlevel((int) n.getProperty("bindlevel"));
-            if (n.hasProperty("is_colocation"))
-                this.setIs_colocation((Boolean) n.getProperty("is_colocation"));
-            if (n.hasProperty("is_weak"))
-                this.setIs_weak((Boolean) n.getProperty("is_weak"));
-            if (n.hasProperty("is_transitive"))
-                this.setIs_transitive((Boolean) n.getProperty("is_transitive"));
-            if (n.hasProperty("is_generalizable"))
-                this.setIs_generalizable((Boolean) n.getProperty("is_generalizable"));
-            if (n.hasProperty("use_regular"))
-                this.setUse_regular((Boolean) n.getProperty("use_regular"));
-            tx.commit();
-        }
+        if (n.hasProperty("name"))
+            this.setName(n.getProperty("name").toString());
+        if (n.hasProperty("description"))
+            this.setDescription(n.getProperty("description").toString());
+        if (n.hasProperty("bindlevel"))
+            this.setBindlevel((int) n.getProperty("bindlevel"));
+        if (n.hasProperty("is_colocation"))
+            this.setIs_colocation((Boolean) n.getProperty("is_colocation"));
+        if (n.hasProperty("is_weak"))
+            this.setIs_weak((Boolean) n.getProperty("is_weak"));
+        if (n.hasProperty("is_transitive"))
+            this.setIs_transitive((Boolean) n.getProperty("is_transitive"));
+        if (n.hasProperty("is_generalizable"))
+            this.setIs_generalizable((Boolean) n.getProperty("is_generalizable"));
+        if (n.hasProperty("use_regular"))
+            this.setUse_regular((Boolean) n.getProperty("use_regular"));
     }
 
     public String getName() {
@@ -197,11 +192,11 @@ public class RelationTypeModel implements Comparable<RelationTypeModel> {
      * @param traditionNode - The tradition on which to perform the lookup
      * @return - The correspondingly named RELATION_TYPE node, or null
      */
-    public Node lookup (Node traditionNode) {
+    public Node lookup (Node traditionNode, Transaction tx) {
 //        GraphDatabaseService db = traditionNode.getGraphDatabase();
-        GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+        // GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
         Node relTypeNode = null;
-        try (Transaction tx = db.beginTx()) {
+        // try (Transaction tx = db.beginTx()) {
         	traditionNode = tx.getNodeByElementId(traditionNode.getElementId());
 
         	// First see if there is a type with this name
@@ -211,11 +206,11 @@ public class RelationTypeModel implements Comparable<RelationTypeModel> {
                     break;
                 }
             }
-            tx.close();
-        } catch (Exception e) {
-            e.printStackTrace();
-            return null;
-        }
+            // tx.close();
+        // } catch (Exception e) {
+        //     e.printStackTrace();
+        //     return null;
+        // }
         return relTypeNode;
     }
 
@@ -224,7 +219,7 @@ public class RelationTypeModel implements Comparable<RelationTypeModel> {
         GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
         try (Transaction tx = db.beginTx()) {
         	traditionNode = tx.getNodeByElementId(traditionNode.getElementId());
-        	Node relType = this.lookup(traditionNode);
+        	Node relType = this.lookup(traditionNode, tx);
             if (relType == null) {
                 // Create the node if it doesn't exist
                 relType = tx.createNode(Nodes.RELATION_TYPE);
@@ -243,7 +238,7 @@ public class RelationTypeModel implements Comparable<RelationTypeModel> {
                     else throw new Exception("Another relation type by this name already exists");
                 }
             }
-            tx.close();
+            tx.commit();
             return relType;
         } catch (Exception e) {
             e.printStackTrace();

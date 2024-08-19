@@ -1,5 +1,6 @@
 package net.stemmaweb.stemmaserver.integrationtests;
 
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -14,8 +15,9 @@ import javax.ws.rs.core.Response;
 
 import org.glassfish.jersey.test.JerseyTest;
 import org.neo4j.dbms.api.DatabaseManagementService;
+import org.neo4j.dbms.api.DatabaseManagementServiceBuilder;
 import org.neo4j.graphdb.GraphDatabaseService;
-import org.neo4j.test.TestDatabaseManagementServiceBuilder;
+// import org.neo4j.test.TestDatabaseManagementServiceBuilder;
 
 import junit.framework.TestCase;
 import net.stemmaweb.model.GraphModel;
@@ -36,8 +38,8 @@ public class VariantLocationTest extends TestCase {
 
     public void setUp() throws Exception {
         super.setUp();
-//        db = new GraphDatabaseServiceProvider(new TestGraphDatabaseFactory().newImpermanentDatabase()).getDatabase();
-    	dbbuilder = new TestDatabaseManagementServiceBuilder().build();
+        //db = new GraphDatabaseServiceProvider(new TestGraphDatabaseFactory().newImpermanentDatabase()).getDatabase();
+    	dbbuilder = new DatabaseManagementServiceBuilder(Path.of("")).build();
     	dbbuilder.createDatabase("stemmatest");
     	db = dbbuilder.database("stemmatest");
         Util.setupTestDB(db, "1");
@@ -213,7 +215,7 @@ public class VariantLocationTest extends TestCase {
         assertFalse(vlist.isNonsenseSuppressed());
         assertEquals("^(\\p{IsPunctuation}+)$", vlist.getSuppressedReadingsRegex());
         assertEquals("majority", vlist.getBasisText());
-        assertEquals("spelling", vlist.getConflateOnRelation().get(0));
+        assertEquals("spelling", vlist.getConflateOnRelation());
         assertEquals("no", vlist.getSignificant());
         assertEquals(1, vlist.getDislocationTypes().size());
         assertTrue(vlist.getDislocationTypes().contains("transposition"));

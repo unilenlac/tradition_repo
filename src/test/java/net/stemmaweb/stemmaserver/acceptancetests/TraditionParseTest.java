@@ -4,6 +4,7 @@ package net.stemmaweb.stemmaserver.acceptancetests;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -20,13 +21,13 @@ import org.glassfish.jersey.media.multipart.FormDataBodyPart;
 import org.glassfish.jersey.media.multipart.FormDataMultiPart;
 import org.glassfish.jersey.test.JerseyTest;
 import org.neo4j.dbms.api.DatabaseManagementService;
+import org.neo4j.dbms.api.DatabaseManagementServiceBuilder;
 import org.neo4j.graphdb.Direction;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.Transaction;
 import org.neo4j.graphdb.traversal.Evaluators;
 import org.neo4j.graphdb.traversal.Uniqueness;
-import org.neo4j.test.TestDatabaseManagementServiceBuilder;
 
 import junit.framework.TestCase;
 import net.stemmaweb.model.ReadingModel;
@@ -57,7 +58,7 @@ public class TraditionParseTest extends TestCase {
     public void setUp() throws Exception {
         super.setUp();
 //        db = new GraphDatabaseServiceProvider(new TestGraphDatabaseFactory().newImpermanentDatabase()).getDatabase();
-        dbbuilder = new TestDatabaseManagementServiceBuilder().build();
+        dbbuilder = new DatabaseManagementServiceBuilder(Path.of("")).build();
         dbbuilder.createDatabase("stemmatest");
         db = dbbuilder.database("stemmatest");
 

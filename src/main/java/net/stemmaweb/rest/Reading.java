@@ -231,7 +231,7 @@ public class Reading {
                 reading.removeProperty("is_lemma");
                 changed.add(new ReadingModel(reading));
             } // otherwise it's a no-op
-            tx.close();
+            tx.commit();
         } catch (NotFoundException e) {
             errorMessage = e.getMessage();
             return errorResponse(Status.NOT_FOUND);
@@ -399,10 +399,10 @@ public class Reading {
             RelationService.RelatedReadingsTraverser rt;
             if (filterTypes == null || filterTypes.size() == 0)
                 // Traverse all relations
-                rt = new RelationService.RelatedReadingsTraverser(reading);
+                rt = new RelationService.RelatedReadingsTraverser(reading, tx);
             else
                 // Traverse only the named relations
-                rt = new RelationService.RelatedReadingsTraverser(reading, x -> filterTypes.contains(x.getName()));
+                rt = new RelationService.RelatedReadingsTraverser(reading, x -> filterTypes.contains(x.getName()), tx);
             tx.traversalDescription().depthFirst()
                     .relationships(ERelations.RELATED)
                     .evaluator(rt)
@@ -434,7 +434,7 @@ public class Reading {
                 deleted.add(new RelationModel(rel));
                 rel.delete();
             }
-            tx.close();
+            tx.commit();
         } catch (NotFoundException e) {
             errorMessage = e.getMessage();
             return errorResponse(Status.NOT_FOUND);
@@ -802,9 +802,9 @@ public class Reading {
         }
         // If the two readings are aligned, there is no need to test for cycles.
         boolean aligned = false;
-        RelationService.RelatedReadingsTraverser rt = new RelationService.RelatedReadingsTraverser(
-                stayingReading, RelationTypeModel::getIs_colocation);
         Transaction tx = db.beginTx();
+        RelationService.RelatedReadingsTraverser rt = new RelationService.RelatedReadingsTraverser(
+                stayingReading, RelationTypeModel::getIs_colocation, tx);
         for (Node n : tx.traversalDescription().depthFirst()
                 .relationships(ERelations.RELATED)
                 .evaluator(rt)
@@ -1319,8 +1319,8 @@ public class Reading {
     public Response getComplexReadings() {
         List<ComplexReadingModel> crList = new ArrayList<>();
         try (Transaction tx = db.beginTx()) {
-            Node myReading = db.getNodeById(readId);
-            for (Node node : db.traversalDescription().depthFirst()
+            Node myReading = tx.getNodeByElementId(readId);
+            for (Node node : tx.traversalDescription().depthFirst()
                     .relationships(ERelations.HAS_HYPERNODE, Direction.OUTGOING)
                     .uniqueness(Uniqueness.RELATIONSHIP_GLOBAL).traverse(myReading)
                     .nodes()) {
@@ -1328,7 +1328,7 @@ public class Reading {
                 crList.add(new ComplexReadingModel(node));
               }
             }
-            tx.success();
+            tx.close();
         } catch (Exception e) {
             e.printStackTrace();
             return Response.serverError().entity(jsonerror(e.getMessage())).build();
@@ -1346,27 +1346,28 @@ public class Reading {
     @ReturnType(clazz = ComplexReadingModel.class)
     public Response complexReading(ComplexReadingModel skeleton) {
         try (Transaction tx = db.beginTx()) {
-            Node hyperNode = db.createNode(Nodes.READING, Nodes.HYPERREADING);
+            Node hyperNode = tx.createNode(Nodes.READING, Nodes.HYPERREADING);
             if (skeleton.getSource() != null) {
               hyperNode.setProperty("source", skeleton.getSource());
             }
             if (skeleton.getNote() != null) {
               hyperNode.setProperty("note", skeleton.getNote());
             }
-            Node thisNode = db.getNodeById(readId);
+            Node thisNode = tx.getNodeByElementId(readId);
             thisNode.createRelationshipTo(hyperNode, ERelations.HAS_HYPERNODE);
             for (ComplexReadingModel comp: skeleton.getComponents())  {
                 if (comp.getReading() != null) { // create relationship from actual reading
-                  Node otherNode = db.getNodeById(Long.parseLong(comp.getReading().getId()));
+                  Node otherNode = tx.getNodeByElementId(comp.getReading().getId());
                   otherNode.createRelationshipTo(hyperNode, ERelations.HAS_HYPERNODE);
                 } else { // create relationship from embedded complex reading
                   System.out.println("create relationship to embedded complex reading");
-                  Node embeddedHyperNode = db.getNodeById(Long.parseLong(comp.getId()));
+                  Node embeddedHyperNode = tx.getNodeByElementId(comp.getId());
                   embeddedHyperNode.createRelationshipTo(hyperNode, ERelations.HAS_HYPERNODE);
                 }
             }
-            tx.success();
-            return Response.ok(new ComplexReadingModel(hyperNode)).build();
+            ComplexReadingModel complex_reading = new ComplexReadingModel(hyperNode);
+            tx.commit();
+            return Response.ok(complex_reading).build();
         } catch (NotFoundException e) {
             errorMessage = e.getMessage();
             return errorResponse(Status.NOT_FOUND);
@@ -1386,10 +1387,10 @@ public class Reading {
     @ReturnType("java.lang.Void")
     public Response deleteComplex(@PathParam("cid") String cid) {
         try (Transaction tx = db.beginTx()) {
-            Node removableNode = db.getNodeById(Long.parseLong(cid));
+            Node removableNode = tx.getNodeByElementId(cid);
             removableNode.getRelationships().forEach(Relationship::delete);
             removableNode.delete();
-            tx.success();
+            tx.close();
         } catch (Exception e) {
             e.printStackTrace();
             return Response.serverError().entity(jsonerror(e.getMessage())).build();

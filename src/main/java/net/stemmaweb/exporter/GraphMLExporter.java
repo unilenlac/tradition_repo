@@ -301,13 +301,12 @@ public class GraphMLExporter {
         for (Node s : allSections) {
             String sectId = s.getElementId();
             // Gather the section-relevant nodes
-            Iterable<Node> sectionNodes = VariantGraphService.returnTraditionSection(s).nodes();
-            Iterable<Relationship> sectionEdges = VariantGraphService.returnTraditionSection(s).relationships();
-
-            // Convert ResourceIterables to lists and collect relevant annotations
             List<Node> allSectNodes;
             List<Relationship> allSectEdges;
-            try (Transaction tx = db.beginTx()) {
+            try(Transaction tx = db.beginTx()){
+                Iterable<Node> sectionNodes = VariantGraphService.returnTraditionSection(s.getElementId(), tx).nodes();
+                Iterable<Relationship> sectionEdges = VariantGraphService.returnTraditionSection(s.getElementId(), tx).relationships();
+                // Convert ResourceIterables to lists and collect relevant annotations
 //                allSectNodes = sectionNodes.stream().collect(Collectors.toList());
 //                allSectEdges = sectionEdges.stream().collect(Collectors.toList());
                 allSectNodes = StreamSupport.stream(sectionNodes.spliterator(), false).collect(Collectors.toList());

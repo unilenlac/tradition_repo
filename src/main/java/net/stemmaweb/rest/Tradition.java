@@ -5,11 +5,7 @@ import static net.stemmaweb.Util.jsonerror;
 import static net.stemmaweb.Util.jsonresp;
 
 import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 import javax.ws.rs.Consumes;
@@ -28,11 +24,7 @@ import javax.ws.rs.core.Response.Status;
 
 import org.glassfish.jersey.media.multipart.FormDataParam;
 import org.json.JSONObject;
-import org.neo4j.graphdb.Direction;
-import org.neo4j.graphdb.GraphDatabaseService;
-import org.neo4j.graphdb.Node;
-import org.neo4j.graphdb.Relationship;
-import org.neo4j.graphdb.Transaction;
+import org.neo4j.graphdb.*;
 import org.neo4j.graphdb.traversal.Evaluators;
 import org.neo4j.graphdb.traversal.Uniqueness;
 
@@ -590,7 +582,7 @@ public class Tradition {
         if (traditionNode == null)
             return Response.status(Status.NOT_FOUND).entity(jsonerror("tradition not found")).build();
         try {
-            relTypeList = RelationService.ourRelationTypes(traditionNode);
+            relTypeList = RelationService.ourRelationTypes(traditionNode, db.beginTx());
         } catch (Exception e) {
             return Response.serverError()
                     .entity(jsonerror("relation types could not be collected: " + e.getMessage()))
@@ -836,7 +828,7 @@ public class Tradition {
                  */
                 Set<Relationship> removableRelations = new HashSet<>();
                 Set<Node> removableNodes = new HashSet<>();
-                VariantGraphService.returnEntireTradition(foundTradition)
+                VariantGraphService.returnEntireTradition(foundTradition, tx)
                         .nodes().forEach(x -> {
                     x.getRelationships().forEach(removableRelations::add);
                     removableNodes.add(x);
@@ -858,7 +850,6 @@ public class Tradition {
             e.printStackTrace();
             return Response.serverError().entity(jsonerror(e.getMessage())).build();
         }
-
         return Response.ok().build();
     }
 
@@ -942,7 +933,7 @@ public class Tradition {
                            @DefaultValue("false") @QueryParam("show_normal") Boolean showNormalForms,
                            @DefaultValue("false") @QueryParam("show_rank") Boolean showRank,
                            @DefaultValue("false") @QueryParam("expand_sigla") Boolean displayAllSigla,
-                                                  @QueryParam("normalise") String normalise,
+                                                  @QueryParam("normalise") List<String> normalise,
                                                   @QueryParam("include_witness") List<String> excWitnesses) {
         if (VariantGraphService.getTraditionNode(traditionId, db) == null)
             return Response.status(Status.NOT_FOUND).entity("No such tradition found").build();
@@ -968,7 +959,7 @@ public class Tradition {
     @Path("/json")
     @Produces("application/json; charset=utf-8")
     @ReturnType(clazz = AlignmentModel.class)
-    public Response getJson(@QueryParam("conflate") String toConflate,
+    public Response getJson(@QueryParam("conflate") List<String> toConflate,
                             @QueryParam("section") List<String> sectionList,
                             @QueryParam("exclude_layers") String excludeLayers) {
         return new TabularExporter(db).exportAsJSON(traditionId, toConflate,
@@ -989,7 +980,7 @@ public class Tradition {
     @Path("/csv")
     @Produces("text/plain; charset=utf-8")
     @ReturnType("java.lang.String")
-    public Response getCsv(@QueryParam("conflate") String toConflate,
+    public Response getCsv(@QueryParam("conflate") List<String> toConflate,
                            @QueryParam("section") List<String> sectionList,
                            @QueryParam("exclude_layers") String excludeLayers) {
         return new TabularExporter(db).exportAsCSV(traditionId, ',', toConflate,
@@ -1010,7 +1001,7 @@ public class Tradition {
     @Path("/tsv")
     @Produces("text/plain; charset=utf-8")
     @ReturnType("java.lang.String")
-    public Response getTsv(@QueryParam("conflate") String toConflate,
+    public Response getTsv(@QueryParam("conflate") List<String> toConflate,
                            @QueryParam("section") List<String> sectionList,
                            @QueryParam("exclude_layers") String excludeLayers) {
         return new TabularExporter(db).exportAsCSV(traditionId, '\t', toConflate,
@@ -1033,7 +1024,7 @@ public class Tradition {
     @Path("/matrix")
     @Produces("text/plain; charset=utf-8")
     @ReturnType("java.lang.String")
-    public Response getCharMatrix(@QueryParam("conflate") String toConflate,
+    public Response getCharMatrix(@QueryParam("conflate") List<String> toConflate,
                                   @QueryParam("section") List<String> sectionList,
                                   @QueryParam("exclude_layers") String excludeLayers,
                                   @DefaultValue("8") @QueryParam("maxVars") int maxVars) {
