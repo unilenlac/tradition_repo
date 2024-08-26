@@ -86,16 +86,16 @@ public class TeiExporter {
                             System.out.println(filtered_bottom_hn);
                             writer.writeEndElement();
                         }
-                        if (filtered_bottom_hn != null && filtered_bottom_hn.size() >= 1) {
-                            for (Map<String, Object> hn: filtered_bottom_hn){
-                                System.out.println(hn);
-                                List<String> hn_nodes = hn_table.stream().filter(x -> x.get("hyperId").equals(hn.get("hyperId"))).map(x -> x.get("text").toString()).collect(Collectors.toList());
-                                writer.writeStartElement("rdg");
-                                for(String n: hn_nodes){
-                                    writer.writeCharacters(n+" ");
-                                }
-                            }
-                        }
+                        // if (filtered_bottom_hn != null && filtered_bottom_hn.size() >= 1) {
+                        //     for (Map<String, Object> hn: filtered_bottom_hn){
+                        //         System.out.println(hn);
+                        //         List<String> hn_nodes = hn_table.stream().filter(x -> x.get("hyperId").equals(hn.get("hyperId"))).map(x -> x.get("text").toString()).collect(Collectors.toList());
+                        //         writer.writeStartElement("rdg");
+                        //         for(String n: hn_nodes){
+                        //             writer.writeCharacters(n+" ");
+                        //         }
+                        //     }
+                        // }
                     }
                 }
             }
@@ -108,8 +108,10 @@ public class TeiExporter {
     public void populate_variants(List<Map<String, Object>> top_hn_list, List<Map<String, Object>> filtered_hn, Map<String, String> hn_stats, List<Map<String, Object>> variant_list, XMLStreamWriter writer, Transaction tx) throws XMLStreamException {
         Map<String, Object> top_hn = top_hn_list.get(0);
         List<String> nodes = filtered_hn.stream().filter(x -> x.get("hyperId").equals(top_hn.get("hyperId"))).map(x -> x.get("nodeUuid").toString()).collect(Collectors.toList());
+        int hn_node_count = nodes.size();
         // List<String> remaining_nodes = filtered_hn.stream().filter(x -> !x.get("hyperId").equals(top_hn.get("hyperId"))).map(x -> x.get("nodeUuid").toString()).collect(Collectors.toList());
         List<Map<String, Object>> remaining_hn = filtered_hn.stream().filter(x -> !x.get("hyperId").equals(top_hn.get("hyperId"))).collect(Collectors.toList());
+        String node_sample = nodes.get(0);
 
         writer.writeStartElement("lem");
         Long node_skip = 0L;
@@ -132,7 +134,28 @@ public class TeiExporter {
                 }
             }
         }
+        List<Map<String, Object>> filtered_variants = variant_list.stream().filter(x -> x.get("rank") == tx.getNodeByElementId(node_sample).getProperty("rank")).collect(Collectors.toList());
+        List<Map<String, Object>> filtered_bottom_hn = null;
+        for (Map<String, Object> variant: filtered_variants){
+            if(!variant.get("nodeId").equals(node_sample)){
+                filtered_bottom_hn = remaining_hn.stream().filter(x -> Objects.equals(x.get("nodeUuid").toString(), variant.get("nodeId"))).collect(Collectors.toList());
+            }
+        }
+        if (filtered_bottom_hn != null && filtered_bottom_hn.size() >= 1) {
+            for (Map<String, Object> hn: filtered_bottom_hn){
+                System.out.println(hn);
+                List<String> hn_nodes = filtered_hn.stream().filter(x -> x.get("hyperId").equals(hn.get("hyperId"))).map(x -> x.get("text").toString()).collect(Collectors.toList());
+                if(hn_nodes.size() == hn_node_count){
+                    writer.writeStartElement("rdg");
+                    for(String n: hn_nodes){
+                        writer.writeCharacters(n+" ");
+                    }
+                }
+                writer.writeEndElement();
+            }
+        }
         writer.writeEndElement();
+
     }
 
     public Long count_nodes(String hn, Transaction tx){
