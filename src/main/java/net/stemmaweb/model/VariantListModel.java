@@ -1,10 +1,9 @@
 package net.stemmaweb.model;
 
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
+import java.util.stream.*;
+import java.util.Arrays;
+import java.util.stream.Stream;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
@@ -115,7 +114,7 @@ public class VariantListModel {
         GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
         try (Transaction tx = db.beginTx()) {
             RelationshipType follow = ERelations.SEQUENCE;
-            if (conflate != null && !conflate.isEmpty()) {
+            if (conflate.size() > 0) {
                 VariantGraphService.normalizeGraph(sectionNode, conflate, tx);
                 follow = ERelations.NSEQUENCE;
             }
@@ -151,11 +150,12 @@ public class VariantListModel {
                     this.basisText = "majority";
                 }
                 baseText = new ArrayList<>();
-                Node prior = baseReadings.remove(0);
+                Node prior = tx.getNodeByElementId(baseReadings.remove(0).getElementId());
                 for (Node curr : baseReadings) {
+                    Node current = tx.getNodeByElementId(curr.getElementId());
                     prior.getRelationships(Direction.OUTGOING).forEach(x -> {
-                        if (x.getEndNode().equals(curr)) baseText.add(x);});
-                    prior = curr;
+                        if (x.getEndNode().equals(current)) baseText.add(x);});
+                    prior = current;
                 }
             }
 
@@ -197,8 +197,14 @@ public class VariantListModel {
                     .expand(crawler.variantListExpander())
                     .evaluator(crawler.variantListEvaluator());
             // Get our base chain of nodes
-            List<Node> baseChain = sequence.stream().map(Relationship::getEndNode).collect(Collectors.toList());
-            baseChain.add(0, sequence.get(0).getStartNode());
+            // List<Node> baseChain = sequence.stream().map(Relationship::getEndNode).collect(Collectors.toList());
+            List<Node> baseChain = new ArrayList<>(
+                    new LinkedHashSet<>(
+                            sequence.stream().map(Relationship::getNodes).collect(
+                                    Collectors.toList()
+                            ).stream().flatMap(Arrays::stream).collect(Collectors.toList())));
+
+            // baseChain.add(0, sequence.get(0).getStartNode());
             // We have to run the traverser from each node in the base chain, to get any variants that start there.
             for (Node n : baseChain) {
                 for (org.neo4j.graphdb.Path v : traverser.traverse(n)) {
@@ -244,8 +250,8 @@ public class VariantListModel {
             vlm.setBefore(baseReadings.remove(0));
             vlm.setAfter(baseReadings.remove(baseReadings.size() - 1));
             vlm.setBase(baseReadings);
-            // Set the rank index to the rank of the first base reading
             if (baseReadings.size() > 0)
+            // Set the rank index to the rank of the first base reading
                 vlm.setRankIndex(baseReadings.get(0).getRank());
             else
                 vlm.setRankIndex(vlm.getBefore().getRank() + 1);

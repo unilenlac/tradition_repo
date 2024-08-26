@@ -615,8 +615,8 @@ public class GraphMLInputOutputTest extends TestCase {
     // testXMLNoSections
 
     public void tearDown() throws Exception {
-//        db.shutdown();
-    	GraphDatabaseServiceProvider.shutdown();
+        // db.shutdown();
+    	// GraphDatabaseServiceProvider.shutdown();
         jerseyTest.tearDown();
         super.tearDown();
     }

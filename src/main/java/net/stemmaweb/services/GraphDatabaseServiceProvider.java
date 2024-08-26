@@ -43,8 +43,6 @@ public class GraphDatabaseServiceProvider {
 			dbService = new DatabaseManagementServiceBuilder(Path.of("/somewhere/on/disk"))
 					.setConfig(GraphDatabaseSettings.plugin_dir, Path.of("/location/of/plugins"))
 					.setConfig(GraphDatabaseSettings.procedure_unrestricted, unrestricted_list)
-					//.impermanent()
-					//.setDatabaseRootDirectory(null)
 					.build();
 			db = dbService.database(GraphDatabaseSettings.DEFAULT_DATABASE_NAME);
 		}
@@ -55,8 +53,6 @@ public class GraphDatabaseServiceProvider {
 
 		File config = new File(db_location + "/conf/neo4j.conf");
 		if (config.exists()){
-			List<String> unrestricted_list = new ArrayList<>();
-			unrestricted_list.add("gds.*");
 			dbService = new DatabaseManagementServiceBuilder(Path.of(db_location + "/"))
 					.loadPropertiesFromFile( Path.of( db_location + "/conf/neo4j.conf" ) )
 					.build();
@@ -66,40 +62,31 @@ public class GraphDatabaseServiceProvider {
 		db = dbService.database(GraphDatabaseSettings.DEFAULT_DATABASE_NAME);
 
     	registerShutdownHook(dbService);
-    	registerExtensions();
+    	// registerExtensions();
 
     }
 
     // Manage an existing (e.g. test) DB
     public GraphDatabaseServiceProvider(GraphDatabaseService existingdb) throws KernelException {
         db = existingdb;
-        registerExtensions();
+        // registerExtensions();
     }
 
     public GraphDatabaseService getDatabase(){
         return db;
     }
 
+	public DatabaseManagementService getManagementService() { return dbService; }
+
+
     // Register any extensions we need in the database
     private static void registerExtensions() throws KernelException {
         GraphDatabaseAPI api = (GraphDatabaseAPI) db;
-        // See if our procedure is already registered
-        // api.getDependencyResolver()
-		// 		.resolveDependency(NodeRegressionPipelineConfigureSplitProc.class).metricsFacade.projectionMetrics();
-		// api.getDependencyResolver()
-		// 		.resolveDependency(MetricsFacade.class).algorithmMetrics();
-                //.resolveDependency(GlobalProcedures.class, SelectionStrategy.SINGLE);
-				//.registerProcedure(UnionGraphIntersectFactory.class, true);
-                //.registerProcedure(WccStreamProc.class);
+        //See if our procedure is already registered
+        api.getDependencyResolver();
+				//.resolveDependency(NodeRegressionPipelineConfigureSplitProc.class).metricsFacade.projectionMetrics();
     }
-    
-    public static void shutdown() {
-    	if (dbService != null) {
-    		dbService.shutdownDatabase(db.databaseName());
-    		db = null;
-    		dbService = null;
-    	}
-    }
+
 
     private static void registerShutdownHook( final DatabaseManagementService managementService ) {
     	Runtime.getRuntime().addShutdownHook( new Thread()

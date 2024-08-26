@@ -102,7 +102,7 @@ public class VariantLocationModel {
             List<RelationModel> rml = relations.stream().map(RelationModel::new).collect(Collectors.toList());
             this.setRelations(rml);
             this.isEmpty = false;
-            tx.close();
+            tx.commit();
         }
     }
 

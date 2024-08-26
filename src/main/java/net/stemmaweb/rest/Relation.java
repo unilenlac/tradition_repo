@@ -50,8 +50,8 @@ import net.stemmaweb.services.VariantGraphService;
 
 public class Relation {
 
-    private GraphDatabaseService db;
-    private String tradId;
+    private final GraphDatabaseService db;
+    private final String tradId;
     private static final String SCOPE_LOCAL = "local";
     private static final String SCOPE_SECTION = "section";
     private static final String SCOPE_TRADITION = "tradition";
@@ -132,7 +132,7 @@ public class Relation {
                     }
 
                     // Pick out the ones that share the readingB text
-//                    HashSet<Node> ourB = tradReadings.stream().filter(x -> x.hasProperty("text")
+                    // HashSet<Node> ourB = tradReadings.stream().filter(x -> x.hasProperty("text")
             		HashSet<Node> ourB = StreamSupport.stream(tradReadings.spliterator(), false).filter(x -> x.hasProperty("text")
                             && nodefilter.apply(x).equals(nodefilter.apply(readingB)) && !x.equals(readingB))
                             .collect(Collectors.toCollection(HashSet::new));
@@ -160,7 +160,7 @@ public class Relation {
                             }
                         }
                     }
-                    tx.close();
+                    tx.commit();
                 } catch (Exception e) {
                     e.printStackTrace();
                     return Response.serverError().build();

@@ -11,7 +11,11 @@ import javax.servlet.ServletContextListener;
 
 //import org.apache.log4j.Logger;
 
+import org.neo4j.dbms.api.DatabaseManagementService;
 import org.neo4j.graphdb.GraphDatabaseService;
+import org.neo4j.graphdb.Result;
+
+import java.util.Objects;
 
 /**
  *
@@ -25,18 +29,21 @@ public class ApplicationContextListener implements ServletContextListener {
     @SuppressWarnings("unused")
     private ServletContext context = null;
 
+    private final GraphService graph_service = new GraphService();
+
     public void contextDestroyed(ServletContextEvent event) {
         //Output a simple message to the server's console
         try {
-            GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
-            GraphDatabaseServiceProvider.shutdown();
-            // logger.debug("This is debug: db shut down properly");
+            GraphDatabaseServiceProvider serviceProvider = new GraphDatabaseServiceProvider();
+            DatabaseManagementService managementService = serviceProvider.getManagementService();
+            managementService.shutdown();
+            System.out.println("SHUTDOWN PROCESS : neo4j database closed");
         } catch (Exception e) {
-            // logger.debug("This is debug: shut down error");
-            // logger.error("failed!", e);
             e.printStackTrace();
         }
+
         this.context = null;
+
     }
 
     public void contextInitialized(ServletContextEvent event) {
@@ -50,6 +57,4 @@ public class ApplicationContextListener implements ServletContextListener {
             e.printStackTrace();
         }
     }
-
-
 }

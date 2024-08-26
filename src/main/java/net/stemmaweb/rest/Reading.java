@@ -120,7 +120,7 @@ public class Reading {
                     reading.setProperty(currentKey, keyPropertyModel.getProperty());
             }
             modelToReturn = new ReadingModel(reading);
-            tx.close();
+            tx.commit();
         } catch (NoSuchFieldException f) {
             errorMessage = "Reading has no such property '" + f.getMessage() + "'";
             return errorResponse(Status.BAD_REQUEST);

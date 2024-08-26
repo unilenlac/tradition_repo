@@ -2,6 +2,7 @@ package net.stemmaweb.rest;
 
 import com.qmino.miredot.annotations.MireDotIgnore;
 import com.qmino.miredot.annotations.ReturnType;
+import net.stemmaweb.exporter.TeiExporter;
 import net.stemmaweb.model.TraditionModel;
 import net.stemmaweb.model.UserModel;
 import net.stemmaweb.services.DatabaseService;
@@ -22,6 +23,7 @@ import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.UriInfo;
+import javax.xml.stream.XMLStreamException;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -310,5 +312,11 @@ public class Root {
             userNode.createRelationshipTo(traditionNode, ERelations.OWNS_TRADITION);
             tx.commit();
         }
+    }
+    @GET
+    @Path("/sandbox")
+    @Produces(MediaType.APPLICATION_XML)
+    public Response sandox(@DefaultValue("4:d9d77f98-2607-4616-97cb-50995b926dd7:129") @QueryParam("section") String section) throws XMLStreamException {
+        return new TeiExporter(db).SimpleHnExporter(section);
     }
 }

@@ -25,4 +25,5 @@ ENV STEMMAREST_HOME /var/lib/stemmarest
 
 # Run the server
 EXPOSE 8080
-CMD ["catalina.sh", "run"]
+ENTRYPOINT ["catalina.sh"]
+CMD ["run"]

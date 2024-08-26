@@ -177,8 +177,8 @@ public class CollateXInputTest extends TestCase {
     }
 
     public void tearDown() throws Exception {
-//        db.shutdown();
-    	GraphDatabaseServiceProvider.shutdown();
+        // db.shutdown();
+    	// GraphDatabaseServiceProvider.shutdown();
         jerseyTest.tearDown();
         super.tearDown();
     }

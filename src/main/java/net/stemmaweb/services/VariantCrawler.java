@@ -84,7 +84,7 @@ public class VariantCrawler {
                 String key = pathKey(path.relationships(), null);
                 Map<String,Set<String>> witsSoFar = pathWitnesses.getOrDefault(key, null);
                 if (witsSoFar == null || witsSoFar.isEmpty()) {
-                    // We have no "through" witnesses for this path, so don't go any farther.
+                    // We have no "through" witnesses for this path, so don't go any further.
                     return Iterables.emptyResourceIterable();
                 }
                 // Now for each witness sigil in witsSoFar, find the relationship that continues it.

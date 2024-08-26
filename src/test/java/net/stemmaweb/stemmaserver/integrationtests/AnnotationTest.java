@@ -43,7 +43,7 @@ public class AnnotationTest extends TestCase {
 
     public void setUp() throws Exception {
         super.setUp();
-//        db = new GraphDatabaseServiceProvider(new TestGraphDatabaseFactory().newImpermanentDatabase()).getDatabase();
+        // db = new GraphDatabaseServiceProvider(new TestGraphDatabaseFactory().newImpermanentDatabase()).getDatabase();
     	db = new GraphDatabaseServiceProvider((String) null).getDatabase();
         Util.setupTestDB(db, "1");
 
@@ -709,8 +709,8 @@ public class AnnotationTest extends TestCase {
     }
 
     public void tearDown() throws Exception {
-//        db.shutdown();
-    	GraphDatabaseServiceProvider.shutdown();
+        // db.shutdown();
+    	// GraphDatabaseServiceProvider.shutdown();
         jerseyTest.tearDown();
         super.tearDown();
     }

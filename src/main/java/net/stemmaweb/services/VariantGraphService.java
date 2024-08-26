@@ -21,11 +21,7 @@ import org.neo4j.graphdb.PathExpander;
 import org.neo4j.graphdb.PathExpanders;
 import org.neo4j.graphdb.Relationship;
 import org.neo4j.graphdb.Transaction;
-import org.neo4j.graphdb.traversal.Evaluation;
-import org.neo4j.graphdb.traversal.Evaluator;
-import org.neo4j.graphdb.traversal.Evaluators;
-import org.neo4j.graphdb.traversal.Traverser;
-import org.neo4j.graphdb.traversal.Uniqueness;
+import org.neo4j.graphdb.traversal.*;
 
 import net.stemmaweb.model.AlignmentModel;
 import net.stemmaweb.model.ReadingModel;
@@ -44,6 +40,18 @@ public class VariantGraphService {
      * @param db - the GraphDatabaseService where the tradition is stored
      * @return - true or false
      */
+
+    public static TraversalDescription simpleTraverser(Transaction tx, int section_length, Long witnesses_count){
+        return tx.traversalDescription()
+                .order(BranchOrderingPolicies.PREORDER_BREADTH_FIRST)
+                .evaluator(new VariantEvaluator(witnesses_count))
+                .evaluator(Evaluators.atDepth(section_length))
+                .uniqueness(Uniqueness.NODE_GLOBAL)
+                .relationships(ERelations.COLLATION, Direction.OUTGOING)
+                .relationships(ERelations.SEQUENCE, Direction.OUTGOING);
+    }
+
+
     public static Boolean sectionInTradition(String tradId, String aSectionId, GraphDatabaseService db) {
         boolean found = false;
         try (Transaction tx = db.beginTx()) {
@@ -402,13 +410,15 @@ public class VariantGraphService {
 
         // Now make the relations between them
         ArrayList<Node> result = new ArrayList<>();
-
+        GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+        try (Transaction subTx = db.beginTx()) {
             // Go through the alignment model rank by rank, finding the majority reading for each rank
             String sectionId = sectionNode.getElementId();
-            result.add(getStartNode(sectionId, tx));
-            majorityReadings.forEach(x -> result.add(tx.getNodeByElementId(x)));
-            result.add(getEndNode(sectionId, tx));
-
+            result.add(getStartNode(sectionId, subTx));
+            majorityReadings.forEach(x -> result.add(subTx.getNodeByElementId(x)));
+            result.add(getEndNode(sectionId, subTx));
+            subTx.commit();
+        }
         return result;
     }
 

@@ -55,7 +55,7 @@ public class AlignmentModel {
 
     // Get an alignment table
     public AlignmentModel(Node sectionNode, boolean excludeLayers) {
-//        GraphDatabaseService db = sectionNode.getGraphDatabase();
+
         GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
 
         try (Transaction tx = db.beginTx()) {
@@ -151,7 +151,7 @@ public class AlignmentModel {
             }
             Comparator<WitnessTokensModel> bySigil = Comparator.comparing(WitnessTokensModel::constructSigil);
             alignment.sort(bySigil);
-            tx.close();
+            tx.commit();
         }
     }
 

@@ -1370,7 +1370,7 @@ public class Section {
                             .build();
                 priorLemma = r.getEndNode();
             }
-            tx.close();
+            tx.commit();
         } catch (Exception e) {
             if (!e.getMessage().contains("More than one"))
                 e.printStackTrace();
@@ -1523,7 +1523,7 @@ public class Section {
                     .filter(x -> x.isType(ERelations.SEQUENCE) || x.isType(ERelations.LEMMA_TEXT) || x.isType(ERelations.EMENDED))
                     .map(SequenceModel::new).collect(Collectors.toSet()));
 
-            tx.close();
+            tx.commit();
         } catch (Exception e) {
             e.printStackTrace();
             return Response.serverError().entity(jsonerror(e.getMessage())).build();
