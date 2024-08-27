@@ -316,7 +316,9 @@ public class Root {
     @GET
     @Path("/sandbox")
     @Produces(MediaType.APPLICATION_XML)
-    public Response sandox(@DefaultValue("4:d9d77f98-2607-4616-97cb-50995b926dd7:129") @QueryParam("section") String section) throws XMLStreamException {
-        return new TeiExporter(db).SimpleHnExporter(section);
+    public Response sandox(
+            @DefaultValue("4:d9d77f98-2607-4616-97cb-50995b926dd7:2") @QueryParam("tradition") String tradition,
+            @DefaultValue("4:d9d77f98-2607-4616-97cb-50995b926dd7:129") @QueryParam("section") String section) throws XMLStreamException {
+        return new TeiExporter(db).SimpleHnExporter(tradition, section);
     }
 }

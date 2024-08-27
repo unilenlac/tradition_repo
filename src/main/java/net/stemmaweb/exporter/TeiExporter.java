@@ -2,9 +2,7 @@ package net.stemmaweb.exporter;
 
 import net.stemmaweb.services.GraphService;
 import org.neo4j.graphdb.*;
-import org.neo4j.graphdb.traversal.Traverser;
 import net.stemmaweb.rest.ERelations;
-import net.stemmaweb.services.VariantGraphService;
 import com.sun.xml.txw2.output.IndentingXMLStreamWriter;
 
 import javax.ws.rs.core.Response;
@@ -13,7 +11,6 @@ import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamWriter;
 import java.io.StringWriter;
 import java.util.*;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 public class TeiExporter {
@@ -24,7 +21,7 @@ public class TeiExporter {
         this.db = db;
     }
 
-    public Response SimpleHnExporter(String section_id) throws XMLStreamException {
+    public Response SimpleHnExporter(String tradition_id, String section_id) throws XMLStreamException {
 
         StringWriter result = new StringWriter();
         XMLOutputFactory output = XMLOutputFactory.newInstance();
@@ -46,7 +43,7 @@ public class TeiExporter {
 
         try(Transaction tx = db.beginTx()){
 
-            Node tradition_node = tx.getNodeByElementId("4:d9d77f98-2607-4616-97cb-50995b926dd7:112");
+            Node tradition_node = tx.getNodeByElementId(tradition_id);
             Node section_node = tx.getNodeByElementId(section_id);
             Long witness_count = tradition_node.getRelationships(ERelations.HAS_WITNESS).stream().count();
 
@@ -61,41 +58,20 @@ public class TeiExporter {
 
             Result section = graphService.get_section(section_node, witness_count, tx);
 
-            Map<String, Map<String, Object>> tmp = hypernodes.stream().collect(Collectors.toMap(e -> e.get("nodeId").toString(), Function.identity()));
-
             Long node_skip = 0L;
-            Long nodes_in_hn_count = 0L;
 
             while (section.hasNext()){
                 ArrayList<Node> nodes = (ArrayList<Node>) section.next().get("path");
                 for(Node node: nodes){
                     if(node_skip == 0){
-                        List<Map<String, Object>> filtered_variants = section_table.stream().filter(x -> x.get("rank") == node.getProperty("rank")).collect(Collectors.toList());
                         List<Map<String, Object>> filtered_top_hn = hn_table.stream().filter(x -> Objects.equals(x.get("nodeUuid").toString(), node.getElementId())).collect(Collectors.toList());
-                        List<Map<String, Object>> filtered_bottom_hn = null;
-                        for (Map<String, Object> variant: filtered_variants){
-                            if(!variant.get("nodeId").equals(node.getElementId())){
-                                filtered_bottom_hn = hn_table.stream().filter(x -> Objects.equals(x.get("nodeUuid").toString(), variant.get("nodeId"))).collect(Collectors.toList());
-                            }
-                        }
+
                         if(filtered_top_hn.size() >=1){
                             writer.writeStartElement("app");
-                            node_skip = nodes_in_hn_count = count_nodes(filtered_top_hn.get(0).get("hyperId").toString(), tx);
-                            populate_variants(filtered_top_hn, hn_table, new HashMap<>(), section_table, writer, tx);
-                            System.out.println(filtered_top_hn);
-                            System.out.println(filtered_bottom_hn);
+                            node_skip = count_nodes(filtered_top_hn.get(0).get("hyperId").toString(), tx);
+                            populateHypernodes(filtered_top_hn, hn_table, new HashMap<>(), section_table, writer, tx);
                             writer.writeEndElement();
                         }
-                        // if (filtered_bottom_hn != null && filtered_bottom_hn.size() >= 1) {
-                        //     for (Map<String, Object> hn: filtered_bottom_hn){
-                        //         System.out.println(hn);
-                        //         List<String> hn_nodes = hn_table.stream().filter(x -> x.get("hyperId").equals(hn.get("hyperId"))).map(x -> x.get("text").toString()).collect(Collectors.toList());
-                        //         writer.writeStartElement("rdg");
-                        //         for(String n: hn_nodes){
-                        //             writer.writeCharacters(n+" ");
-                        //         }
-                        //     }
-                        // }
                     }
                 }
             }
@@ -105,7 +81,7 @@ public class TeiExporter {
         return Response.ok().entity(result.toString()).build();
     }
 
-    public void populate_variants(List<Map<String, Object>> top_hn_list, List<Map<String, Object>> filtered_hn, Map<String, String> hn_stats, List<Map<String, Object>> variant_list, XMLStreamWriter writer, Transaction tx) throws XMLStreamException {
+    public void populateHypernodes(List<Map<String, Object>> top_hn_list, List<Map<String, Object>> filtered_hn, Map<String, String> hn_stats, List<Map<String, Object>> variant_list, XMLStreamWriter writer, Transaction tx) throws XMLStreamException {
         Map<String, Object> top_hn = top_hn_list.get(0);
         List<String> nodes = filtered_hn.stream().filter(x -> x.get("hyperId").equals(top_hn.get("hyperId"))).map(x -> x.get("nodeUuid").toString()).collect(Collectors.toList());
         int hn_node_count = nodes.size();
@@ -123,7 +99,7 @@ public class TeiExporter {
             if(local_top_hn.size() >= 1 && variant_locus.size() > 1){
                 node_skip = count_nodes(local_top_hn.get(0).get("hyperId").toString(), tx);
                 writer.writeStartElement("app");
-                populate_variants(local_top_hn, remaining_hn, new HashMap<>(), variant_list, writer, tx);
+                populateHypernodes(local_top_hn, remaining_hn, new HashMap<>(), variant_list, writer, tx);
                 writer.writeEndElement();
                 remaining_hn = remaining_hn.stream().filter(x -> !x.get("hyperId").equals(local_top_hn.get(0).get("hyperId"))).collect(Collectors.toList());
             }else{
@@ -134,14 +110,17 @@ public class TeiExporter {
                 }
             }
         }
+
+        writer.writeEndElement();
+
         List<Map<String, Object>> filtered_variants = variant_list.stream().filter(x -> x.get("rank") == tx.getNodeByElementId(node_sample).getProperty("rank")).collect(Collectors.toList());
-        List<Map<String, Object>> filtered_bottom_hn = null;
+        List<Map<String, Object>> filtered_bottom_hn = new ArrayList<>();
         for (Map<String, Object> variant: filtered_variants){
-            if(!variant.get("nodeId").equals(node_sample)){
-                filtered_bottom_hn = remaining_hn.stream().filter(x -> Objects.equals(x.get("nodeUuid").toString(), variant.get("nodeId"))).collect(Collectors.toList());
+            if(!variant.get("nodeId").equals(node_sample) || variant.get("nodeId").equals(node_sample) && filtered_variants.size() == 1){
+                filtered_bottom_hn.addAll(remaining_hn.stream().filter(x -> Objects.equals(x.get("nodeUuid").toString(), variant.get("nodeId"))).collect(Collectors.toList()));
             }
         }
-        if (filtered_bottom_hn != null && filtered_bottom_hn.size() >= 1) {
+        if (filtered_bottom_hn.size() >= 1) {
             for (Map<String, Object> hn: filtered_bottom_hn){
                 System.out.println(hn);
                 List<String> hn_nodes = filtered_hn.stream().filter(x -> x.get("hyperId").equals(hn.get("hyperId"))).map(x -> x.get("text").toString()).collect(Collectors.toList());
@@ -150,12 +129,49 @@ public class TeiExporter {
                     for(String n: hn_nodes){
                         writer.writeCharacters(n+" ");
                     }
+                    writer.writeEndElement();
                 }
-                writer.writeEndElement();
             }
         }
-        writer.writeEndElement();
+    }
 
+    public void populateVariants(Node section_node, List<Map<String, Object>> filtered_variants, XMLStreamWriter writer, Transaction tx) throws XMLStreamException {
+        List<Map<String, String>> app_elements = new ArrayList<>();
+        writer.writeStartElement("app");
+        for(Map<String, Object> row: filtered_variants){
+
+            if(Objects.equals(section_node.getElementId(), row.get("nodeId").toString())){
+                // xmlement.put("el", "lem");
+                // xmlement.put("text", node.getProperty("text").toString());
+                Node rdg_node = tx.getNodeByElementId(row.get("nodeId").toString());
+                HashMap<String, String> xmlement = find_lemma(rdg_node);
+                if(Objects.equals(xmlement.get("el"), "lem")){
+                    app_elements.add(0, xmlement);
+                }else{
+                    app_elements.add(xmlement);
+                }
+            }else{
+                Node rdg_node = tx.getNodeByElementId(row.get("nodeId").toString());
+                HashMap<String, String> xmlement = find_lemma(rdg_node);
+                if(Objects.equals(xmlement.get("el"), "lem")){
+                    app_elements.add(0, xmlement);
+                }else{
+                    app_elements.add(xmlement);
+                }
+            }
+            for(Map<String, String> el: app_elements){
+                writer.writeStartElement(el.get("el"));
+                writer.writeCharacters(el.get("text"));
+                writer.writeEndElement();
+            }
+            writer.writeEndElement();
+        }
+        for(Map<String, String> el: app_elements){
+            writer.writeStartElement(el.get("el"));
+            writer.writeCharacters(el.get("text"));
+            writer.writeEndElement();
+        }
+        writer.writeEndElement();
     }
 
     public Long count_nodes(String hn, Transaction tx){
