@@ -1005,9 +1005,9 @@ public class Section {
                 for (String key : r.getPropertyKeys())
                     newWitnesses.addAll(Arrays.asList((String[]) r.getProperty(key)));
             newWitnesses.stream().filter(x -> !oldWitnesses.contains(x))
-                    .forEach(x -> addWitnessLink(trueStart, oldEnd, x, "witnesses"));
+                    .forEach(x -> addWitnessLink(trueStart, oldEnd, x, "witnesses", tx));
             oldWitnesses.stream().filter(x -> !newWitnesses.contains(x))
-                    .forEach(x -> addWitnessLink(oldStart, trueEnd, x, "witnesses"));
+                    .forEach(x -> addWitnessLink(oldStart, trueEnd, x, "witnesses", tx));
             oldWitnesses.addAll(newWitnesses);
             Relationship link = oldEnd.createRelationshipTo(oldStart, ERelations.SEQUENCE);
             link.setProperty("witnesses", oldWitnesses.toArray(new String[0]));
@@ -1021,8 +1021,8 @@ public class Section {
             if (nlr != null) nlr.delete();
 
             // Remove each placeholder in turn
-            removePlaceholder(oldEnd);
-            removePlaceholder(oldStart);
+            removePlaceholder(oldEnd, tx);
+            removePlaceholder(oldStart, tx);
 
             // TODO Look for any lacuna nodes in a row that can be merged
 

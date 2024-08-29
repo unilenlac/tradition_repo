@@ -19,10 +19,7 @@ import org.neo4j.graphdb.Relationship;
 import org.neo4j.graphdb.RelationshipType;
 import org.neo4j.graphdb.ResourceIterable;
 import org.neo4j.graphdb.Transaction;
-import org.neo4j.graphdb.traversal.BranchState;
-import org.neo4j.graphdb.traversal.Evaluation;
-import org.neo4j.graphdb.traversal.Evaluator;
-import org.neo4j.graphdb.traversal.Uniqueness;
+import org.neo4j.graphdb.traversal.*;
 import org.neo4j.internal.helpers.collection.Iterables;
 
 import net.stemmaweb.model.ReadingModel;
@@ -112,15 +109,15 @@ public class ReadingService {
         return link;
     }
 
-    public static Relationship addWitnessLink (Node start, Node end, String sigil, String witClass) {
-        GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
-        try(Transaction tx = db.beginTx()){
-            Node startTx = tx.getNodeByElementId(start.getElementId());
-            Node endTx = tx.getNodeByElementId(end.getElementId());
-            Relationship rel = addWitnessLink(startTx, endTx, sigil, witClass, ERelations.SEQUENCE);
-            tx.commit();
-            return rel;
-        }
+    public static Relationship addWitnessLink (Node start, Node end, String sigil, String witClass, Transaction tx) {
+        //GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+        //try(Transaction tx = db.beginTx()){
+        //    Node startTx = tx.getNodeByElementId(start.getElementId());
+        //    Node endTx = tx.getNodeByElementId(end.getElementId());
+            return addWitnessLink(start, end, sigil, witClass, ERelations.SEQUENCE);
+        //    tx.commit();
+            // return rel;
+        //}
     }
 
     /**
@@ -230,7 +227,7 @@ public class ReadingService {
      *
      * @param placeholderNode - the node to be removed
      */
-    public static void removePlaceholder(Node placeholderNode) throws Exception {
+    public static void removePlaceholder(Node placeholderNode, Transaction tx) throws Exception {
         // Check that the node is indeed a placeholder
         if (!placeholderNode.hasProperty("is_placeholder")
                 || !(Boolean) placeholderNode.getProperty("is_placeholder"))
@@ -265,7 +262,7 @@ public class ReadingService {
                 String[] relWits = (String[]) r.getProperty(prop);
                 for (String w : relWits) {
                     if (prop.equals("witnesses")) {
-                        addWitnessLink(priorReading, readingWitnessToMap.get(w), w, prop);
+                        addWitnessLink(priorReading, readingWitnessToMap.get(w), w, prop, tx);
 
                         // If there are special (extra, layered) readings for this witness on the
                         // TO side, we will have to deal with it after we have matched corresponding
@@ -277,13 +274,13 @@ public class ReadingService {
                         // Look for a matching layer-witness reading for our layer-witness
                         if (readingWitnessExtraMap.containsKey(w)
                                 && readingWitnessExtraMap.get(w).containsKey(prop)) {
-                            addWitnessLink(priorReading, readingWitnessExtraMap.get(w).get(prop), w, prop);
+                            addWitnessLink(priorReading, readingWitnessExtraMap.get(w).get(prop), w, prop, tx);
                             // This witness layer has been matched; remove it from later accounting.
                             readingWitnessExtraMap.get(w).remove(prop);
                         }
                         // If there isn't a match, use the "normal" witness reading on the TO side
                         else
-                            addWitnessLink(priorReading, readingWitnessToMap.get(w), w, prop);
+                            addWitnessLink(priorReading, readingWitnessToMap.get(w), w, prop, tx);
                     }
                 }
             }
@@ -294,7 +291,7 @@ public class ReadingService {
             HashMap<String, Node> thisToExtra = readingWitnessExtraMap.get(w);
             for (String extra : thisToExtra.keySet()) {
                 Node priorNode = deferredLinks.get(w);
-                addWitnessLink(priorNode, thisToExtra.get(extra), w, extra);
+                addWitnessLink(priorNode, thisToExtra.get(extra), w, extra, tx);
             }
         }
     }
@@ -493,25 +490,31 @@ public class ReadingService {
     public static Set<Node> recalculateRank (Node startNode, boolean recalculateAll, Transaction tx) throws Exception {
     	RankCalcEvaluate e = new RankCalcEvaluate(startNode, recalculateAll, tx);
     	AlignmentTraverse a = new AlignmentTraverse(startNode);
-//        GraphDatabaseService db = startNode.getGraphDatabase();
+        // GraphDatabaseService db = startNode.getGraphDatabase();
     	// Traverse the sequence graph from our start node, putting a mark on
     	// all the nodes we expect to visit
-//        tx.traversalDescription().depthFirst()
-//                .expand(a)
-//                .uniqueness(Uniqueness.RELATIONSHIP_GLOBAL)
-//                .traverse(startNode).nodes().stream().forEach(x -> x.setProperty("touched", true));
-    	StreamSupport.stream(tx.traversalDescription().depthFirst().expand(a).uniqueness(Uniqueness.RELATIONSHIP_GLOBAL)
-    			.traverse(startNode).nodes().spliterator(), false).forEach(x -> x.setProperty("touched", true));
-    	
+        // tx.traversalDescription().depthFirst()
+        //         .expand(a)
+        //         .uniqueness(Uniqueness.RELATIONSHIP_GLOBAL)
+        //         .traverse(startNode).nodes().stream().forEach(x -> x.setProperty("touched", true));
+
+        // StreamSupport.stream(tx.traversalDescription().depthFirst().expand(a).uniqueness(Uniqueness.RELATIONSHIP_GLOBAL)
+        //         .traverse(startNode).nodes().spliterator(), false).forEach(x -> x.setProperty("touched", true));
+        Traverser traverser = tx.traversalDescription().depthFirst().expand(a).uniqueness(Uniqueness.RELATIONSHIP_GLOBAL)
+                .traverse(startNode);
+        Iterable<Node> nodes = traverser.nodes();
+        for(Node node: nodes){
+            node.setProperty("touched", true);
+        }
     	// At this point we can start to reassign ranks
-    	ResourceIterable<Node> touched = (ResourceIterable<Node>) tx.traversalDescription().depthFirst()
+    	Iterable<Node> touched = tx.traversalDescription().depthFirst()
     			.expand(a)
     			.evaluator(e)
     			.uniqueness(Uniqueness.RELATIONSHIP_GLOBAL)
     			.traverse(startNode).nodes();
     	// Run the traverser and commit the updated ranks
     	Set<Node> changed = new HashSet<>();
-    	for (Node n : touched.stream().collect(Collectors.toSet())) {
+    	for (Node n : touched) {
     		n.removeProperty("touched");
     		if (!n.hasProperty("newrank"))
     			throw new Exception (String.format("Node %d (%s) traversed but not re-ranked!",

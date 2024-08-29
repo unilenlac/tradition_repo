@@ -102,7 +102,7 @@ public class TEIParallelSegParser {
                                 Relationship endLink = documentPrior.createRelationshipTo(endNode, ERelations.SEQUENCE);
                                 setAllWitnesses(endLink);
                                 // Now go through and clean out all the placeholder nodes, linking the tradition.
-                                for (Node n : placeholderNodes) removePlaceholder(n);
+                                for (Node n : placeholderNodes) removePlaceholder(n, tx);
                                 break;
 
                         }
@@ -172,7 +172,7 @@ public class TEIParallelSegParser {
                                 ArrayList<String> inactiveWitnesses = activeWitnesses.keySet().stream()
                                         .filter(x -> !activeWitnesses.get(x)).collect(Collectors.toCollection(ArrayList::new));
                                 for (String w : inactiveWitnesses)
-                                    addWitnessLink(documentPrior, chainEnd, w, "witnesses");
+                                    addWitnessLink(documentPrior, chainEnd, w, "witnesses", tx);
 
                                 // Link the beginning of the chain to the documentPrior
                                 Relationship link = documentPrior.createRelationshipTo(chain.get(0), ERelations.SEQUENCE);
@@ -266,7 +266,7 @@ public class TEIParallelSegParser {
                                     ArrayList<String> inactiveWitnesses = activeWitnesses.keySet().stream()
                                             .filter(x -> !activeWitnesses.get(x)).collect(Collectors.toCollection(ArrayList::new));
                                     for (String w : inactiveWitnesses)
-                                        addWitnessLink(appStart, appEnd, w, "witnesses");
+                                        addWitnessLink(appStart, appEnd, w, "witnesses", tx);
                                 } else {
                                     // Connect only the current active witnesses from the enclosing app to this one
                                     r.setProperty("witnesses", activeWitnesses.keySet().stream()
@@ -287,7 +287,7 @@ public class TEIParallelSegParser {
                                 // Add any active wits that are missing in this app
                                 activeWitnesses.keySet().stream().filter(activeWitnesses::get)
                                         .filter(x -> !hasWitnesses.contains(x))
-                                        .forEach(x -> addWitnessLink(appStart, appEnd, x, "witnesses"));
+                                        .forEach(x -> addWitnessLink(appStart, appEnd, x, "witnesses", tx));
 
                                 // Promote our new end node and get out of here.
                                 contextPrior = appEnd;

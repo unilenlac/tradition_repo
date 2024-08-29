@@ -53,7 +53,7 @@ public class TeiExporter {
             Result variants = getVariants(section_node, tx);
             Result hypernodes = getHypernodes(section_node, tx);
 
-            List<Map<String, Object>> section_table = variants.stream().collect(Collectors.toList());
+            List<Map<String, Object>> variant_table = variants.stream().collect(Collectors.toList());
             List<Map<String, Object>> hn_table = hypernodes.stream().collect(Collectors.toList());
 
             Result section = graphService.get_section(section_node, witness_count, tx);
@@ -64,14 +64,28 @@ public class TeiExporter {
                 ArrayList<Node> nodes = (ArrayList<Node>) section.next().get("path");
                 for(Node node: nodes){
                     if(node_skip == 0){
-                        List<Map<String, Object>> filtered_top_hn = hn_table.stream().filter(x -> Objects.equals(x.get("nodeUuid").toString(), node.getElementId())).collect(Collectors.toList());
-
+                        List<Map<String, Object>> filtered_top_hn = hn_table.stream().filter(x -> x.get("nodeUuid").equals(node.getElementId())).collect(Collectors.toList());
+                        List<Map<String, Object>> filtered_variants = variant_table.stream().filter(x -> x.get("rank") == node.getProperty("rank")).collect(Collectors.toList());
+                        // populate hyper-readings
                         if(filtered_top_hn.size() >=1){
                             writer.writeStartElement("app");
-                            node_skip = count_nodes(filtered_top_hn.get(0).get("hyperId").toString(), tx);
-                            populateHypernodes(filtered_top_hn, hn_table, new HashMap<>(), section_table, writer, tx);
+                            node_skip = count_nodes(filtered_top_hn.get(0).get("hyperId").toString(), tx)-1;
+                            populateHypernodes(filtered_top_hn, hn_table, new HashMap<>(), variant_table, writer, tx);
                             writer.writeEndElement();
                         }
+                        // populate variants outside hyper-readings
+                        if(filtered_top_hn.isEmpty() && filtered_variants.size() > 1){
+                            populateVariants(node, filtered_variants, writer, tx);
+                        }
+                        // populate non variating text on the main element
+                        if(filtered_top_hn.isEmpty() && filtered_variants.size() == 1) {
+                            // todo replace with start/endnode
+                            if(!Objects.equals(node.getProperty("text").toString(), "#START#") && !Objects.equals(node.getProperty("text").toString(), "#END#")){
+                                writer.writeCharacters(node.getProperty("text").toString()+" ");
+                            }
+                        }
+                    } else {
+                        node_skip--;
                     }
                 }
             }
@@ -85,7 +99,6 @@ public class TeiExporter {
         Map<String, Object> top_hn = top_hn_list.get(0);
         List<String> nodes = filtered_hn.stream().filter(x -> x.get("hyperId").equals(top_hn.get("hyperId"))).map(x -> x.get("nodeUuid").toString()).collect(Collectors.toList());
         int hn_node_count = nodes.size();
-        // List<String> remaining_nodes = filtered_hn.stream().filter(x -> !x.get("hyperId").equals(top_hn.get("hyperId"))).map(x -> x.get("nodeUuid").toString()).collect(Collectors.toList());
         List<Map<String, Object>> remaining_hn = filtered_hn.stream().filter(x -> !x.get("hyperId").equals(top_hn.get("hyperId"))).collect(Collectors.toList());
         String node_sample = nodes.get(0);
 
@@ -102,11 +115,16 @@ public class TeiExporter {
                 populateHypernodes(local_top_hn, remaining_hn, new HashMap<>(), variant_list, writer, tx);
                 writer.writeEndElement();
                 remaining_hn = remaining_hn.stream().filter(x -> !x.get("hyperId").equals(local_top_hn.get(0).get("hyperId"))).collect(Collectors.toList());
-            }else{
+            } else {
                 if(count < node_skip){
                     count++;
                 } else {
-                    writer.writeCharacters(node.getProperty("text").toString()+" ");
+                    int node_relations = node.getDegree(ERelations.RELATED);
+                    if (node_relations > 0){
+                        populateVariants(node, variant_locus, writer, tx);
+                    } else {
+                        writer.writeCharacters(node.getProperty("text").toString()+" ");
+                    }
                 }
             }
         }
@@ -159,12 +177,6 @@ public class TeiExporter {
                     app_elements.add(xmlement);
                 }
             }
-            for(Map<String, String> el: app_elements){
-                writer.writeStartElement(el.get("el"));
-                writer.writeCharacters(el.get("text"));
-                writer.writeEndElement();
-            }
-            writer.writeEndElement();
         }
         for(Map<String, String> el: app_elements){
             writer.writeStartElement(el.get("el"));
@@ -303,8 +315,8 @@ public class TeiExporter {
          */
         String query = String.format("match (r:READING)-[l:HAS_HYPERNODE]->(h:HYPERREADING)\n" +
                 " WHERE r.section_id=\"%s\"\n" +
-                " WITH r.text as text, id(r) as nodeId, elementId(r) as nodeUuid, elementId(h) as hyperId\n" +
-                " RETURN text, nodeId, nodeUuid, hyperId ORDER BY nodeId ASC", section_node.getElementId());
+                " WITH r.text as text, id(r) as nodeId, elementId(r) as nodeUuid, elementId(h) as hyperId, h.note as note\n" +
+                " RETURN text, nodeId, nodeUuid, hyperId, note ORDER BY nodeId ASC", section_node.getElementId());
         return tx.execute(query);
     }
     public Result hn_stats(Node section_node, Transaction tx){

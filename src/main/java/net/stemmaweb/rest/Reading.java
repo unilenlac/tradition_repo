@@ -285,7 +285,7 @@ public class Reading {
                 }
                 // Find the witness's following node
                 HashMap<String, String> wit = parseSigil(sigil);
-                Node next = this.getNeighbourReadingInSequence(wit.get("sigil"), wit.get("layer"), Direction.OUTGOING);
+                Node next = this.getNeighbourReadingInSequence(wit.get("sigil"), wit.get("layer"), Direction.OUTGOING, tx);
                 if (next == null) {
                     errorMessage = "Witness path " + sigil + " ends after requested reading";
                     return errorResponse(Status.INTERNAL_SERVER_ERROR);
@@ -295,8 +295,8 @@ public class Reading {
                     pushedReadings.add(next);
                 // Thread the lacuna between them
                 ReadingService.removeWitnessLink(us, next, wit.get("sigil"), wit.get("layer"), "none");
-                newSeqs.add(ReadingService.addWitnessLink(us, lacuna, wit.get("sigil"), wit.get("layer")));
-                newSeqs.add(ReadingService.addWitnessLink(lacuna, next, wit.get("sigil"), wit.get("layer")));
+                newSeqs.add(ReadingService.addWitnessLink(us, lacuna, wit.get("sigil"), wit.get("layer"), tx));
+                newSeqs.add(ReadingService.addWitnessLink(lacuna, next, wit.get("sigil"), wit.get("layer"), tx));
             }
             for (Node pushed : pushedReadings) {
                 changedReadings.addAll(ReadingService.recalculateRank(pushed));
@@ -543,7 +543,7 @@ public class Reading {
                 }
 
                 Node newNode = tx.createNode();
-                GraphModel localResult = duplicate(newWitnesses, originalReading, newNode);
+                GraphModel localResult = duplicate(newWitnesses, originalReading, newNode, tx);
                 tempDeleted.addAll(localResult.getRelations());
                 newSequences.addAll(localResult.getSequences());
                 ReadingModel newModel = new ReadingModel(newNode);
@@ -562,7 +562,7 @@ public class Reading {
                 }
             }
             newSequences.removeAll(tempSequences);
-            tx.close();
+            tx.commit();
         } catch (NotFoundException e) {
             errorMessage = e.getMessage();
             return errorResponse(Status.NOT_FOUND);
@@ -633,7 +633,7 @@ public class Reading {
      * @return a GraphModel containing the new readings, new sequences and deleted relations.
      *         Note that this does NOT return deleted or modified sequences.
      */
-    private GraphModel duplicate(List<String> newWitnesses, Node originalReading, Node addedReading) throws Exception {
+    private GraphModel duplicate(List<String> newWitnesses, Node originalReading, Node addedReading, Transaction tx) throws Exception {
         // copy reading properties to newly added reading
         ReadingService.copyReadingProperties(originalReading, addedReading);
         Reading rdgRest = new Reading(originalReading.getElementId());
@@ -642,19 +642,19 @@ public class Reading {
         HashSet<Relationship> newSequences = new HashSet<>();
         for (String wit : newWitnesses) {
             HashMap<String, String> witness = parseSigil(wit);
-            Node prior = rdgRest.getNeighbourReadingInSequence(witness.get("sigil"), witness.get("layer"), Direction.INCOMING);
-            Node next = rdgRest.getNeighbourReadingInSequence(witness.get("sigil"), witness.get("layer"), Direction.OUTGOING);
+            Node prior = rdgRest.getNeighbourReadingInSequence(witness.get("sigil"), witness.get("layer"), Direction.INCOMING, tx);
+            Node next = rdgRest.getNeighbourReadingInSequence(witness.get("sigil"), witness.get("layer"), Direction.OUTGOING, tx);
             if (prior == null || next == null) {
                 throw new Exception("No prior / next node found for reading " + originalReading.getElementId() + "!");
             }
-            try (Transaction tx = db.beginTx()) {
+            // try (Transaction tx = db.beginTx()) {
                 // Store the added/changed SEQUENCE links, so that they go into the new GraphModel
-                newSequences.add(ReadingService.addWitnessLink(prior, addedReading, witness.get("sigil"), witness.get("layer")));
-                newSequences.add(ReadingService.addWitnessLink(addedReading, next, witness.get("sigil"), witness.get("layer")));
+                newSequences.add(ReadingService.addWitnessLink(prior, addedReading, witness.get("sigil"), witness.get("layer"), tx));
+                newSequences.add(ReadingService.addWitnessLink(addedReading, next, witness.get("sigil"), witness.get("layer"), tx));
                 ReadingService.removeWitnessLink(prior, originalReading, witness.get("sigil"), witness.get("layer"), "end");
                 ReadingService.removeWitnessLink(originalReading, next, witness.get("sigil"), witness.get("layer"), "start");
-                tx.close();
-            }
+            //     tx.close();
+            // }
         }
         ArrayList<SequenceModel> sequenceModels = new ArrayList<>();
         newSequences.forEach(x -> sequenceModels.add(new SequenceModel(x)));
@@ -666,7 +666,7 @@ public class Reading {
         String tradId = getTraditionId();
         Section sectionRest = new Section(tradId, sectId);
         Long ourRank = (Long) originalReading.getProperty("rank");
-        Transaction tx = db.beginTx();
+        // Transaction tx = db.beginTx();
         for (RelationModel rm : sectionRest.sectionRelations()) {
             Relationship originalRel = tx.getRelationshipByElementId(rm.getId());
             if (originalRel.hasProperty("colocation") && originalRel.getProperty("colocation").equals(true) &&
@@ -993,10 +993,10 @@ public class Reading {
             if (errorMessage != null)
                 return errorResponse(Status.INTERNAL_SERVER_ERROR);
 
-            readingsAndRelations = split(originalReading, splitIndex, model);
-            ReadingService.recalculateRank(originalReading, true);
+            readingsAndRelations = split(originalReading, splitIndex, model, tx);
+            ReadingService.recalculateRank(originalReading, true, tx);
 
-            tx.close();
+            tx.commit();
         } catch (NotFoundException e) {
             errorMessage = e.getMessage();
             return errorResponse(Status.NOT_FOUND);
@@ -1049,7 +1049,7 @@ public class Reading {
      *            the ReadingBoundaryModel saying how the reading should be split
      * @return a list of the new SEQUENCE relationships created.
      */
-    private GraphModel split(Node originalReading, int splitIndex, ReadingBoundaryModel model) {
+    private GraphModel split(Node originalReading, int splitIndex, ReadingBoundaryModel model, Transaction tx) {
         ArrayList<ReadingModel> createdOrChangedReadings = new ArrayList<>();
         ArrayList<SequenceModel> createdSequences = new ArrayList<>();
 
@@ -1061,6 +1061,7 @@ public class Reading {
         String[] splitWords = splitUpText(splitIndex, model.getCharacter(),
                 originalReading.getProperty("text").toString());
 
+        String tmp = splitWords[0];
         // Change the first reading
         originalReading.setProperty("text", splitWords[0]);
         originalReading.setProperty("display", splitWords[0].replaceAll("<", "&lt;").replaceAll(">", "&gt;"));
@@ -1068,7 +1069,7 @@ public class Reading {
 
         // Add the new readings
         Node lastReading = originalReading;
-        Transaction tx = db.beginTx();
+        // Transaction tx = db.beginTx();
 
         for (int i = 1; i < splitWords.length; i++) {
             Node newReading = tx.createNode();
@@ -1102,7 +1103,7 @@ public class Reading {
             // Loop
             lastReading = newReading;
         }
-        tx.close();
+        // tx.close();
         for (Relationship oldRel : originalOutgoingRels) {
             Relationship newRel = lastReading.createRelationshipTo(oldRel.getEndNode(), oldRel.getType());
             RelationService.copyRelationshipProperties(oldRel, newRel);
@@ -1133,7 +1134,7 @@ public class Reading {
     public Response getNextReadingInWitness(@PathParam("witnessId") String witnessId,
                                             @DefaultValue("witnesses") @QueryParam("layer") String layer) {
         if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
-        Node foundNeighbour = getNeighbourReadingInSequence(witnessId, layer, Direction.OUTGOING);
+        Node foundNeighbour = getNeighbourReadingInSequence(witnessId, layer, Direction.OUTGOING, db.beginTx());
         if (foundNeighbour != null) {
             ReadingModel result = new ReadingModel(foundNeighbour);
             if (result.getIs_end()) {
@@ -1165,7 +1166,7 @@ public class Reading {
     public Response getPreviousReadingInWitness(@PathParam("witnessId") String witnessId,
                                                 @DefaultValue("witnesses") @QueryParam("layer") String layer) {
         if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
-        Node foundNeighbour = getNeighbourReadingInSequence(witnessId, layer, Direction.INCOMING);
+        Node foundNeighbour = getNeighbourReadingInSequence(witnessId, layer, Direction.INCOMING, db.beginTx());
         if (foundNeighbour != null) {
             ReadingModel result = new ReadingModel(foundNeighbour);
             if (result.getIs_start()) {
@@ -1179,9 +1180,9 @@ public class Reading {
 
     // Gets the neighbour reading in the given direction for the given witness. Returns
     // the relevant ReadingModel, or sets errorMessage and returns null.
-    private Node getNeighbourReadingInSequence(String witnessId, String layer, Direction dir) {
+    private Node getNeighbourReadingInSequence(String witnessId, String layer, Direction dir, Transaction tx) {
         Node neighbour = null;
-        try (Transaction tx = db.beginTx()) {
+        // try (Transaction tx = db.beginTx()) {
             Node read = tx.getNodeByElementId(readId);
             // Sanity check: does the requested witness+layer actually exist in this node in
             // either direction?
@@ -1214,13 +1215,13 @@ public class Reading {
             } else {
                 neighbour = matching.iterator().next().getOtherNode(read);
             }
-            tx.close();
-        } catch (NotFoundException e) {
-            errorMessage = e.getMessage();
-        } catch (Exception e) {
-            e.printStackTrace();
-            errorMessage = e.getMessage();
-        }
+            // tx.close();
+        // } catch (NotFoundException e) {
+        //     errorMessage = e.getMessage();
+        // } catch (Exception e) {
+        //     e.printStackTrace();
+        //     errorMessage = e.getMessage();
+        // }
         return neighbour;
     }
 

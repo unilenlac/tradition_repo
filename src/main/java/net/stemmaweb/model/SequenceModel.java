@@ -52,9 +52,9 @@ public class SequenceModel {
     public SequenceModel(Relationship rel) {
         this();
         type = rel.getType().toString();
-        source = rel.getStartNode().getId() + "";
-        target = rel.getEndNode().getId() + "";
-        id = Long.toString(rel.getId());
+        source = rel.getStartNode().getElementId() + "";
+        target = rel.getEndNode().getElementId() + "";
+        id = rel.getElementId();
 
         for (String p : rel.getPropertyKeys()) {
             if (p.equals("witnesses"))

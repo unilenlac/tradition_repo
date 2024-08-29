@@ -188,7 +188,7 @@ public class CollateXJsonParser {
 
                     }
                     Node lastReading = lastWitnessReading.get(thisWitness);
-                    ReadingService.addWitnessLink(lastReading, thisReading, witParts.get(0), witParts.get(1));
+                    ReadingService.addWitnessLink(lastReading, thisReading, witParts.get(0), witParts.get(1), tx);
                     lastWitnessReading.put(thisWitness, thisReading);
                 }
                 if (createdReadings.size() > 0) {
@@ -212,7 +212,7 @@ public class CollateXJsonParser {
             for (String witString : collationWitnesses) {
                 List<String> witParts = parseWitnessSigil(witString);
                 Node lastReading = lastWitnessReading.get(witString);
-                ReadingService.addWitnessLink(lastReading, endNode, witParts.get(0), witParts.get(1));
+                ReadingService.addWitnessLink(lastReading, endNode, witParts.get(0), witParts.get(1), tx);
             }
             tx.commit();
             return Response.status(Response.Status.CREATED).entity(jsonresp("parentId", parentNode.getElementId())).build();
