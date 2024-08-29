@@ -41,19 +41,17 @@ import net.stemmaweb.services.VariantGraphService;
 public class Util {
 
     // Start and end node creation
-    static Node createStartNode(Node parentNode) {
-        GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+    static Node createStartNode(Node parentNode, Transaction tx) {
+
         Node startNode;
-        try (Transaction tx = db.beginTx()) {
-	        Node parentNodeTx = tx.getNodeByElementId(parentNode.getElementId());
-            startNode = tx.createNode(Nodes.READING);
-	        startNode.setProperty("is_start", true);
-	        startNode.setProperty("section_id", parentNode.getElementId());
-	        startNode.setProperty("rank", 0L);
-	        startNode.setProperty("text", "#START#");
-	        parentNodeTx.createRelationshipTo(startNode, ERelations.COLLATION);
-	        tx.commit();
-        }
+        Node parentNodeTx = tx.getNodeByElementId(parentNode.getElementId());
+        startNode = tx.createNode(Nodes.READING);
+        startNode.setProperty("is_start", true);
+        startNode.setProperty("section_id", parentNode.getElementId());
+        startNode.setProperty("rank", 0L);
+        startNode.setProperty("text", "#START#");
+        parentNodeTx.createRelationshipTo(startNode, ERelations.COLLATION);
+
         return startNode;
     }
 

@@ -110,14 +110,8 @@ public class ReadingService {
     }
 
     public static Relationship addWitnessLink (Node start, Node end, String sigil, String witClass, Transaction tx) {
-        //GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
-        //try(Transaction tx = db.beginTx()){
-        //    Node startTx = tx.getNodeByElementId(start.getElementId());
-        //    Node endTx = tx.getNodeByElementId(end.getElementId());
+
             return addWitnessLink(start, end, sigil, witClass, ERelations.SEQUENCE);
-        //    tx.commit();
-            // return rel;
-        //}
     }
 
     /**

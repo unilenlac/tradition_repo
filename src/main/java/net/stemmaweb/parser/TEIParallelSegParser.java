@@ -68,7 +68,7 @@ public class TEIParallelSegParser {
             parentId = parentNode.getElementId();
             tradId = traditionNode.getProperty("id").toString();
             // Set up the start node
-            startNode = Util.createStartNode(parentNode);
+            startNode = Util.createStartNode(parentNode, tx);
 
             // State variables
             boolean inHeader = false;

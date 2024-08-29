@@ -118,7 +118,7 @@ public class TabularParser {
         try (Transaction tx = db.beginTx()) {
             traditionNode = VariantGraphService.getTraditionNode(parentNode, tx);
             // Make the start node
-            Node startNode = Util.createStartNode(parentNode);
+            Node startNode = Util.createStartNode(parentNode, tx);
             Node endNode = Util.createEndNode(parentNode, (long) tableData.size());
             // endNode.setProperty("rank", (long) tableData.size());
 
