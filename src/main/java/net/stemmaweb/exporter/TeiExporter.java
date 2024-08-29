@@ -1,5 +1,6 @@
 package net.stemmaweb.exporter;
 
+import net.stemmaweb.rest.Nodes;
 import net.stemmaweb.services.GraphService;
 import org.neo4j.graphdb.*;
 import net.stemmaweb.rest.ERelations;
@@ -43,7 +44,7 @@ public class TeiExporter {
 
         try(Transaction tx = db.beginTx()){
 
-            Node tradition_node = tx.getNodeByElementId(tradition_id);
+            Node tradition_node = tx.findNode(Nodes.TRADITION, "id", tradition_id);
             Node section_node = tx.getNodeByElementId(section_id);
             Long witness_count = tradition_node.getRelationships(ERelations.HAS_WITNESS).stream().count();
 
@@ -64,21 +65,25 @@ public class TeiExporter {
                 ArrayList<Node> nodes = (ArrayList<Node>) section.next().get("path");
                 for(Node node: nodes){
                     if(node_skip == 0){
-                        List<Map<String, Object>> filtered_top_hn = hn_table.stream().filter(x -> x.get("nodeUuid").equals(node.getElementId())).collect(Collectors.toList());
+                        List<Map<String, Object>> node_hns = hn_table.stream().filter(x -> x.get("nodeUuid").equals(node.getElementId())).collect(Collectors.toList());
                         List<Map<String, Object>> filtered_variants = variant_table.stream().filter(x -> x.get("rank") == node.getProperty("rank")).collect(Collectors.toList());
                         // populate hyper-readings
-                        if(filtered_top_hn.size() >=1){
+
+                        Optional<Map<String, Object>> top_hn = node_hns.stream().filter(x -> x.get("note").equals("main")).findAny();
+
+                        if(top_hn.isPresent()){
+                            Map<String, Object> top_hn_object = top_hn.get();
                             writer.writeStartElement("app");
-                            node_skip = count_nodes(filtered_top_hn.get(0).get("hyperId").toString(), tx)-1;
-                            populateHypernodes(filtered_top_hn, hn_table, new HashMap<>(), variant_table, writer, tx);
+                            node_skip = count_nodes(top_hn_object.get("hyperId").toString(), tx)-1;
+                            populateHypernodes(top_hn_object, hn_table, new HashMap<>(), variant_table, writer, tx);
                             writer.writeEndElement();
                         }
                         // populate variants outside hyper-readings
-                        if(filtered_top_hn.isEmpty() && filtered_variants.size() > 1){
+                        if(node_hns.isEmpty() && filtered_variants.size() > 1){
                             populateVariants(node, filtered_variants, writer, tx);
                         }
                         // populate non variating text on the main element
-                        if(filtered_top_hn.isEmpty() && filtered_variants.size() == 1) {
+                        if(node_hns.isEmpty() && filtered_variants.size() == 1) {
                             // todo replace with start/endnode
                             if(!Objects.equals(node.getProperty("text").toString(), "#START#") && !Objects.equals(node.getProperty("text").toString(), "#END#")){
                                 writer.writeCharacters(node.getProperty("text").toString()+" ");
@@ -95,26 +100,33 @@ public class TeiExporter {
         return Response.ok().entity(result.toString()).build();
     }
 
-    public void populateHypernodes(List<Map<String, Object>> top_hn_list, List<Map<String, Object>> filtered_hn, Map<String, String> hn_stats, List<Map<String, Object>> variant_list, XMLStreamWriter writer, Transaction tx) throws XMLStreamException {
-        Map<String, Object> top_hn = top_hn_list.get(0);
-        List<String> nodes = filtered_hn.stream().filter(x -> x.get("hyperId").equals(top_hn.get("hyperId"))).map(x -> x.get("nodeUuid").toString()).collect(Collectors.toList());
+    public void populateHypernodes(Map<String, Object> top_hn, List<Map<String, Object>> filtered_hn, Map<String, String> hn_stats, List<Map<String, Object>> variant_list, XMLStreamWriter writer, Transaction tx) throws XMLStreamException {
+        /*
+        top_hn_list : list of all hn connected to the traversed section node
+        filtered_hn : contains the list of all hypernodes, also contains a state of the hypernodes when a list of node is traversed
+        on the first iteration the hn_list is complete
+        */
+
+        List<Node> nodes = get_hn_nodes(top_hn, tx);
+
         int hn_node_count = nodes.size();
         List<Map<String, Object>> remaining_hn = filtered_hn.stream().filter(x -> !x.get("hyperId").equals(top_hn.get("hyperId"))).collect(Collectors.toList());
-        String node_sample = nodes.get(0);
+        Node node_sample = nodes.get(0);
 
         writer.writeStartElement("lem");
         Long node_skip = 0L;
-        for (String id: nodes){
+        for (Node node: nodes){
             Long count = 0L;
-            Node node = tx.getNodeByElementId(id);
-            List<Map<String, Object>> local_top_hn = remaining_hn.stream().filter(x -> x.get("nodeUuid").equals(id)).collect(Collectors.toList());
+            // Node node = tx.getNodeByElementId(node.getElementId());
+            List<Map<String, Object>> local_node_hns = remaining_hn.stream().filter(x -> x.get("nodeUuid").equals(node.getElementId())).collect(Collectors.toList());
+            Optional<Map<String, Object>> local_top_hn = local_node_hns.stream().filter(x -> x.get("note").equals("main")).findAny();
             List<Map<String, Object>> variant_locus = variant_list.stream().filter(x -> x.get("rank").equals(node.getProperty("rank"))).collect(Collectors.toList());
-            if(local_top_hn.size() >= 1 && variant_locus.size() > 1){
-                node_skip = count_nodes(local_top_hn.get(0).get("hyperId").toString(), tx);
+            if (local_top_hn.isPresent() && variant_locus.size() > 1){
+                node_skip = count_nodes(local_top_hn.get().get("hyperId").toString(), tx);
                 writer.writeStartElement("app");
-                populateHypernodes(local_top_hn, remaining_hn, new HashMap<>(), variant_list, writer, tx);
+                populateHypernodes(local_top_hn.get(), remaining_hn, new HashMap<>(), variant_list, writer, tx);
                 writer.writeEndElement();
-                remaining_hn = remaining_hn.stream().filter(x -> !x.get("hyperId").equals(local_top_hn.get(0).get("hyperId"))).collect(Collectors.toList());
+                remaining_hn = remaining_hn.stream().filter(x -> !x.get("hyperId").equals(local_top_hn.get().get("hyperId"))).collect(Collectors.toList());
             } else {
                 if(count < node_skip){
                     count++;
@@ -131,7 +143,7 @@ public class TeiExporter {
 
         writer.writeEndElement();
 
-        List<Map<String, Object>> filtered_variants = variant_list.stream().filter(x -> x.get("rank") == tx.getNodeByElementId(node_sample).getProperty("rank")).collect(Collectors.toList());
+        List<Map<String, Object>> filtered_variants = variant_list.stream().filter(x -> x.get("rank") == tx.getNodeByElementId(node_sample.getElementId()).getProperty("rank")).collect(Collectors.toList());
         List<Map<String, Object>> filtered_bottom_hn = new ArrayList<>();
         for (Map<String, Object> variant: filtered_variants){
             if(!variant.get("nodeId").equals(node_sample) || variant.get("nodeId").equals(node_sample) && filtered_variants.size() == 1){
@@ -141,7 +153,9 @@ public class TeiExporter {
         if (filtered_bottom_hn.size() >= 1) {
             for (Map<String, Object> hn: filtered_bottom_hn){
                 System.out.println(hn);
-                List<String> hn_nodes = filtered_hn.stream().filter(x -> x.get("hyperId").equals(hn.get("hyperId"))).map(x -> x.get("text").toString()).collect(Collectors.toList());
+                List<Node> tmp_nodes = get_hn_nodes(hn, tx);
+                // List<String> hn_nodes = filtered_hn.stream().filter(x -> x.get("hyperId").equals(hn.get("hyperId"))).map(x -> x.get("text").toString()).collect(Collectors.toList());
+                List<String> hn_nodes = tmp_nodes.stream().map(x -> x.getProperty("text").toString()).collect(Collectors.toList());
                 if(hn_nodes.size() == hn_node_count){
                     writer.writeStartElement("rdg");
                     for(String n: hn_nodes){
@@ -151,6 +165,21 @@ public class TeiExporter {
                 }
             }
         }
+    }
+
+    public List<Node> get_hn_nodes(Map<String, Object> top_hn, Transaction tx){
+
+        String hn_node_query = String.format("MATCH (h:HYPERREADING)<-[l:HAS_HYPERNODE]-(r:READING)\n" +
+                "WHERE elementId(h) = \"%s\"\n" +
+                "RETURN r as node ORDER BY id(l) ASC", top_hn.get("hyperId"));
+
+        Result node_res = tx.execute(hn_node_query);
+        List<Node> nodes = new ArrayList<>();
+        while(node_res.hasNext()){
+            Node tmp_node = (Node) node_res.next().get("node");
+            nodes.add(tmp_node);
+        }
+        return nodes;
     }
 
     public void populateVariants(Node section_node, List<Map<String, Object>> filtered_variants, XMLStreamWriter writer, Transaction tx) throws XMLStreamException {
