@@ -254,7 +254,7 @@ public class Section {
     // Also used by the GraphML exporter
     public ArrayList<Node> collectSectionWitnesses() {
         HashSet<Node> witnessList = new HashSet<>();
-        Node traditionNode = VariantGraphService.getTraditionNode(tradId, db);
+        Node traditionNode = VariantGraphService.getTraditionNode(tradId, db.beginTx());
         Node sectionStart;
         try (Transaction tx = db.beginTx()) {
             sectionStart = VariantGraphService.getStartNode(sectId, tx);
@@ -475,12 +475,12 @@ public class Section {
         if (!sectionInTradition())
             return Response.status(Response.Status.NOT_FOUND).entity("Tradition and/or section not found").build();
         List<ReadingModel> sectionLemmata;
-        try {
+        try(Transaction tx = db.beginTx()) {
             if (startRdg != null) startRank = rankForReading(startRdg);
             if (endRdg != null) endRank = rankForReading(endRdg);
             sectionLemmata = collectLemmaReadings(followFinal.equals("true"), startRank, endRank);
             // Add on the end node, so we know whether a lacuna marker is needed.
-            sectionLemmata.add(new ReadingModel(VariantGraphService.getEndNode(sectId, db)));
+            sectionLemmata.add(new ReadingModel(VariantGraphService.getEndNode(sectId, db, tx)));
         } catch (Exception e) {
             return Response.serverError().entity(jsonerror(e.getMessage())).build();
         }
@@ -1137,7 +1137,7 @@ public class Section {
                     ? "1"
                     : startRank;
         String endRankL = endRank.equals("end")
-                    ? VariantGraphService.getEndNode(sectId, db).getElementId()
+                    ? VariantGraphService.getEndNode(sectId, db, db.beginTx()).getElementId()
                     : endRank;
         result.put("start", startRankL);
         result.put("end", endRankL);
@@ -1503,7 +1503,7 @@ public class Section {
     @ReturnType(clazz = GraphModel.class)
     public Response getGraphModel() {
         // TODO does this check make sense, or does the not-found happen already in Tradition.java?
-        if (VariantGraphService.getTraditionNode(tradId, db) == null)
+        if (VariantGraphService.getTraditionNode(tradId, db.beginTx()) == null)
             return Response.status(Response.Status.NOT_FOUND).type(MediaType.TEXT_PLAIN_TYPE)
                     .entity("No such tradition found").build();
 
@@ -1546,7 +1546,7 @@ public class Section {
     @Produces("application/zip")
     @ReturnType("java.lang.Void")
     public Response getGraphML() {
-        if (VariantGraphService.getTraditionNode(tradId, db) == null)
+        if (VariantGraphService.getTraditionNode(tradId, db.beginTx()) == null)
             return Response.status(Response.Status.NOT_FOUND).type(MediaType.TEXT_PLAIN_TYPE)
                     .entity("No such tradition found").build();
 
@@ -1580,7 +1580,7 @@ public class Section {
                            @DefaultValue("false") @QueryParam("expand_sigla") Boolean displayAllSigla,
                                                   @QueryParam("normalise") List<String> normalise,
                                                   @QueryParam("exclude_witness") List<String> excWitnesses) {
-        if (VariantGraphService.getTraditionNode(tradId, db) == null)
+        if (VariantGraphService.getTraditionNode(tradId, db.beginTx()) == null)
             return Response.status(Response.Status.NOT_FOUND).entity("No such tradition found").build();
 
         // Put our options into an object

@@ -106,7 +106,7 @@ public class Relation {
                 try (Transaction tx = db.beginTx()) {
                     Node readingA = tx.getNodeByElementId(relationModel.getSource());
                     Node readingB = tx.getNodeByElementId(relationModel.getTarget());
-                    Node startingPoint = VariantGraphService.getTraditionNode(tradId, db);
+                    Node startingPoint = VariantGraphService.getTraditionNode(tradId, tx);
                     if (scope.equals(SCOPE_SECTION))
                         startingPoint = tx.getNodeByElementId(String.valueOf(readingA.getProperty("section_id")));
                     Relationship thisRelation = tx.getRelationshipByElementId(thisRelId);

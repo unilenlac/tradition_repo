@@ -60,7 +60,7 @@ public class User {
             } else {
                 return Response.noContent().build();
             }
-            //tx.close();
+            tx.close();
         } catch (Exception e) {
             return Response.serverError().entity(jsonerror(e.getMessage())).build();
         }
@@ -87,7 +87,6 @@ public class User {
         Node extantUser;
         try (Transaction tx = db.beginTx()) {
             extantUser = tx.findNode(Nodes.USER, "id", userId);
-            //tx.close();
         }
 
         Status returnedStatus;

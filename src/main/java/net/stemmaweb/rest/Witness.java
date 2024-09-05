@@ -60,8 +60,8 @@ public class Witness {
 
     private String getWitnessById(String nodeId) {
         String foundSigil = null;
-        Node tradNode = VariantGraphService.getTraditionNode(tradId, db);
         try (Transaction tx = db.beginTx()) {
+            Node tradNode = VariantGraphService.getTraditionNode(tradId, tx);
             Node found = null;
             for (Relationship r : tradNode.getRelationships(Direction.OUTGOING, ERelations.HAS_WITNESS)) {
                 if (r.getEndNode().getElementId().equals(nodeId))
@@ -75,7 +75,7 @@ public class Witness {
     }
 
     private Node getWitnessBySigil() {
-        Node tradNode = VariantGraphService.getTraditionNode(tradId, db);
+        Node tradNode = VariantGraphService.getTraditionNode(tradId, db.beginTx());
         Node found = null;
         try (Transaction tx = db.beginTx()) {
             for (Relationship r : tradNode.getRelationships(Direction.OUTGOING, ERelations.HAS_WITNESS)) {
@@ -243,8 +243,8 @@ public class Witness {
 
             if (end.equals("E")) {
                 // Find the rank of the graph's end.
-                Node endNode = DatabaseService.getRelated(currentSection, ERelations.HAS_END, null).get(0);
                 try (Transaction tx = db.beginTx()) {
+                    Node endNode = DatabaseService.getRelated(currentSection, ERelations.HAS_END, tx).get(0);
                     endRank = Long.parseLong(endNode.getProperty("rank").toString());
                     tx.close();
                 } catch (Exception e) {
@@ -373,7 +373,7 @@ public class Witness {
     }
 
     private ArrayList<Node> sectionsRequested() {
-        Node traditionNode = VariantGraphService.getTraditionNode(tradId, db);
+        Node traditionNode = VariantGraphService.getTraditionNode(tradId, db.beginTx());
         if (traditionNode == null) {
             errorMessage = "Requested tradition does not exist";
             return null;

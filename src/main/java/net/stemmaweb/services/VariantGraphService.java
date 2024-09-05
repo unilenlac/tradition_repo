@@ -100,11 +100,10 @@ public class VariantGraphService {
      * @return  the end node, or null if there is none
      *      NOTE if there are multiple unordered sections, an arbitrary end node may be returned!
      */
-    public static Node getEndNode(String nodeId, GraphDatabaseService db) {
-    	Transaction tx = db.beginTx();
-    	Node node = getBoundaryNode(nodeId, tx, ERelations.HAS_END);
-    	tx.close();
-    	return node;
+    public static Node getEndNode(String nodeId, GraphDatabaseService db, Transaction tx) {
+    	// Transaction tx = db.beginTx();
+        // tx.close();
+    	return getBoundaryNode(nodeId, tx, ERelations.HAS_END);
     }
 
     public static Node getEndNode(String nodeId, Transaction tx) {
@@ -184,17 +183,17 @@ public class VariantGraphService {
      * Get the node of the specified tradition
      *
      * @param tradId  the string ID of the tradition we're hunting
-     * @param db      the GraphDatabaseService where the tradition is stored
+     * @param tx      the GraphDatabaseService where the tradition is stored
      * @return        the relevant tradition node
      */
-    public static Node getTraditionNode(String tradId, GraphDatabaseService db) {
-        Node tradition;
-        try (Transaction tx = db.beginTx()) {
-            tradition = tx.findNode(Nodes.TRADITION, "id", tradId);
-            tx.close();
-        }
-        return tradition;
-    }
+    // public static Node getTraditionNode(String tradId, GraphDatabaseService db, Transaction tx) {
+        // Node tradition;
+        // try (Transaction tx = db.beginTx()) {
+        //     tradition = tx.findNode(Nodes.TRADITION, "id", tradId);
+        //     tx.close();
+        // }
+        // return tx.findNode(Nodes.TRADITION, "id", tradId);
+    // }
 
     public static Node getTraditionNode(String tradId, Transaction tx) {
     	Node tradition;
@@ -568,7 +567,7 @@ public class VariantGraphService {
      * @return        an org.neo4j.graphdb.traversal.Traverser object for the whole tradition
      */
     public static Traverser returnEntireTradition(String tradId, GraphDatabaseService db) {
-        return returnEntireTradition(getTraditionNode(tradId, db), db.beginTx());
+        return returnEntireTradition(getTraditionNode(tradId, db.beginTx()), db.beginTx());
     }
 
     /**

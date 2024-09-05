@@ -417,16 +417,16 @@ public class ReadingService {
     public static Set<Node> recalculateRank (Node startNode, boolean recalculateAll) throws Exception {
         RankCalcEvaluate e = new RankCalcEvaluate(startNode, recalculateAll);
         AlignmentTraverse a = new AlignmentTraverse(startNode);
-//        GraphDatabaseService db = startNode.getGraphDatabase();
+        // GraphDatabaseService db = startNode.getGraphDatabase();
     	GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
         Transaction tx = db.beginTx();
 
         // Traverse the sequence graph from our start node, putting a mark on
         // all the nodes we expect to visit
-//        tx.traversalDescription().depthFirst()
-//                .expand(a)
-//                .uniqueness(Uniqueness.RELATIONSHIP_GLOBAL)
-//                .traverse(startNode).nodes().stream().forEach(x -> x.setProperty("touched", true));
+        // tx.traversalDescription().depthFirst()
+        //         .expand(a)
+        //         .uniqueness(Uniqueness.RELATIONSHIP_GLOBAL)
+        //         .traverse(startNode).nodes().stream().forEach(x -> x.setProperty("touched", true));
 		StreamSupport.stream(tx.traversalDescription().depthFirst().expand(a).uniqueness(Uniqueness.RELATIONSHIP_GLOBAL)
 				.traverse(startNode).nodes().spliterator(), false).forEach(x -> x.setProperty("touched", true));
 

@@ -54,6 +54,7 @@ public class GraphDatabaseServiceProvider {
 		File config = new File(db_location + "/conf/neo4j.conf");
 		if (config.exists()){
 			dbService = new DatabaseManagementServiceBuilder(Path.of(db_location + "/"))
+					.setConfig(GraphDatabaseSettings.max_concurrent_transactions, 0)
 					.loadPropertiesFromFile( Path.of( db_location + "/conf/neo4j.conf" ) )
 					.build();
 		}else{

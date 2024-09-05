@@ -129,11 +129,12 @@ public class ReadingModel implements Comparable<ReadingModel> {
 
     /**
      * Generates a model from a Neo4j Node
-     * @param node - The node with label READING from which the model should take its values
+     * @param n - The node with label READING from which the model should take its values
      */
-    public ReadingModel(Node node) {
+    public ReadingModel(Node n) {
         GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
         try (Transaction tx = db.beginTx()) {
+            Node node = tx.getNodeByElementId(n.getElementId());
             if (node.hasProperty("grammar_invalid"))
                 this.setGrammar_invalid((Boolean) node.getProperty("grammar_invalid"));
             this.setId(node.getElementId());
@@ -211,7 +212,7 @@ public class ReadingModel implements Comparable<ReadingModel> {
             for (Relationship r : node.getRelationships(Direction.OUTGOING, ERelations.REPRESENTS)) {
                 this.addRepresented(new ReadingModel(r.getEndNode()));
             }
-            tx.close();
+            tx.commit();
         }
     }
 

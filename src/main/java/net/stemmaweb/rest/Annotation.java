@@ -89,8 +89,8 @@ public class Annotation {
     public Response updateAnnotation(AnnotationModel newAnno) {
         if (annotationNotFound()) return Response.status(Response.Status.NOT_FOUND).build();
         AnnotationModel result = null;
-        Node tradNode = VariantGraphService.getTraditionNode(tradId, db);
         try (Transaction tx = db.beginTx()) {
+            Node tradNode = VariantGraphService.getTraditionNode(tradId, tx);
             // Find the relevant annotation label
             Optional<Node> al = DatabaseService.getRelated(tradNode, ERelations.HAS_ANNOTATION_TYPE, tx)
                     .stream().filter(x -> x.getProperty("name").equals(newAnno.getLabel())).findFirst();
@@ -366,15 +366,16 @@ public class Annotation {
 
     // Used inside a transaction
     private Relationship findExistingLink(AnnotationLinkModel alm) {
-    	Transaction tx = db.beginTx();
-        Node aNode = tx.getNodeByElementId(annoId);
-        for (Relationship r : aNode.getRelationships(Direction.OUTGOING)) {
-            if (r.getType().name().equals(alm.getType()) && r.getEndNode().getElementId() == alm.getTarget()) {
-                return r;
+        try(Transaction tx = db.beginTx()){
+            Node aNode = tx.getNodeByElementId(annoId);
+            for (Relationship r : aNode.getRelationships(Direction.OUTGOING)) {
+                if (r.getType().name().equals(alm.getType()) && r.getEndNode().getElementId() == alm.getTarget()) {
+                    return r;
+                }
             }
+            tx.close();
+            return null;
         }
-        tx.close();
-        return null;
     }
 
     // Evaluator to walk the annotation structure

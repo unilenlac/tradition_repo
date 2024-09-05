@@ -179,7 +179,7 @@ public class StemmaTest {
     @Test
     public void setStemmaTest() {
 
-        Node traditionNode = VariantGraphService.getTraditionNode(tradId, db);
+        Node traditionNode = VariantGraphService.getTraditionNode(tradId, db.beginTx());
         ArrayList<Node> stemmata = DatabaseService.getRelated(traditionNode, ERelations.HAS_STEMMA, null);
         assertEquals(2, stemmata.size());
 
@@ -521,7 +521,7 @@ public class StemmaTest {
 
     @Test
     public void replaceStemmaTest() {
-        Node traditionNode = VariantGraphService.getTraditionNode(tradId, db);
+        Node traditionNode = VariantGraphService.getTraditionNode(tradId, db.beginTx());
         ArrayList<Node> stemmata = DatabaseService.getRelated(traditionNode, ERelations.HAS_STEMMA, null);
         assertEquals(2, stemmata.size());
 
@@ -545,7 +545,7 @@ public class StemmaTest {
 
     @Test
     public void replaceStemmaWithDudTest() {
-        Node traditionNode = VariantGraphService.getTraditionNode(tradId, db);
+        Node traditionNode = VariantGraphService.getTraditionNode(tradId, db.beginTx());
         ArrayList<Node> stemmata = DatabaseService.getRelated(traditionNode, ERelations.HAS_STEMMA, null);
         assertEquals(2, stemmata.size());
 
@@ -572,7 +572,7 @@ public class StemmaTest {
     @Test
     public void replaceStemmaNameMismatchTest() {
         // This used to fail; now the name given in the model overrides the name in the dot.
-        Node traditionNode = VariantGraphService.getTraditionNode(tradId, db);
+        Node traditionNode = VariantGraphService.getTraditionNode(tradId, db.beginTx());
         ArrayList<Node> stemmata = DatabaseService.getRelated(traditionNode, ERelations.HAS_STEMMA, null);
         assertEquals(2, stemmata.size());
 

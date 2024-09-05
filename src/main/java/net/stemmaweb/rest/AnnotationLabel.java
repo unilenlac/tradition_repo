@@ -76,9 +76,9 @@ public class AnnotationLabel {
     @ReturnType(clazz = AnnotationLabelModel.class)
     public Response createOrUpdateAnnotationLabel(AnnotationLabelModel alm) {
         Node ourNode = lookupAnnotationLabel();
-        Node tradNode = VariantGraphService.getTraditionNode(tradId, db);
         boolean isNew = false;
         try (Transaction tx = db.beginTx()) {
+            Node tradNode = VariantGraphService.getTraditionNode(tradId, tx);
             // Get the existing list of annotation labels associated with this tradition
             List<String> reservedWords = Arrays.asList("USER", "ROOT", "__SYSTEM__");
             List<String> existingLabels = getValidTargetsForTradition(reservedWords);
@@ -180,8 +180,8 @@ public class AnnotationLabel {
         Node ourNode = lookupAnnotationLabel();
         if (ourNode == null) return Response.status(Response.Status.NOT_FOUND).build();
         AnnotationLabelModel ourModel = new AnnotationLabelModel(ourNode);
-        Node tradNode = VariantGraphService.getTraditionNode(tradId, db);
         try (Transaction tx = db.beginTx()) {
+            Node tradNode = VariantGraphService.getTraditionNode(tradId, tx);
             // Check for annotations on this tradition using this label, before we delete it
             for (Node annoNode : DatabaseService.getRelated(tradNode, ERelations.HAS_ANNOTATION, tx))
                 if (annoNode.hasLabel(Label.label(ourModel.getName())))
@@ -219,7 +219,7 @@ public class AnnotationLabel {
     private Node lookupAnnotationLabel() {
         Node ourNode = null;
         try (Transaction tx = db.beginTx()) {
-            Node tradNode = VariantGraphService.getTraditionNode(tradId, db);
+            Node tradNode = VariantGraphService.getTraditionNode(tradId, tx);
             Optional<Node> foundNode = DatabaseService.getRelated(tradNode, ERelations.HAS_ANNOTATION_TYPE, tx)
                     .stream().filter(x -> x.getProperty("name", "").equals(name)).findFirst();
             if (foundNode.isPresent()) ourNode = foundNode.get();
@@ -229,9 +229,9 @@ public class AnnotationLabel {
     }
 
     private List<Node> getExistingLabelsForTradition() {
-        Node tradNode = VariantGraphService.getTraditionNode(tradId, db);
         List<Node> answer;
         try (Transaction tx = db.beginTx()) {
+            Node tradNode = VariantGraphService.getTraditionNode(tradId, tx);
             answer = DatabaseService.getRelated(tradNode, ERelations.HAS_ANNOTATION_TYPE, tx);
             tx.close();
             return answer;

@@ -222,7 +222,7 @@ public class GraphMLExporter {
      */
     public Response writeNeo4J(String tradId, String sectionId) {
         // Get the tradition node
-        Node traditionNode = VariantGraphService.getTraditionNode(tradId, db);
+        Node traditionNode = VariantGraphService.getTraditionNode(tradId, db.beginTx());
         if (traditionNode == null)
             return Response.status(Status.NOT_FOUND).build();
 

@@ -61,7 +61,7 @@ public class RelationType {
     @ReturnType("net.stemmaweb.model.RelationTypeModel")
     public Response getRelationType() {
         RelationTypeModel rtModel = new RelationTypeModel(typeName);
-        Node foundRelType = rtModel.lookup(VariantGraphService.getTraditionNode(traditionId, db), db.beginTx());
+        Node foundRelType = rtModel.lookup(VariantGraphService.getTraditionNode(traditionId, db.beginTx()), db.beginTx());
         if (foundRelType == null) {
             return Response.noContent().build();
         }
@@ -86,7 +86,7 @@ public class RelationType {
     @ReturnType(clazz = RelationTypeModel.class)
     public Response create(RelationTypeModel rtModel) {
         // Find any existing relation type on this tradition
-        Node traditionNode = VariantGraphService.getTraditionNode(traditionId, db);
+        Node traditionNode = VariantGraphService.getTraditionNode(traditionId, db.beginTx());
         Node extantRelType = rtModel.lookup(traditionNode, db.beginTx());
 
         // Were we asked for the secret Stemmaweb defaults?
@@ -125,7 +125,7 @@ public class RelationType {
     @ReturnType(clazz = RelationTypeModel.class)
     public Response delete() {
         RelationTypeModel rtModel = new RelationTypeModel(typeName);
-        Node tradition = VariantGraphService.getTraditionNode(traditionId, db);
+        Node tradition = VariantGraphService.getTraditionNode(traditionId, db.beginTx());
         Node foundRelType = rtModel.lookup(tradition, db.beginTx());
         if (foundRelType == null) {
             return Response.status(Response.Status.NOT_FOUND).build();
@@ -175,7 +175,7 @@ public class RelationType {
             put("repetition", "This is a reading that was repeated in one or more witnesses.");
         }};
 
-        Node tradNode = VariantGraphService.getTraditionNode(traditionId, db);
+        Node tradNode = VariantGraphService.getTraditionNode(traditionId, db.beginTx());
         RelationTypeModel relType = new RelationTypeModel(typeName);
         // Does this already exist?
         Node extantRelType = relType.lookup(tradNode, db.beginTx());

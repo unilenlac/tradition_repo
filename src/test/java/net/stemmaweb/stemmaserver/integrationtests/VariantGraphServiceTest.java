@@ -95,7 +95,7 @@ public class VariantGraphServiceTest {
 
     @Test
     public void getTraditionNodeTest() {
-        Node foundTradition = VariantGraphService.getTraditionNode(traditionId, db);
+        Node foundTradition = VariantGraphService.getTraditionNode(traditionId, db.beginTx());
         assertNotNull(foundTradition);
         // Now by section node
         ArrayList<Node> sectionNodes = VariantGraphService.getSectionNodes(traditionId, db);

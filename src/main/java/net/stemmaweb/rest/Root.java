@@ -182,22 +182,24 @@ public class Root {
 
         // If we got file contents, we should send them off for parsing.
         if (empty == null) {
-            Response dataResult = Tradition.parseDispatcher(VariantGraphService.getTraditionNode(tradId, db),
-                    filetype, uploadedInputStream, false);
-            if (dataResult.getStatus() != Response.Status.CREATED.getStatusCode()) {
-                // If something went wrong, delete the new tradition immediately and return the error.
-                new Tradition(tradId).deleteTraditionById();
-                return dataResult;
-            }
-            // If we just parsed GraphML (the only format that can preserve prior tradition IDs),
-            // get the actual tradition ID in case it was preserved from a prior export.
-            if (filetype.equals("graphml")) {
-                try {
-                    JSONObject dataValues = new JSONObject(dataResult.getEntity().toString());
-                    tradId = dataValues.get("parentId").toString();
-                } catch (JSONException e) {
-                    e.printStackTrace();
-                    return Response.serverError().entity(jsonerror("Bad file parse response")).build();
+            try(Transaction tx = db.beginTx()){
+                Response dataResult = Tradition.parseDispatcher(VariantGraphService.getTraditionNode(tradId, tx),
+                        filetype, uploadedInputStream, false);
+                if (dataResult.getStatus() != Response.Status.CREATED.getStatusCode()) {
+                    // If something went wrong, delete the new tradition immediately and return the error.
+                    new Tradition(tradId).deleteTraditionById();
+                    return dataResult;
+                }
+                // If we just parsed GraphML (the only format that can preserve prior tradition IDs),
+                // get the actual tradition ID in case it was preserved from a prior export.
+                if (filetype.equals("graphml")) {
+                    try {
+                        JSONObject dataValues = new JSONObject(dataResult.getEntity().toString());
+                        tradId = dataValues.get("parentId").toString();
+                    } catch (JSONException e) {
+                        e.printStackTrace();
+                        return Response.serverError().entity(jsonerror("Bad file parse response")).build();
+                    }
                 }
             }
         }
@@ -267,7 +269,7 @@ public class Root {
 
             tx.findNodes(Nodes.USER)
                     .forEachRemaining(t -> userList.add(new UserModel(t)));
-            //tx.close();
+            tx.close();
         } catch (Exception e) {
             return Response.serverError().entity(jsonerror(e.getMessage())).build();
         }

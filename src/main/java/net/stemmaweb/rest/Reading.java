@@ -1278,7 +1278,7 @@ public class Reading {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces("application/json; charset=utf-8")
     @ReturnType(clazz = GraphModel.class)
-    public Response compressReadings(@PathParam("read2Id") long readId2, ReadingBoundaryModel boundary) {
+    public Response compressReadings(@PathParam("read2Id") String readId2, ReadingBoundaryModel boundary) {
         if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
         Node read1, read2;
         // some defaults if we fall through and haven't changed it
@@ -1293,11 +1293,11 @@ public class Reading {
                 resp =  errorResponse(Status.CONFLICT);
             } else if (canBeCompressed(read1, read2)) {
                 resp = Response.ok().entity(compress(read1, read2, boundary)).build();
-                ReadingService.recalculateRank(read1);
+                ReadingService.recalculateRank(read1, false, tx);
             } else {
                 resp = errorResponse(Status.CONFLICT);
             }
-            tx.close();
+            tx.commit();
         } catch (NotFoundException e) {
             errorMessage = e.getMessage();
             return errorResponse(Status.NOT_FOUND);

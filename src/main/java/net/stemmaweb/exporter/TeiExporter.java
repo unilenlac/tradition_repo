@@ -152,7 +152,7 @@ public class TeiExporter {
         }
         if (filtered_bottom_hn.size() >= 1) {
             for (Map<String, Object> hn: filtered_bottom_hn){
-                System.out.println(hn);
+                // System.out.println(hn);
                 List<Node> tmp_nodes = get_hn_nodes(hn, tx);
                 // List<String> hn_nodes = filtered_hn.stream().filter(x -> x.get("hyperId").equals(hn.get("hyperId"))).map(x -> x.get("text").toString()).collect(Collectors.toList());
                 List<String> hn_nodes = tmp_nodes.stream().map(x -> x.getProperty("text").toString()).collect(Collectors.toList());
