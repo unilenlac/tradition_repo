@@ -310,9 +310,8 @@ public class Section {
                     sectionNodes.add(x);
                 }
             });
-                    // .filter(x -> x.hasLabel(Label.label("HYPERREADING"))).collect(Collectors.toSet());
+            // .filter(x -> x.hasLabel(Label.label("HYPERREADING"))).collect(Collectors.toSet());
             sectionNodes.forEach(x -> complexReadingModels.add(new ComplexReadingModel(x)));
-            tx.close();
         } catch (Exception e) {
             e.printStackTrace();
             return null;

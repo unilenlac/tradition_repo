@@ -303,7 +303,6 @@ public class DotExporter
                             }
                         }
                     }
-                    //tx.commit();
                 }
 
                 // Now that all the nodes are processed, set this section's end node as the last one seen
@@ -379,8 +378,8 @@ public class DotExporter
             throws Exception {
         if (normaliseOn.size() == 0) {
             HashMap<Node, Node> representatives = new HashMap<>();
-//            List<Node> sectionNodes = VariantGraphService.returnTraditionSection(sectionNode).nodes().stream()
-//                    .filter(x -> x.hasLabel(Label.label("READING"))).collect(Collectors.toList());
+            // List<Node> sectionNodes = VariantGraphService.returnTraditionSection(sectionNode).nodes().stream()
+            //         .filter(x -> x.hasLabel(Label.label("READING"))).collect(Collectors.toList());
 			List<Node> sectionNodes = StreamSupport
 					.stream(VariantGraphService.returnTraditionSection(sectionNode.getElementId(), tx).nodes().spliterator(), false)
 					.filter(x -> x.hasLabel(Label.label("READING")))

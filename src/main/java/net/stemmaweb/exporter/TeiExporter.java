@@ -53,9 +53,11 @@ public class TeiExporter {
 
             Result variants = getVariants(section_node, tx);
             Result hypernodes = getHypernodes(section_node, tx);
+            Result stats = hn_stats(section_node, tx);
 
             List<Map<String, Object>> variant_table = variants.stream().collect(Collectors.toList());
             List<Map<String, Object>> hn_table = hypernodes.stream().collect(Collectors.toList());
+            List<Map<String, Object>> hn_stats = stats.stream().collect(Collectors.toList());
 
             Result section = graphService.get_section(section_node, witness_count, tx);
 
@@ -65,17 +67,26 @@ public class TeiExporter {
                 ArrayList<Node> nodes = (ArrayList<Node>) section.next().get("path");
                 for(Node node: nodes){
                     if(node_skip == 0){
+                        // get all hypernodes linked to traversed section node
                         List<Map<String, Object>> node_hns = hn_table.stream().filter(x -> x.get("nodeUuid").equals(node.getElementId())).collect(Collectors.toList());
+
+                        // get all node that share the same ranking, get the variant locus of the traversed nodes
                         List<Map<String, Object>> filtered_variants = variant_table.stream().filter(x -> x.get("rank") == node.getProperty("rank")).collect(Collectors.toList());
+
                         // populate hyper-readings
+
+                        // get main hn, the main hn should be the hn that has the most nodes and that has the traversed node as a member
 
                         Optional<Map<String, Object>> top_hn = node_hns.stream().filter(x -> x.get("note").equals("main")).findAny();
 
-                        if(top_hn.isPresent()){
-                            Map<String, Object> top_hn_object = top_hn.get();
+                        if(!top_hn.isEmpty()){
+
+                            List<Map<String, Object>> top_hn_list = node_hns.stream().filter(x -> x.get("note").equals("main")).collect(Collectors.toList());
+                            // hn_object fields are : text, nodeId, nodeUuid, hyperId, note
+                            Map<String, Object> top_hn_object = target_top_hn(top_hn_list, hn_stats);
                             writer.writeStartElement("app");
                             node_skip = count_nodes(top_hn_object.get("hyperId").toString(), tx)-1;
-                            populateHypernodes(top_hn_object, hn_table, new HashMap<>(), variant_table, writer, tx);
+                            populateHypernodes(top_hn_object, hn_table, hn_stats, variant_table, writer, tx);
                             writer.writeEndElement();
                         }
                         // populate variants outside hyper-readings
@@ -100,7 +111,16 @@ public class TeiExporter {
         return Response.ok().entity(result.toString()).build();
     }
 
-    public void populateHypernodes(Map<String, Object> top_hn, List<Map<String, Object>> filtered_hn, Map<String, String> hn_stats, List<Map<String, Object>> variant_list, XMLStreamWriter writer, Transaction tx) throws XMLStreamException {
+    public Map<String, Object> target_top_hn(List<Map<String, Object>>hn_list, List<Map<String, Object>>stats){
+        /*
+        if a node is linked to multiple hypernodes that have the "main" mention,
+        this method returns the largest hypernode group and allow to keep hypernode processing hierarchy
+         */
+        List<Map<String, Object>>filtered_stats = stats.stream().filter(s -> hn_list.stream().anyMatch(hn -> s.get("hid").equals(hn.get("hyperId")))).sorted(Comparator.comparingInt(x -> Integer.parseInt(x.get("rCount").toString()))).distinct().collect(Collectors.toList());
+        Map<String, Object> top_hn_id = filtered_stats.get(filtered_stats.size() - 1);
+        return hn_list.stream().filter(x -> x.get("hyperId").equals(top_hn_id.get("hid"))).findFirst().orElse(null);
+    }
+    public List<Map<String, Object>> populateHypernodes(Map<String, Object> top_hn, List<Map<String, Object>> filtered_hn, List<Map<String, Object>> hn_stats, List<Map<String, Object>> variant_list, XMLStreamWriter writer, Transaction tx) throws XMLStreamException {
         /*
         top_hn_list : list of all hn connected to the traversed section node
         filtered_hn : contains the list of all hypernodes, also contains a state of the hypernodes when a list of node is traversed
@@ -115,16 +135,18 @@ public class TeiExporter {
 
         writer.writeStartElement("lem");
         Long node_skip = 0L;
+        Long count = 0L;
         for (Node node: nodes){
-            Long count = 0L;
             // Node node = tx.getNodeByElementId(node.getElementId());
             List<Map<String, Object>> local_node_hns = remaining_hn.stream().filter(x -> x.get("nodeUuid").equals(node.getElementId())).collect(Collectors.toList());
             Optional<Map<String, Object>> local_top_hn = local_node_hns.stream().filter(x -> x.get("note").equals("main")).findAny();
             List<Map<String, Object>> variant_locus = variant_list.stream().filter(x -> x.get("rank").equals(node.getProperty("rank"))).collect(Collectors.toList());
-            if (local_top_hn.isPresent() && variant_locus.size() > 1){
-                node_skip = count_nodes(local_top_hn.get().get("hyperId").toString(), tx);
+            if (local_top_hn.isPresent()){
+                List<Map<String, Object>> local_top_hn_list = local_node_hns.stream().filter(x -> x.get("note").equals("main")).collect(Collectors.toList());
+                Map<String, Object> top_hn_node = target_top_hn(local_top_hn_list, hn_stats);
+                node_skip = count_nodes(top_hn_node.get("hyperId").toString(), tx)-1;
                 writer.writeStartElement("app");
-                populateHypernodes(local_top_hn.get(), remaining_hn, new HashMap<>(), variant_list, writer, tx);
+                remaining_hn = populateHypernodes(top_hn_node, remaining_hn, hn_stats, variant_list, writer, tx);
                 writer.writeEndElement();
                 remaining_hn = remaining_hn.stream().filter(x -> !x.get("hyperId").equals(local_top_hn.get().get("hyperId"))).collect(Collectors.toList());
             } else {
@@ -165,6 +187,7 @@ public class TeiExporter {
                 }
             }
         }
+        return remaining_hn;
     }
 
     public List<Node> get_hn_nodes(Map<String, Object> top_hn, Transaction tx){
