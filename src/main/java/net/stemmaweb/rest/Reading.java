@@ -546,7 +546,7 @@ public class Reading {
                 GraphModel localResult = duplicate(newWitnesses, originalReading, newNode, tx);
                 tempDeleted.addAll(localResult.getRelations());
                 newSequences.addAll(localResult.getSequences());
-                ReadingModel newModel = new ReadingModel(newNode);
+                ReadingModel newModel = new ReadingModel(newNode, tx); // seem a bit redundant with 545
                 newModel.setOrig_reading(readId);
                 createdReadings.add(newModel);
             }
@@ -1065,7 +1065,7 @@ public class Reading {
         // Change the first reading
         originalReading.setProperty("text", splitWords[0]);
         originalReading.setProperty("display", splitWords[0].replaceAll("<", "&lt;").replaceAll(">", "&gt;"));
-        createdOrChangedReadings.add(new ReadingModel(originalReading));
+        createdOrChangedReadings.add(new ReadingModel(originalReading, tx));
 
         // Add the new readings
         Node lastReading = originalReading;
@@ -1097,7 +1097,7 @@ public class Reading {
                 ReadingService.transferWitnesses(lastReading, newReading, r);
 
             // Add the newly created objects to our eventual GraphModel
-            createdOrChangedReadings.add(new ReadingModel(newReading));
+            createdOrChangedReadings.add(new ReadingModel(newReading, tx));
             createdSequences.add(new SequenceModel(newSeq));
 
             // Loop
