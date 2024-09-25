@@ -1,5 +1,6 @@
 package net.stemmaweb.services;
 
+import net.stemmaweb.rest.Nodes;
 import org.neo4j.graphdb.*;
 
 public class GraphService {

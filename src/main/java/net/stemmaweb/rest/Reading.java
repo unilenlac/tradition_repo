@@ -63,7 +63,7 @@ public class Reading {
         if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
         ReadingModel reading;
         try (Transaction tx = db.beginTx()) {
-            reading = new ReadingModel(tx.getNodeByElementId(readId));
+            reading = new ReadingModel(tx.getNodeByElementId(readId), tx);
             tx.close();
         } catch (NotFoundException e) {
             return Response.noContent().build();
@@ -714,7 +714,7 @@ public class Reading {
     @Path("merge/{secondReadId}")
     @Produces("application/json; charset=utf-8")
     @ReturnType(clazz = GraphModel.class)
-    public Response mergeReadings(@PathParam("secondReadId") long secondReadId) {
+    public Response mergeReadings(@PathParam("secondReadId") String secondReadId) {
         if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
         GraphModel result;
 
@@ -1398,6 +1398,275 @@ public class Reading {
         }
         return Response.ok().build();
     }
+
+    class Attach {
+        public Boolean asymetrical(int[] a, Node source, Node target, String stext, String ttext){
+
+            /*
+            from
+              o-o
+             /
+            o
+             \
+              o-o
+            to
+            o-o-o
+               \
+                o
+             */
+            Relationship sri = source.getSingleRelationship(ERelations.SEQUENCE, Direction.INCOMING);
+            Relationship sro = source.getSingleRelationship(ERelations.SEQUENCE, Direction.OUTGOING);
+
+            try{
+                if(a[0] == 0 && a[1] == 1){
+
+                    // before merging relation properties, we get the target relationship object that has a start/end node connected to the source node
+                    Optional<Relationship> tri_opt = target.getRelationships(Direction.INCOMING, ERelations.SEQUENCE).stream().filter(item -> item.getStartNode().getElementId().equals(sri.getStartNode().getElementId())).findFirst();
+                    assert tri_opt.isPresent();
+                    Relationship tri = tri_opt.get();
+
+                    // set target relationship witnesses
+                    String[] tri_wit = (String[]) tri.getProperty("witnesses");
+                    String[] sri_wit = (String[]) sri.getProperty("witnesses");
+                    String[] target_witnesses_in = Arrays.copyOf(tri_wit, tri_wit.length + sri_wit.length);
+                    System.arraycopy(sri_wit, 0, target_witnesses_in, tri_wit.length, sri_wit.length);
+                    Arrays.sort(target_witnesses_in);
+                    tri.setProperty("witnesses", target_witnesses_in);
+
+                    // create relationship between target node and next source node
+                    Node source_next_node = sro.getEndNode();
+                    Relationship target_to_source_next_node= target.createRelationshipTo(source_next_node, ERelations.SEQUENCE);
+                    target_to_source_next_node.setProperty("witnesses", sro.getProperty("witnesses"));
+
+                    // set node value
+                    if(stext.equals("") || ttext.equals("")){
+                        target.setProperty("text", String.format("%s%s", stext, ttext));
+                    }
+
+                    sri.delete();
+                    sro.delete();
+                    source.delete();
+                    return true;
+
+                }
+                if(a[0] == 1 && a[1] == 0) {
+
+                    Optional<Relationship> tro_opt = target.getRelationships(Direction.OUTGOING, ERelations.SEQUENCE).stream().filter(item -> item.getEndNode().getElementId().equals(sro.getEndNode().getElementId())).findFirst();
+                    assert tro_opt.isPresent();
+                    Relationship tro = tro_opt.get();
+
+                    // set target relationship witnesses
+                    String[] tro_wit = (String[]) tro.getProperty("witnesses");
+                    String[] sro_wit = (String[]) sro.getProperty("witnesses");
+                    String[] target_witnesses_in = Arrays.copyOf(tro_wit, tro_wit.length + sro_wit.length);
+                    System.arraycopy(sro_wit, 0, target_witnesses_in, tro_wit.length, sro_wit.length);
+                    Arrays.sort(target_witnesses_in);
+                    tro.setProperty("witnesses", target_witnesses_in);
+
+                    // create relationship between target node and prev source node
+                    Node source_prev_node = sri.getStartNode();
+                    Relationship target_to_source_next_node = source_prev_node.createRelationshipTo(target, ERelations.SEQUENCE);
+                    target_to_source_next_node.setProperty("witnesses", sri.getProperty("witnesses"));
+
+                    // set node value
+                    if (stext.equals("") || ttext.equals("")) {
+                        target.setProperty("text", String.format("%s%s", stext, ttext));
+                    }
+
+                    sri.delete();
+                    sro.delete();
+                    source.delete();
+                    return true;
+                }
+
+            }catch(Exception e){
+                System.err.println(e.getMessage());
+                throw e;
+            }
+
+            return false;
+        }
+        public Boolean parallel(int[] a, Node source, Node target, String stext, String ttext){
+            /*
+            from
+            o-o-o
+            o-o-o
+            to
+            o-o-o
+             / \
+            o   o
+             */
+            try{
+                Relationship sri = source.getSingleRelationship(ERelations.SEQUENCE, Direction.INCOMING);
+                Relationship sro = source.getSingleRelationship(ERelations.SEQUENCE, Direction.OUTGOING);
+
+                // create relationship between target node and prev source node
+                Node source_prev_node = sri.getStartNode();
+                Relationship prev_to_target_rel = source_prev_node.createRelationshipTo(target, ERelations.SEQUENCE);
+                prev_to_target_rel.setProperty("witnesses", sri.getProperty("witnesses"));
+
+                // create relationship between target node and next source node
+                Node source_next_node = sro.getEndNode();
+                Relationship target_to_next_rel = target.createRelationshipTo(source_next_node, ERelations.SEQUENCE);
+                target_to_next_rel.setProperty("witnesses", sro.getProperty("witnesses"));
+
+                // set node value
+                if(stext.equals("") || ttext.equals("")){
+                    target.setProperty("text", String.format("%s%s", stext, ttext));
+                }
+
+                sri.delete();
+                sro.delete();
+                source.delete();
+
+                return true;
+            }catch(Exception e){
+                System.err.println(e.getMessage());
+                throw e;
+            }
+        }
+        public Boolean symmetrical(int[] a, Node source, Node target, String stext, String ttext){
+            /*
+            from
+              o
+             / \
+            o   o
+             \ /
+              o
+            to
+              o
+             / \
+            o   o
+             */
+            try{
+                Relationship sri = source.getSingleRelationship(ERelations.SEQUENCE, Direction.INCOMING);
+                Relationship sro = source.getSingleRelationship(ERelations.SEQUENCE, Direction.OUTGOING);
+
+                Optional<Relationship> tri_opt = target.getRelationships(Direction.INCOMING, ERelations.SEQUENCE).stream().filter(item -> item.getStartNode().getElementId().equals(sri.getStartNode().getElementId())).findFirst();
+                assert tri_opt.isPresent();
+                Relationship tri = tri_opt.get();
+
+                Optional<Relationship> tro_opt = target.getRelationships(Direction.OUTGOING, ERelations.SEQUENCE).stream().filter(item -> item.getEndNode().getElementId().equals(sro.getEndNode().getElementId())).findFirst();
+                assert tro_opt.isPresent();
+                Relationship tro = tro_opt.get();
+
+                // set target out relationship witnesses
+                String[] tro_wit = (String[]) tro.getProperty("witnesses");
+                String[] sro_wit = (String[]) sro.getProperty("witnesses");
+                String[] target_witnesses_out = Arrays.copyOf(tro_wit, tro_wit.length + sro_wit.length);
+                System.arraycopy(sro_wit, 0, target_witnesses_out, tro_wit.length, sro_wit.length);
+                Arrays.sort(target_witnesses_out);
+                tro.setProperty("witnesses", target_witnesses_out);
+
+                // set target in relationship witnesses
+                String[] tri_wit = (String[]) tri.getProperty("witnesses");
+                String[] sri_wit = (String[]) sri.getProperty("witnesses");
+                String[] target_witnesses_in = Arrays.copyOf(tri_wit, tri_wit.length + sri_wit.length);
+                System.arraycopy(sri_wit, 0, target_witnesses_in, tri_wit.length, sri_wit.length);
+                Arrays.sort(target_witnesses_in);
+                tri.setProperty("witnesses", target_witnesses_in);
+
+                // set node value
+                if(stext.equals("") || ttext.equals("")){
+                    target.setProperty("text", String.format("%s%s", stext, ttext));
+                }
+
+                sri.delete();
+                sro.delete();
+                source.delete();
+
+            }catch(Exception e){
+                System.err.println(e.getMessage());
+                throw e;
+            }
+            return true;
+        }
+    }
+    /**
+     * merge two reading of the same ranks, reverse detach process
+     * source and target can be reversed
+     *
+     * @param target
+     *      target reading
+     */
+    @POST
+    @Path("mergenodes/{target}")
+    @ReturnType("java.lang.Void")
+    public Response mergeNodes(@PathParam("target") String target) {
+
+        Attach attach = new Attach();
+
+        try(Transaction tx = db.beginTx()){
+
+            Node snode = tx.getNodeByElementId(this.readId);
+            // String snode_id = snode.getElementId();
+            Relationship source_rel_out = snode.getSingleRelationship(ERelations.SEQUENCE, Direction.OUTGOING);
+            String sro_id = source_rel_out.getEndNode().getElementId();
+            Relationship source_rel_in = snode.getSingleRelationship(ERelations.SEQUENCE, Direction.INCOMING);
+            String sri_id = source_rel_in.getStartNode().getElementId();
+
+            Node tnode = tx.getNodeByElementId(target);
+            // String tnode_id = tnode.getElementId();
+
+            // int srank = Integer.parseInt(snode.getProperty("rank").toString());
+            // int prec_rank = srank-1;
+            // int next_rank = srank+1;
+            // int degree_in = tnode.getDegree(ERelations.SEQUENCE, Direction.INCOMING);
+            // int degree_out = (int) tnode.getRelationships(Direction.OUTGOING, ERelations.SEQUENCE).stream().count();
+
+            Set<String> target_node_in_rel = tnode.getRelationships(Direction.INCOMING, ERelations.SEQUENCE).stream().map(item -> item.getStartNode().getElementId()).collect(Collectors.toSet());
+            // int tnil_length = target_node_in_rel.size();
+            Set<String> target_node_out_rel = tnode.getRelationships(Direction.OUTGOING, ERelations.SEQUENCE).stream().map(item -> item.getEndNode().getElementId()).collect(Collectors.toSet());
+            // int tnol_length = target_node_out_rel.size();
+
+            // String total_node_i_query = String.format("MATCH (n:READING) WHERE n.rank = %s and n.section_id = \"%s\" RETURN count(n) as count", prec_rank, snode.getProperty("section_id"));
+            // String total_node_o_query = String.format("MATCH (n:READING) WHERE n.rank = %s and n.section_id = \"%s\" RETURN count(n) as count", next_rank, snode.getProperty("section_id"));
+
+            // Optional<Map<String, Object>> prtn_query = tx.execute(total_node_i_query).stream().findFirst();
+            // Optional<Map<String, Object>> nrtn_query = tx.execute(total_node_o_query).stream().findFirst();
+
+            // assert (prtn_query.isPresent());
+            // assert (nrtn_query.isPresent());
+
+            // Long prec_rank_total_nodes = (Long) prtn_query.get().get("count");
+            // Long next_rank_total_nodes = (Long) nrtn_query.get().get("count");
+
+            // int i = prec_rank_total_nodes.intValue() - degree_in;
+            // int s = next_rank_total_nodes.intValue() - degree_out;
+
+            int i = target_node_in_rel.add(sri_id) ? 1 : 0;
+            int s = target_node_out_rel.add(sro_id) ? 1 : 0;
+
+            int[] a = {i, s};
+            int pattern_code = Arrays.stream(a).sum();
+
+            boolean equalRanking = snode.getProperty("rank") == tnode.getProperty("rank");
+            String stext = snode.getProperty("text").toString();
+            String ttext = tnode.getProperty("text").toString();
+            boolean equalValue = snode.getProperty("text").toString().equals(tnode.getProperty("text").toString());
+
+            Boolean ready = false;
+
+            if ((equalRanking && equalValue) || (equalRanking && (stext.equals("") ^ ttext.equals("")))){
+                if (pattern_code == 1) {
+                    ready = attach.asymetrical(a, snode, tnode, stext, ttext);
+                } else if (pattern_code == 2) {
+                    ready = attach.parallel(a, snode, tnode, stext, ttext);
+                } else if (pattern_code == 0) {
+                    ready = attach.symmetrical(a, snode, tnode, stext, ttext);
+                }
+                if(ready){
+                    tx.commit();
+                }
+            }else{
+                throw new RuntimeException("This two nodes does not have the same ranks or the same text value : nodes can't be attached ");
+            }
+        }catch (Exception e){
+            e.printStackTrace();
+            return Response.serverError().entity(jsonerror(e.getMessage())).build();
+        }
+        return Response.ok().build();
+    }
     /**
      * compress two readings
      *
@@ -1563,4 +1832,5 @@ public class Reading {
         }
         return tradId;
     }
+
 }

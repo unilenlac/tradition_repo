@@ -216,7 +216,7 @@ public class TEIParallelSegParser {
             ReadingModel first = identSet.remove(0);
             Reading rd = new Reading(first.getId());
             for (ReadingModel identical : identSet) {
-                Response done = rd.mergeReadings(Long.parseLong(identical.getId()));
+                Response done = rd.mergeReadings(identical.getId());
                 if (done.getStatus() != Response.Status.OK.getStatusCode())
                     return Response.serverError().entity(done.getEntity()).build();
             }

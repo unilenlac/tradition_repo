@@ -65,10 +65,11 @@ public class TeiExporter {
 
             while (section.hasNext()){
                 ArrayList<Node> nodes = (ArrayList<Node>) section.next().get("path");
+                System.out.println(nodes);
                 for(Node node: nodes){
                     if(node_skip == 0){
                         // get all hypernodes linked to traversed section node
-                        List<Map<String, Object>> node_hns = hn_table.stream().filter(x -> x.get("nodeUuid").equals(node.getElementId())).collect(Collectors.toList());
+                        List<Map<String, Object>> node_hns = hn_table.stream().filter(x -> x.get("rank").equals(node.getProperty("rank"))).collect(Collectors.toList());
 
                         // get all node that share the same ranking, get the variant locus of the traversed nodes
                         List<Map<String, Object>> filtered_variants = variant_table.stream().filter(x -> x.get("rank") == node.getProperty("rank")).collect(Collectors.toList());
@@ -138,7 +139,7 @@ public class TeiExporter {
         Long count = 0L;
         for (Node node: nodes){
             // Node node = tx.getNodeByElementId(node.getElementId());
-            List<Map<String, Object>> local_node_hns = remaining_hn.stream().filter(x -> x.get("nodeUuid").equals(node.getElementId())).collect(Collectors.toList());
+            List<Map<String, Object>> local_node_hns = remaining_hn.stream().filter(x -> x.get("rank").equals(node.getProperty("rank"))).collect(Collectors.toList());
             Optional<Map<String, Object>> local_top_hn = local_node_hns.stream().filter(x -> x.get("note").equals("main")).findAny();
             List<Map<String, Object>> variant_locus = variant_list.stream().filter(x -> x.get("rank").equals(node.getProperty("rank"))).collect(Collectors.toList());
             if (local_top_hn.isPresent()){
@@ -367,8 +368,8 @@ public class TeiExporter {
          */
         String query = String.format("match (r:READING)-[l:HAS_HYPERNODE]->(h:HYPERREADING)\n" +
                 " WHERE r.section_id=\"%s\"\n" +
-                " WITH r.text as text, id(r) as nodeId, elementId(r) as nodeUuid, elementId(h) as hyperId, h.note as note\n" +
-                " RETURN text, nodeId, nodeUuid, hyperId, note ORDER BY nodeId ASC", section_node.getElementId());
+                " WITH r.text as text, id(r) as nodeId, elementId(r) as nodeUuid, elementId(h) as hyperId, h.note as note, r.rank as rank\n" +
+                " RETURN text, nodeId, nodeUuid, hyperId, note, rank ORDER BY nodeId ASC", section_node.getElementId());
         return tx.execute(query);
     }
     public Result hn_stats(Node section_node, Transaction tx){
