@@ -9,6 +9,7 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.qmino.miredot.annotations.ReturnType;
 import net.stemmaweb.model.*;
 import net.stemmaweb.services.*;
@@ -91,7 +92,59 @@ public class ComplexReading {
       return Response.ok().build();
     }
 
+    // POST request json object parser
+    public static class ComplexReadingUpdateModel{
 
+        @JsonProperty("id")
+        String id;
+
+        @JsonProperty("islemma")
+        Boolean islemma;
+
+        @JsonProperty("source")
+        String source;
+
+
+        @JsonProperty("note")
+        String note;
+
+        @JsonProperty("weight")
+        int weight;
+
+        public ComplexReadingUpdateModel(){
+
+        }
+        public ComplexReadingUpdateModel(String id,
+                                         Boolean islemma,
+                                         String source,
+                                         String note,
+                                         int weight){
+            this.id = id;
+            this.islemma = islemma;
+            this.source = source;
+            this.note = note;
+            this.weight = weight;
+        }
+    }
+
+    @POST
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces("application/json; charset=utf-8")
+    public Response saveComplex(ComplexReadingUpdateModel cr){
+
+        try(Transaction tx = db.beginTx()){
+            Node complex_reading = tx.getNodeByElementId(cr.id);
+            complex_reading.setProperty("is_lemma", cr.islemma);
+            complex_reading.setProperty("weight", cr.weight);
+            complex_reading.setProperty("note", cr.note);
+            complex_reading.setProperty("source", cr.source);
+            tx.commit();
+        }catch(Exception e){
+            e.printStackTrace();
+            return Response.serverError().entity(jsonerror(e.getMessage())).build();
+        }
+        return Response.ok().build();
+    }
 
     // Class-level utility function to encapsulate the instance-wide error message
     private Response errorResponse (Status status) {

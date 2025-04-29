@@ -2,6 +2,7 @@ package net.stemmaweb.exporter;
 
 import net.stemmaweb.rest.Nodes;
 import net.stemmaweb.services.GraphService;
+import org.neo4j.cypher.internal.expressions.In;
 import org.neo4j.graphdb.*;
 import net.stemmaweb.rest.ERelations;
 import com.sun.xml.txw2.output.IndentingXMLStreamWriter;
@@ -78,11 +79,11 @@ public class TeiExporter {
 
                         // get main hn, the main hn should be the hn that has the most nodes and that has the traversed node as a member
 
-                        Optional<Map<String, Object>> top_hn = node_hns.stream().filter(x -> x.get("note").equals("main")).findAny();
+                        Optional<Map<String, Object>> top_hn = node_hns.stream().filter(x -> x.get("is_lemma").equals(true)).findAny();
 
                         if(!top_hn.isEmpty()){
 
-                            List<Map<String, Object>> top_hn_list = node_hns.stream().filter(x -> x.get("note").equals("main")).collect(Collectors.toList());
+                            List<Map<String, Object>> top_hn_list = node_hns.stream().filter(x -> x.get("is_lemma").equals(true)).collect(Collectors.toList());
                             // hn_object fields are : text, nodeId, nodeUuid, hyperId, note
                             Map<String, Object> top_hn_object = target_top_hn(top_hn_list, hn_stats);
                             writer.writeStartElement("app");
@@ -140,10 +141,10 @@ public class TeiExporter {
         for (Node node: nodes){
             // Node node = tx.getNodeByElementId(node.getElementId());
             List<Map<String, Object>> local_node_hns = remaining_hn.stream().filter(x -> x.get("rank").equals(node.getProperty("rank"))).collect(Collectors.toList());
-            Optional<Map<String, Object>> local_top_hn = local_node_hns.stream().filter(x -> x.get("note").equals("main")).findAny();
+            Optional<Map<String, Object>> local_top_hn = local_node_hns.stream().filter(x -> x.get("is_lemma").equals(true)).findAny();
             List<Map<String, Object>> variant_locus = variant_list.stream().filter(x -> x.get("rank").equals(node.getProperty("rank"))).collect(Collectors.toList());
             if (local_top_hn.isPresent()){
-                List<Map<String, Object>> local_top_hn_list = local_node_hns.stream().filter(x -> x.get("note").equals("main")).collect(Collectors.toList());
+                List<Map<String, Object>> local_top_hn_list = local_node_hns.stream().filter(x -> x.get("is_lemma").equals(true)).collect(Collectors.toList());
                 Map<String, Object> top_hn_node = target_top_hn(local_top_hn_list, hn_stats);
                 node_skip = count_nodes(top_hn_node.get("hyperId").toString(), tx)-1;
                 writer.writeStartElement("app");
@@ -174,6 +175,11 @@ public class TeiExporter {
             }
         }
         if (filtered_bottom_hn.size() >= 1) {
+            filtered_bottom_hn.sort((m1, m2) -> {
+                Integer w1 = (Integer) m1.get("weight");
+                Integer w2 = (Integer) m2.get("weight");
+                return w1.compareTo(w2);
+            });
             for (Map<String, Object> hn: filtered_bottom_hn){
                 // System.out.println(hn);
                 List<Node> tmp_nodes = get_hn_nodes(hn, tx);
@@ -368,8 +374,8 @@ public class TeiExporter {
          */
         String query = String.format("match (r:READING)-[l:HAS_HYPERNODE]->(h:HYPERREADING)\n" +
                 " WHERE r.section_id=\"%s\"\n" +
-                " WITH r.text as text, id(r) as nodeId, elementId(r) as nodeUuid, elementId(h) as hyperId, h.note as note, r.rank as rank\n" +
-                " RETURN text, nodeId, nodeUuid, hyperId, note, rank ORDER BY nodeId ASC", section_node.getElementId());
+                " WITH r.text as text, id(r) as nodeId, elementId(r) as nodeUuid, elementId(h) as hyperId, h.note as note, r.rank as rank, h.is_lemma as is_lemma, h.weight as weight\n" +
+                " RETURN text, nodeId, nodeUuid, hyperId, note, rank, is_lemma, weight ORDER BY nodeId ASC", section_node.getElementId());
         return tx.execute(query);
     }
     public Result hn_stats(Node section_node, Transaction tx){

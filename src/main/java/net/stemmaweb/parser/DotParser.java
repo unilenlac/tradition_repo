@@ -75,11 +75,11 @@ public class DotParser {
 
     private Status saveToNeo(Graph stemma, String tradId, String stemmaName) {
         // Check for the existence of the tradition
-        Node traditionNode = VariantGraphService.getTraditionNode(tradId, db.beginTx());
-        if (traditionNode == null)
-            return Status.NOT_FOUND;
 
         try (Transaction tx = db.beginTx()) {
+            Node traditionNode = VariantGraphService.getTraditionNode(tradId, tx);
+            if (traditionNode == null)
+                return Status.NOT_FOUND;
             // First check that no stemma with this name already exists for this tradition,
             // unless we intend to replace it.
             for (Node priorStemma : DatabaseService.getRelated(traditionNode, ERelations.HAS_STEMMA, tx)) {
@@ -205,7 +205,7 @@ public class DotParser {
             // Save the stemma to the tradition.
             traditionNode.createRelationshipTo(stemmaNode, ERelations.HAS_STEMMA);
 
-            tx.close();
+            tx.commit();
         } catch (Exception e) {
             e.printStackTrace();
             messageValue = e.toString();

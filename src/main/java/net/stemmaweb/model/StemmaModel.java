@@ -49,10 +49,10 @@ public class StemmaModel {
 
     public StemmaModel () {}
 
-    public StemmaModel(Node stemmaNode) {
+    public StemmaModel(Node stemmaNode, Transaction tx) {
 //        GraphDatabaseService db = stemmaNode.getGraphDatabase();
         GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
-        try (Transaction tx = db.beginTx()) {
+        // try (Transaction tx = db.beginTx()) {
             identifier = stemmaNode.getProperty("name").toString();
             is_undirected = !stemmaNode.hasRelationship(ERelations.HAS_ARCHETYPE);
             is_contaminated = stemmaNode.hasProperty("is_contaminated");
@@ -64,8 +64,8 @@ public class StemmaModel {
             DotExporter writer = new DotExporter(db);
             Response export = writer.writeNeo4JStemma(traditionNode.getProperty("id").toString(), identifier, false);
             dot = export.getEntity().toString();
-            tx.close();
-        }
+            // tx.close();
+        // }
     }
 
     public String getIdentifier () { return this.identifier; }

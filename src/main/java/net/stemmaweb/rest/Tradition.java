@@ -534,7 +534,7 @@ public class Tradition {
             // find all stemmata associated with this tradition
             ArrayList<StemmaModel> stemmata = new ArrayList<>();
                 DatabaseService.getRelated(traditionNode, ERelations.HAS_STEMMA, tx)
-                        .forEach(x -> stemmata.add(new StemmaModel(x)));
+                        .forEach(x -> stemmata.add(new StemmaModel(x, tx)));
             return Response.ok(stemmata).build();
         } catch (Exception e) {
             e.printStackTrace();

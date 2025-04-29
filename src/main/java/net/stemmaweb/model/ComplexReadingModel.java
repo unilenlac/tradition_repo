@@ -2,6 +2,7 @@ package net.stemmaweb.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import net.stemmaweb.rest.ERelations;
 import net.stemmaweb.rest.Nodes;
 import net.stemmaweb.services.DatabaseService;
@@ -36,6 +37,10 @@ public class ComplexReadingModel {
     private String note;
 
     private String source;
+
+    private Boolean is_lemma;
+
+    private int weight;
 
     public String getId() {
         return id;
@@ -77,6 +82,24 @@ public class ComplexReadingModel {
         this.source = source;
     }
 
+    public Boolean getIs_lemma() {
+        return is_lemma;
+    }
+
+    public void setIs_lemma(Boolean is_lemma) {
+        this.is_lemma = is_lemma;
+    }
+
+    public int getWeight() {
+        return weight;
+    }
+
+    public void setWeight(int weight) {
+        this.weight = weight;
+    }
+
+
+
     @SuppressWarnings("unused")
     public ComplexReadingModel() {
         this.id = "";
@@ -85,7 +108,7 @@ public class ComplexReadingModel {
     }
 
     /**
-    * Initialize using the the basic data (of reading type).
+    * Initialize using the basic data (of reading type).
     */
     public ComplexReadingModel(ReadingModel reading) {
         this.id = "";
@@ -97,12 +120,17 @@ public class ComplexReadingModel {
     * Initialize reccursively using the HAS_HYPERNODE relations of the current node.
     */
     public ComplexReadingModel(Node node) {
+
         this.id = "";
         this.reading = null;
         this.components = null;
         this.note = node.hasProperty("note") ? node.getProperty("note").toString() : null;
         this.source = node.hasProperty("source") ? node.getProperty("source").toString() : null;
+        this.is_lemma = node.hasProperty("is_lemma") ? (Boolean) node.getProperty("is_lemma") : false;
+        this.weight = node.hasProperty("weight") ? (int) node.getProperty("weight") : 0;
+
         GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+
         try (Transaction tx = db.beginTx()) {
             setId(node.getElementId());
             List<ComplexReadingModel> compReadings = new ArrayList<>();
