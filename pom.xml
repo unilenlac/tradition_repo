@@ -511,8 +511,8 @@
                     <scope>test</scope>
                 </dependency>
          -->
-<!-- 
-        <dependency>
+		<!--
+		<dependency>
             <groupId>org.neo4j.procedure</groupId>
             <artifactId>apoc</artifactId>
             <version>${apoc.version}</version>

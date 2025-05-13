@@ -63,9 +63,21 @@ public class GraphService {
             Relationship rel = tx.getRelationshipByElementId(relations.next().get("uid").toString());
             String[] witnesses_length = (String[]) rel.getProperty("witnesses");
             rel.setProperty("weight", witnesses_length.length);
-            // String log = String.format("rel: %s witnesses: %s weight: %s", rel.getElementId(), rel.getProperty("witnesses"), rel.getProperty("weight"));
-            // System.out.println(log);
         }
         return tx.execute(section_query);
+    }
+    public Result getSectionByRank(String section_id, Transaction tx){
+        /*
+        get all readings in a section by rank
+         */
+        String query = String.format("MATCH (n:READING {section_id: \"%s\"})\n" +
+                " WITH n.rank AS rank, collect(n) AS nodes\n" +
+                " UNWIND nodes AS node\n" +
+                " WITH rank, nodes, node\n" +
+                " ORDER BY rank, id(node) ASC\n" +
+                " WITH rank, collect(node)[0] AS selectedNode\n" +
+                " RETURN elementId(selectedNode) as id\n" +
+                " ORDER BY selectedNode.rank\n", section_id);
+        return tx.execute(query);
     }
 }

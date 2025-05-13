@@ -431,14 +431,14 @@ public class ReadingService {
 				.traverse(startNode).nodes().spliterator(), false).forEach(x -> x.setProperty("touched", true));
 
         // At this point we can start to reassign ranks
-        ResourceIterable<Node> touched = (ResourceIterable<Node>) tx.traversalDescription().depthFirst()
+        Iterable<Node> touched = tx.traversalDescription().depthFirst()
                 .expand(a)
                 .evaluator(e)
                 .uniqueness(Uniqueness.RELATIONSHIP_GLOBAL)
                 .traverse(startNode).nodes();
         // Run the traverser and commit the updated ranks
         Set<Node> changed = new HashSet<>();
-        for (Node n : touched.stream().collect(Collectors.toSet())) {
+        for (Node n : touched) {
             n.removeProperty("touched");
             if (!n.hasProperty("newrank"))
                 throw new Exception (String.format("Node %d (%s) traversed but not re-ranked!",

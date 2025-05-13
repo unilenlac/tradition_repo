@@ -1,19 +1,27 @@
 package net.stemmaweb.exporter;
 
+import net.stemmaweb.model.ReadingModel;
+import net.stemmaweb.model.TraditionModel;
 import net.stemmaweb.rest.Nodes;
 import net.stemmaweb.services.GraphService;
-import org.neo4j.cypher.internal.expressions.In;
+import net.stemmaweb.services.VariantGraphService;
+// import org.neo4j.cypher.internal.expressions.In;
 import org.neo4j.graphdb.*;
 import net.stemmaweb.rest.ERelations;
 import com.sun.xml.txw2.output.IndentingXMLStreamWriter;
+import org.neo4j.graphdb.traversal.Traverser;
 
 import javax.ws.rs.core.Response;
-import javax.xml.stream.XMLOutputFactory;
-import javax.xml.stream.XMLStreamException;
-import javax.xml.stream.XMLStreamWriter;
+import javax.xml.stream.*;
+import java.io.StringReader;
 import java.io.StringWriter;
+
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import static net.stemmaweb.services.VariantGraphService.getSectionNodes;
 
 public class TeiExporter {
     private final GraphDatabaseService db;
@@ -60,52 +68,71 @@ public class TeiExporter {
             List<Map<String, Object>> hn_table = hypernodes.stream().collect(Collectors.toList());
             List<Map<String, Object>> hn_stats = stats.stream().collect(Collectors.toList());
 
-            Result section = graphService.get_section(section_node, witness_count, tx);
+            Result section = graphService.getSectionByRank(section_id, tx);
+            LinkedList<Node> node_section = new LinkedList<>();
+            section.stream().map(x -> tx.getNodeByElementId(x.get("id").toString())).forEach(node_section::add);
+            // List<Map<String, Object>> section_nodes = section.stream().collect(Collectors.toList());
+            // Result section = graphService.get_section(section_node, witness_count, tx);
+            // Traverser td = VariantGraphService.simpleTraverser(tx, Integer.parseInt(rank), witness_count).traverse(start_node);
+            // ArrayList<Node> ns = getSectionNodes(tradition_id, this.db);
 
-            Long node_skip = 0L;
+            long node_skip = 0L;
 
-            while (section.hasNext()){
-                ArrayList<Node> nodes = (ArrayList<Node>) section.next().get("path");
-                System.out.println(nodes);
-                for(Node node: nodes){
-                    if(node_skip == 0){
-                        // get all hypernodes linked to traversed section node
-                        List<Map<String, Object>> node_hns = hn_table.stream().filter(x -> x.get("rank").equals(node.getProperty("rank"))).collect(Collectors.toList());
+            while (!node_section.isEmpty()){
+                // ArrayList<Node> nodes = (ArrayList<Node>) section.next().get("path");
+                Node node = node_section.removeFirst();
+                // System.out.println(nodes);
+                // for(Node node: node_section){
+                if(node_skip == 0){
+                    // get all hypernodes linked to traversed section node
+                    List<Map<String, Object>> node_hns = hn_table.stream().filter(x -> x.get("rank").equals(node.getProperty("rank"))).collect(Collectors.toList());
 
-                        // get all node that share the same ranking, get the variant locus of the traversed nodes
-                        List<Map<String, Object>> filtered_variants = variant_table.stream().filter(x -> x.get("rank") == node.getProperty("rank")).collect(Collectors.toList());
+                    // get all node that share the same ranking, get the variant locus of the traversed nodes
+                    Result variant_locus = variant_locus((String) node.getProperty("section_id"), (Long) node.getProperty("rank"), tx);
 
-                        // populate hyper-readings
+                    // later we gonna need to count all the variants without exhausting the variant locus iterator, this a basic list of all reading that share the same rank in the section
+                    List<Map<String, Object>> filtered_variants = variant_table.stream().filter(x -> x.get("rank") == node.getProperty("rank")).collect(Collectors.toList());
 
-                        // get main hn, the main hn should be the hn that has the most nodes and that has the traversed node as a member
+                    // populate hyper-readings
 
-                        Optional<Map<String, Object>> top_hn = node_hns.stream().filter(x -> x.get("is_lemma").equals(true)).findAny();
+                    // get main hn, the main hn should be the hn that has the most nodes and that has the traversed node as a member
 
-                        if(!top_hn.isEmpty()){
+                    Optional<Map<String, Object>> top_hn = node_hns.stream().filter(x -> x.get("is_lemma").equals(true)).findAny();
 
-                            List<Map<String, Object>> top_hn_list = node_hns.stream().filter(x -> x.get("is_lemma").equals(true)).collect(Collectors.toList());
-                            // hn_object fields are : text, nodeId, nodeUuid, hyperId, note
-                            Map<String, Object> top_hn_object = target_top_hn(top_hn_list, hn_stats);
-                            writer.writeStartElement("app");
-                            node_skip = count_nodes(top_hn_object.get("hyperId").toString(), tx)-1;
-                            populateHypernodes(top_hn_object, hn_table, hn_stats, variant_table, writer, tx);
-                            writer.writeEndElement();
-                        }
-                        // populate variants outside hyper-readings
-                        if(node_hns.isEmpty() && filtered_variants.size() > 1){
-                            populateVariants(node, filtered_variants, writer, tx);
-                        }
-                        // populate non variating text on the main element
-                        if(node_hns.isEmpty() && filtered_variants.size() == 1) {
-                            // todo replace with start/endnode
-                            if(!Objects.equals(node.getProperty("text").toString(), "#START#") && !Objects.equals(node.getProperty("text").toString(), "#END#")){
-                                writer.writeCharacters(node.getProperty("text").toString()+" ");
+                    if(!top_hn.isEmpty()){
+
+                        List<Map<String, Object>> top_hn_list = node_hns.stream().filter(x -> x.get("is_lemma").equals(true)).collect(Collectors.toList());
+                        // hn_object fields are : text, nodeId, nodeUuid, hyperId, note
+                        Map<String, Object> top_hn_object = target_top_hn(top_hn_list, hn_stats);
+                        writer.writeStartElement("app");
+                        node_skip = count_nodes(top_hn_object.get("hyperId").toString(), tx)-1;
+                        populateHypernodes(top_hn_object, hn_table, hn_stats, variant_table, writer, tx);
+                        writer.writeEndElement();
+                    }
+                    ReadingModel rdg = new ReadingModel(node);
+                    TraditionModel tradition = new TraditionModel(tradition_node);
+                    int trad_w_count = tradition.getWitnesses().size();
+                    int rdg_w_count = rdg.getWitnesses().size();
+                    boolean is_app = trad_w_count != rdg_w_count;
+                    // populate variants outside hyper-readings
+                    if(node_hns.isEmpty() && node_section.size() > 1 && is_app){
+                        populateVariants(node, variant_locus, writer, tx);
+                    }
+                    // populate non variating text on the main element
+                    if(node_hns.isEmpty() && node_section.size() > 1 && !is_app) {
+                        // todo replace with start/endnode
+                        if(!Objects.equals(node.getProperty("text").toString(), "#START#") && !Objects.equals(node.getProperty("text").toString(), "#END#")){
+                            if(node_section.size() == 1){
+                                addRdgContent(node.getProperty("text").toString(), writer);
+                            } else {
+                                addRdgContent(node.getProperty("text").toString() + " ", writer);
                             }
                         }
-                    } else {
-                        node_skip--;
                     }
+                } else {
+                    node_skip--;
                 }
+                // }
             }
         }
 
@@ -142,7 +169,7 @@ public class TeiExporter {
             // Node node = tx.getNodeByElementId(node.getElementId());
             List<Map<String, Object>> local_node_hns = remaining_hn.stream().filter(x -> x.get("rank").equals(node.getProperty("rank"))).collect(Collectors.toList());
             Optional<Map<String, Object>> local_top_hn = local_node_hns.stream().filter(x -> x.get("is_lemma").equals(true)).findAny();
-            List<Map<String, Object>> variant_locus = variant_list.stream().filter(x -> x.get("rank").equals(node.getProperty("rank"))).collect(Collectors.toList());
+            Result variant_locus = variant_locus((String) node.getProperty("section_id"), (Long) node.getProperty("rank"), tx);
             if (local_top_hn.isPresent()){
                 List<Map<String, Object>> local_top_hn_list = local_node_hns.stream().filter(x -> x.get("is_lemma").equals(true)).collect(Collectors.toList());
                 Map<String, Object> top_hn_node = target_top_hn(local_top_hn_list, hn_stats);
@@ -212,39 +239,116 @@ public class TeiExporter {
         return nodes;
     }
 
-    public void populateVariants(Node section_node, List<Map<String, Object>> filtered_variants, XMLStreamWriter writer, Transaction tx) throws XMLStreamException {
-        List<Map<String, String>> app_elements = new ArrayList<>();
+    public void populateVariants(Node section_node, Result filtered_variants, XMLStreamWriter writer, Transaction tx) throws XMLStreamException {
+        LinkedList<HashMap<String, String>> app_elements = new LinkedList<>();
         writer.writeStartElement("app");
-        for(Map<String, Object> row: filtered_variants){
-
-            if(Objects.equals(section_node.getElementId(), row.get("nodeId").toString())){
-                // xmlement.put("el", "lem");
-                // xmlement.put("text", node.getProperty("text").toString());
-                Node rdg_node = tx.getNodeByElementId(row.get("nodeId").toString());
-                HashMap<String, String> xmlement = find_lemma(rdg_node);
-                if(Objects.equals(xmlement.get("el"), "lem")){
-                    app_elements.add(0, xmlement);
-                }else{
-                    app_elements.add(xmlement);
-                }
-            }else{
-                Node rdg_node = tx.getNodeByElementId(row.get("nodeId").toString());
-                HashMap<String, String> xmlement = find_lemma(rdg_node);
-                if(Objects.equals(xmlement.get("el"), "lem")){
-                    app_elements.add(0, xmlement);
-                }else{
-                    app_elements.add(xmlement);
-                }
+        writer.writeAttribute("rank", section_node.getProperty("rank").toString());
+        while (filtered_variants.hasNext()){
+            Node variant = (Node) filtered_variants.next().get("node");
+            if(Objects.equals(section_node.getProperty("section_id"), variant.getProperty("section_id"))){
+                HashMap<String, String> xmlement = find_lemma(variant);
+                ReadingModel rdg = new ReadingModel(variant);
+                xmlement.put("w", String.join(", ", rdg.getWitnesses()));
+                app_elements.add(xmlement);
             }
         }
         for(Map<String, String> el: app_elements){
             writer.writeStartElement(el.get("el"));
-            writer.writeCharacters(el.get("text"));
+            writer.writeAttribute("w", el.get("w"));
+            // if (section_node.getSingleRelationship(ERelations.SEQUENCE, Direction.INCOMING) != null){
+            // }
+            addRdgContent(el.get("text"), writer);
             writer.writeEndElement();
         }
         writer.writeEndElement();
     }
+    public static void addRdgContent(String rdgTextContent, XMLStreamWriter writer){
+        try{
+            List<String> elements = splitTextAndXml(rdgTextContent);
+            for (String el : elements) {
+                if (isValidXml(el)) {
+                    XMLInputFactory inputFactory = XMLInputFactory.newInstance();
+                    XMLStreamReader reader = inputFactory.createXMLStreamReader(new StringReader(el));
 
+                    while (reader.hasNext()) {
+                        int event = reader.next();
+                        switch (event) {
+                            case XMLStreamReader.START_ELEMENT:
+                                writer.writeStartElement(reader.getLocalName());
+                                for (int i = 0; i < reader.getAttributeCount(); i++) {
+                                    writer.writeAttribute(reader.getAttributeLocalName(i), reader.getAttributeValue(i));
+                                }
+                                break;
+                            case XMLStreamReader.CHARACTERS:
+                                String text = reader.getText().trim();
+                                if (!text.isEmpty()) {
+                                    writer.writeCharacters(text);
+                                }
+                                break;
+                            case XMLStreamReader.END_ELEMENT:
+                                writer.writeEndElement();
+                                break;
+                        }
+                    }
+                    reader.close();
+                } else {
+                    // System.out.println("Skipping addition due to invalid XML");
+                    writer.writeCharacters(el);
+                }
+            }
+        } catch (Exception e) {
+            System.out.println("Error adding new element: " + e.getMessage());
+        }
+    }
+    public static List<String> splitTextAndXml(String input) {
+        List<String> result = new ArrayList<>();
+        if (input == null || input.isEmpty()) {
+            return result;
+        }
+
+        Pattern xmlPattern = Pattern.compile("(?s)<[^>]+>.*?</[^>]+>");
+        Matcher matcher = xmlPattern.matcher(input);
+
+        int lastEnd = 0;
+        while (matcher.find()) {
+            if (matcher.start() > lastEnd) {
+                String text = input.substring(lastEnd, matcher.start());
+                if (!text.isEmpty()) {
+                    result.add(text);
+                }
+            }
+            String xml = matcher.group();
+            result.add(xml);
+            lastEnd = matcher.end();
+        }
+
+        if (lastEnd < input.length()) {
+            String text = input.substring(lastEnd);
+            if (!text.isEmpty()) {
+                result.add(text);
+            }
+        }
+
+        if (result.isEmpty() && !input.isEmpty()) {
+            result.add(input);
+        }
+
+        return result;
+    }
+    public static boolean isValidXml(String xmlString) {
+        try {
+            XMLInputFactory factory = XMLInputFactory.newInstance();
+            XMLStreamReader reader = factory.createXMLStreamReader(new StringReader(xmlString));
+            while (reader.hasNext()) {
+                reader.next();
+            }
+            reader.close();
+            return true;
+        } catch (Exception e) {
+            // System.out.println("Invalid XML: " + e.getMessage());
+            return false;
+        }
+    }
     public Long count_nodes(String hn, Transaction tx){
         String query = String.format("match (h:HYPERREADING)<-[r:HAS_HYPERNODE]-(n:READING)\n" +
                 "where elementId(h) = \"%s\"\n" +
@@ -350,7 +454,7 @@ public class TeiExporter {
         todo: create an ordered list to reflect the polarsation
          */
         HashMap<String, String> xmlelement = new HashMap<>();
-        if (node.getDegree(ERelations.RELATED, Direction.INCOMING) >= 1 && node.getDegree(ERelations.RELATED, Direction.OUTGOING) == 0){
+        if (node.hasProperty("is_lemma")){
             xmlelement.put("el", "lem");
             xmlelement.put("text", node.getProperty("text").toString());
         } else {
@@ -397,6 +501,14 @@ public class TeiExporter {
                 " WHERE r.section_id=\"%s\"\n" +
                 " with elementId(r) as ruid, count(r) as rCount, collect(elementId(h)) as huid, r.text as text, id(r) as rid, r.rank as rank\n" +
                 " return text, ruid, rCount, huid, rank ORDER BY rid ASC", section_node.getElementId());
+        return tx.execute(query);
+    }
+    public Result variant_locus(String section_id, Long rank, Transaction tx){
+        String query = String.format("MATCH (n:READING {section_id: '%s', rank: %d})\n" +
+                "WHERE NOT (n)-[:RELATED]->(:READING)\n" +
+                "WITH n as nn\n" +
+                "MATCH (p:READING {section_id: '%s', rank: %d})-[:RELATED]->*(nn)\n" +
+                "RETURN p as node", section_id, rank, section_id, rank);
         return tx.execute(query);
     }
 }

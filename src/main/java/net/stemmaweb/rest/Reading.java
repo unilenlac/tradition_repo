@@ -20,6 +20,7 @@ import net.stemmaweb.services.*;
 import org.neo4j.graphdb.*;
 import org.neo4j.graphdb.NotFoundException;
 import org.neo4j.graphdb.traversal.Uniqueness;
+import org.neo4j.internal.batchimport.stats.Stat;
 
 import static net.stemmaweb.Util.jsonerror;
 
@@ -1640,7 +1641,7 @@ public class Reading {
             int[] a = {i, s};
             int pattern_code = Arrays.stream(a).sum();
 
-            boolean equalRanking = snode.getProperty("rank") == tnode.getProperty("rank");
+            boolean equalRanking = snode.getProperty("rank").equals(tnode.getProperty("rank"));
             String stext = snode.getProperty("text").toString();
             String ttext = tnode.getProperty("text").toString();
             boolean equalValue = snode.getProperty("text").toString().equals(tnode.getProperty("text").toString());
@@ -1667,6 +1668,57 @@ public class Reading {
         }
         return Response.ok().build();
     }
+    /**
+     * set node rank, move a reading through the graph section
+     *
+     * @return
+     */
+    @PUT
+    @Path("rank")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces("application/json; charset=utf-8")
+    @ReturnType(clazz = ReadingModel.class)
+    public Response changeRank(@QueryParam("rank") Long rank) {
+        ReadingModel res = null;
+        if (rank != null){
+            try (Transaction tx = db.beginTx()) {
+                Node read = tx.getNodeByElementId(readId);
+                Long oldRank = (Long) read.getProperty("rank");
+                boolean node_can_move = checkNodeRank(oldRank, rank, read);
+                if (!rank.equals(oldRank) && node_can_move) {
+                    read.setProperty("rank", rank);
+                    tx.commit();
+                    res = new ReadingModel(read);
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+                return Response.serverError().entity(jsonerror(e.getMessage())).build();
+            }
+        }
+        if (res == null) {
+            errorMessage = "The reading can't be moved to the specified rank. " +
+                    "Please check the provided value and check if the section can include the reading";
+            return errorResponse(Status.BAD_REQUEST);
+        }
+        return Response.ok(res).build();
+    }
+
+    private boolean checkNodeRank(Long oldRank, Long rank, Node reading) {
+        if (reading.hasRelationship(Direction.INCOMING, ERelations.SEQUENCE) && reading.hasRelationship(Direction.OUTGOING, ERelations.SEQUENCE)) {
+            Relationship rel_in = reading.getSingleRelationship(ERelations.SEQUENCE, Direction.INCOMING);
+            Relationship rel_out = reading.getSingleRelationship(ERelations.SEQUENCE, Direction.OUTGOING);
+
+            Node end_node = rel_out.getEndNode();
+            Node start_node = rel_in.getStartNode();
+
+            if (rank < (Long) end_node.getProperty("rank") && !oldRank.equals(rank) && rank > oldRank) {
+                return true;
+            }
+            return rank > (Long) start_node.getProperty("rank") && !oldRank.equals(rank) && rank < oldRank;
+        }
+        return false;
+    }
+
     /**
      * compress two readings
      *

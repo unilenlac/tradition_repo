@@ -22,6 +22,7 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 
+import net.stemmaweb.exporter.*;
 import org.glassfish.jersey.media.multipart.FormDataParam;
 import org.json.JSONObject;
 import org.neo4j.graphdb.*;
@@ -32,10 +33,6 @@ import com.alexmerz.graphviz.ParseException;
 import com.qmino.miredot.annotations.MireDotIgnore;
 import com.qmino.miredot.annotations.ReturnType;
 
-import net.stemmaweb.exporter.DotExporter;
-import net.stemmaweb.exporter.GraphMLExporter;
-import net.stemmaweb.exporter.StemmawebExporter;
-import net.stemmaweb.exporter.TabularExporter;
 import net.stemmaweb.model.AlignmentModel;
 import net.stemmaweb.model.AnnotationLabelModel;
 import net.stemmaweb.model.AnnotationModel;
@@ -1057,5 +1054,14 @@ public class Tradition {
                 sectionList, "true".equals(excludeLayers));
     }
 
+    @GET
+    @Path("/teicat")
+    @Produces("text/xml; charset=utf-8")
+    @ReturnType("java.lang.String")
+    public Response getTEICat(@QueryParam("start_section") String startSection, @QueryParam("end_section") String endSection) {
+        // return new TeiExporter(db).SimpleHnExporter(tradition, section);
+        System.out.println("TEI CAT export requested for tradition " + traditionId + " from section " + startSection + " to section " + endSection);
+        return Response.ok("TEI CAT export requested for tradition " + traditionId + " from section " + startSection + " to section " + endSection).build();
+    }
 }
 
