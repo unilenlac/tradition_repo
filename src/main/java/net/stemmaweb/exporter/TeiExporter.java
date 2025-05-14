@@ -10,8 +10,13 @@ import org.neo4j.graphdb.*;
 import net.stemmaweb.rest.ERelations;
 import com.sun.xml.txw2.output.IndentingXMLStreamWriter;
 import org.neo4j.graphdb.traversal.Traverser;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.xml.sax.InputSource;
 
 import javax.ws.rs.core.Response;
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.stream.*;
 import java.io.StringReader;
 import java.io.StringWriter;
@@ -123,9 +128,9 @@ public class TeiExporter {
                         // todo replace with start/endnode
                         if(!Objects.equals(node.getProperty("text").toString(), "#START#") && !Objects.equals(node.getProperty("text").toString(), "#END#")){
                             if(node_section.size() == 1){
-                                addRdgContent(node.getProperty("text").toString(), writer);
+                                addRdgContent(node.getProperty("text").toString(), writer, false);
                             } else {
-                                addRdgContent(node.getProperty("text").toString() + " ", writer);
+                                addRdgContent(node.getProperty("text").toString() + " ", writer, false);
                             }
                         }
                     }
@@ -257,23 +262,32 @@ public class TeiExporter {
             writer.writeAttribute("w", el.get("w"));
             // if (section_node.getSingleRelationship(ERelations.SEQUENCE, Direction.INCOMING) != null){
             // }
-            addRdgContent(el.get("text"), writer);
+            addRdgContent(el.get("text"), writer, false);
             writer.writeEndElement();
         }
         writer.writeEndElement();
     }
-    public static void addRdgContent(String rdgTextContent, XMLStreamWriter writer){
+    public static void addRdgContent(String rdgTextContent, XMLStreamWriter writer, boolean lite){
+        List<String> nc_elements = new ArrayList<>(List.of("gap", "unclear", "space", "c"));
         try{
-            List<String> elements = splitTextAndXml(rdgTextContent);
+            List<String> elements = splitTextAndXml(cleanText(rdgTextContent), lite);
             for (String el : elements) {
                 if (isValidXml(el)) {
                     XMLInputFactory inputFactory = XMLInputFactory.newInstance();
-                    XMLStreamReader reader = inputFactory.createXMLStreamReader(new StringReader(el));
+                    XMLStreamReader reader = inputFactory.createXMLStreamReader(new StringReader(el.trim()));
 
                     while (reader.hasNext()) {
+
                         int event = reader.next();
                         switch (event) {
                             case XMLStreamReader.START_ELEMENT:
+                                if (nc_elements.contains(reader.getLocalName())){
+                                    writer.writeEmptyElement(reader.getLocalName());
+                                    for (int i = 0; i < reader.getAttributeCount(); i++) {
+                                        writer.writeAttribute(reader.getAttributeLocalName(i), reader.getAttributeValue(i));
+                                    }
+                                    break;
+                                }
                                 writer.writeStartElement(reader.getLocalName());
                                 for (int i = 0; i < reader.getAttributeCount(); i++) {
                                     writer.writeAttribute(reader.getAttributeLocalName(i), reader.getAttributeValue(i));
@@ -286,28 +300,83 @@ public class TeiExporter {
                                 }
                                 break;
                             case XMLStreamReader.END_ELEMENT:
+                                if (nc_elements.contains(reader.getLocalName())){
+                                    break;
+                                }
                                 writer.writeEndElement();
                                 break;
                         }
                     }
                     reader.close();
                 } else {
-                    // System.out.println("Skipping addition due to invalid XML");
+                    // String cleanedText = el.trim();
+                    // String tmp = cleanText(el);
                     writer.writeCharacters(el);
+                    // List<String> top_elements = splitTextAndXml(cleanText(el), true);
+                    // for (String top_el: top_elements){
+                    //     if(isNonEnclosingElement(top_el)){
+                    //
+                    //         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+                    //         DocumentBuilder builder = factory.newDocumentBuilder();
+                    //         InputSource inputSource = new InputSource(new StringReader(top_el));
+                    //         Document document = builder.parse(inputSource);
+                    //         System.out.println(document);
+                    //     } else {
+                    //         writer.writeCharacters(top_el);
+                    //     }
+                    // }
                 }
             }
         } catch (Exception e) {
             System.out.println("Error adding new element: " + e.getMessage());
         }
     }
-    public static List<String> splitTextAndXml(String input) {
+    /**
+     * Checks if the given element is a non-enclosing XML element.
+     *
+     * @param element The XML element to check.
+     * @return true if the element is a non-enclosing XML element, false otherwise.
+     */
+    public static boolean isNonEnclosingElement(String element) {
+        // Check if the element is a non-enclosing XML element
+        return element.matches("<\\w+.*?/>");
+    }
+    /**
+     * Cleans the input text by removing all new line characters and tabs.
+     *
+     * @param input The input text to be cleaned.
+     * @return The cleaned text.
+     */
+    public static String cleanText(String input){
+
+        String res = null;
+        Pattern xmlPattern = Pattern.compile("\\R*\\t");
+        Matcher matcher = xmlPattern.matcher(input);
+
+        while(matcher.find()){
+            res = matcher.replaceAll("");
+        }
+        if(res != null){
+
+            return res;
+        }
+        return input;
+    }
+    public static List<String> splitTextAndXml(String input, boolean lite) {
         List<String> result = new ArrayList<>();
         if (input == null || input.isEmpty()) {
             return result;
         }
 
-        Pattern xmlPattern = Pattern.compile("(?s)<[^>]+>.*?</[^>]+>");
-        Matcher matcher = xmlPattern.matcher(input);
+        Pattern xmlPattern = Pattern.compile("<(?<tag>\\w+).*>(.*?)<\\/(\\k<tag>)>");
+        Pattern ncXmlPattern = Pattern.compile("<\\w+.*?\\/>");
+
+        Matcher matcher;
+        if(lite){
+            matcher = ncXmlPattern.matcher(input);
+        } else {
+            matcher = xmlPattern.matcher(input);
+        }
 
         int lastEnd = 0;
         while (matcher.find()) {

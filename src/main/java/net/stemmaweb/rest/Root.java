@@ -2,6 +2,7 @@ package net.stemmaweb.rest;
 
 import com.qmino.miredot.annotations.MireDotIgnore;
 import com.qmino.miredot.annotations.ReturnType;
+import com.sun.xml.txw2.output.IndentingXMLStreamWriter;
 import net.stemmaweb.exporter.TeiExporter;
 import net.stemmaweb.model.TraditionModel;
 import net.stemmaweb.model.UserModel;
@@ -23,15 +24,19 @@ import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.UriInfo;
+import javax.xml.stream.XMLOutputFactory;
 import javax.xml.stream.XMLStreamException;
+import javax.xml.stream.XMLStreamWriter;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
 import static net.stemmaweb.Util.*;
+import static net.stemmaweb.exporter.TeiExporter.addRdgContent;
 
 /**
  * The root of the REST hierarchy. Deals with system-wide collections of
@@ -318,9 +323,42 @@ public class Root {
     @GET
     @Path("/sandbox")
     @Produces(MediaType.APPLICATION_XML)
-    public Response sandox(
-            @DefaultValue("4:d9d77f98-2607-4616-97cb-50995b926dd7:2") @QueryParam("tradition") String tradition,
-            @DefaultValue("4:d9d77f98-2607-4616-97cb-50995b926dd7:129") @QueryParam("section") String section) throws XMLStreamException {
+    public Response sandox() throws XMLStreamException {
+
+        String s_1 = "<element>1</element>";
+        String s_2 = "test<element>1</element>.";
+        String s_3 = "<element><bar>hello</bar></element>";
+        String s_4 = "<element>foo string<bar>hello</bar>blob<bar>hello</bar></element>";
+        String s_5 = "test<element>1</element>.<element>foo string<bar>hello</bar></element>";
+        String s_6 = "test<element/>follow";
+        String s_7 = "<element>foo string<bar/>hello</element>";
+        String s_8 = "foo<element/>string<bar type='foo' param='bar'/>hello<baz/>world";
+        String s_9 = "foo</nc>string<element>foo string<bar>hello</bar>blob<bar>hello</bar></element>foo<element>qux</element></nc>string";
+
+
+        StringWriter result = new StringWriter();
+        XMLOutputFactory output = XMLOutputFactory.newInstance();
+        XMLStreamWriter writer;
+        try {
+            writer = new IndentingXMLStreamWriter(output.createXMLStreamWriter(result));
+        } catch (XMLStreamException e) {
+            e.printStackTrace();
+            return Response.serverError().build();
+        }
+        writer.writeStartDocument();
+        writer.writeStartElement("body");
+
+        // return new TeiExporter(db).SimpleHnExporter(tradition, section);
+        addRdgContent(s_8, writer, true);
+
+        writer.writeEndElement();
+        return Response.ok().entity(result.toString()).build();
+    }
+    @GET
+    @Path("/tei_exporter")
+    @Produces(MediaType.APPLICATION_XML)
+    public Response teiExporter(@QueryParam("tradition") String tradition,
+                                @QueryParam("section") String section) throws XMLStreamException {
         return new TeiExporter(db).SimpleHnExporter(tradition, section);
     }
 }
