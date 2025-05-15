@@ -395,6 +395,10 @@ public class DotExporter
     }
 
     private static String nodeSpec(Node node, DisplayOptionModel dm) {
+
+        // todo: this method has a quick fix (line 427) but should be refactored
+        // todo: the hasHtml check lacks of logic and was not used efficiently in the following code
+
         // Get the proper node ID
         String nodeDotId = node.hasLabel(Nodes.EMENDATION) ? "ne" : "n";
         nodeDotId+= node.getElementId();
@@ -405,7 +409,7 @@ public class DotExporter
         // brackets, because if we are also showing normal forms, we have to wedge more into the
         // HTML specification.
         boolean hasHTML = node.hasProperty("display");
-        Iterable<String> props = node.getPropertyKeys();
+
         String nodeLabel = hasHTML ? node.getProperty("display").toString()
                 : node.getProperty("text").toString();
         if (node.getProperty("is_lacuna", false).equals(true)) {
@@ -420,7 +424,7 @@ public class DotExporter
                     + escapeHtml4(node.getProperty("normal_form").toString()) + "</FONT>";
             if (hasHTML)
                 // We have to glom the normal_form HTML onto the existing HTML label
-                nodeLabel = String.format("<%s>", nodeLabel + labelExtra);
+                nodeLabel = String.format("<%s%s>", escapeHtml4(nodeLabel), labelExtra);
             else
                 // Do URL escaping of any labels
                 nodeLabel = String.format("<%s>", escapeHtml4(nodeLabel) + labelExtra);

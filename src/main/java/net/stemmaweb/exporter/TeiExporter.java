@@ -4,19 +4,13 @@ import net.stemmaweb.model.ReadingModel;
 import net.stemmaweb.model.TraditionModel;
 import net.stemmaweb.rest.Nodes;
 import net.stemmaweb.services.GraphService;
-import net.stemmaweb.services.VariantGraphService;
 // import org.neo4j.cypher.internal.expressions.In;
 import org.neo4j.graphdb.*;
 import net.stemmaweb.rest.ERelations;
 import com.sun.xml.txw2.output.IndentingXMLStreamWriter;
-import org.neo4j.graphdb.traversal.Traverser;
-import org.w3c.dom.Document;
-import org.w3c.dom.Element;
-import org.xml.sax.InputSource;
+import org.neo4j.internal.kernel.api.Read;
 
 import javax.ws.rs.core.Response;
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.stream.*;
 import java.io.StringReader;
 import java.io.StringWriter;
@@ -25,8 +19,6 @@ import java.util.*;
 import java.util.stream.Collectors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import static net.stemmaweb.services.VariantGraphService.getSectionNodes;
 
 public class TeiExporter {
     private final GraphDatabaseService db;
@@ -62,8 +54,8 @@ public class TeiExporter {
             Node section_node = tx.getNodeByElementId(section_id);
             Long witness_count = tradition_node.getRelationships(ERelations.HAS_WITNESS).stream().count();
 
-            Node start_node = section_node.getSingleRelationship(ERelations.COLLATION, Direction.OUTGOING).getEndNode();
-            String rank = section_node.getSingleRelationship(ERelations.HAS_END, Direction.OUTGOING).getEndNode().getProperty("rank").toString();
+            //Node start_node = section_node.getSingleRelationship(ERelations.COLLATION, Direction.OUTGOING).getEndNode();
+            //String rank = section_node.getSingleRelationship(ERelations.HAS_END, Direction.OUTGOING).getEndNode().getProperty("rank").toString();
 
             Result variants = getVariants(section_node, tx);
             Result hypernodes = getHypernodes(section_node, tx);
@@ -76,17 +68,12 @@ public class TeiExporter {
             Result section = graphService.getSectionByRank(section_id, tx);
             LinkedList<Node> node_section = new LinkedList<>();
             section.stream().map(x -> tx.getNodeByElementId(x.get("id").toString())).forEach(node_section::add);
-            // List<Map<String, Object>> section_nodes = section.stream().collect(Collectors.toList());
-            // Result section = graphService.get_section(section_node, witness_count, tx);
-            // Traverser td = VariantGraphService.simpleTraverser(tx, Integer.parseInt(rank), witness_count).traverse(start_node);
-            // ArrayList<Node> ns = getSectionNodes(tradition_id, this.db);
 
             long node_skip = 0L;
 
             while (!node_section.isEmpty()){
                 // ArrayList<Node> nodes = (ArrayList<Node>) section.next().get("path");
                 Node node = node_section.removeFirst();
-                // System.out.println(nodes);
                 // for(Node node: node_section){
                 if(node_skip == 0){
                     // get all hypernodes linked to traversed section node
@@ -128,9 +115,9 @@ public class TeiExporter {
                         // todo replace with start/endnode
                         if(!Objects.equals(node.getProperty("text").toString(), "#START#") && !Objects.equals(node.getProperty("text").toString(), "#END#")){
                             if(node_section.size() == 1){
-                                addRdgContent(node.getProperty("text").toString(), writer, false);
+                                addRdgContent(node.getProperty("text").toString(), writer);
                             } else {
-                                addRdgContent(node.getProperty("text").toString() + " ", writer, false);
+                                addRdgContent(node.getProperty("text").toString() + " ", writer);
                             }
                         }
                     }
@@ -165,9 +152,15 @@ public class TeiExporter {
 
         int hn_node_count = nodes.size();
         List<Map<String, Object>> remaining_hn = filtered_hn.stream().filter(x -> !x.get("hyperId").equals(top_hn.get("hyperId"))).collect(Collectors.toList());
-        Node node_sample = nodes.get(0);
-
+        Node node_sample = nodes.get(1);
+        ReadingModel rdg_sample = new ReadingModel(node_sample);
         writer.writeStartElement("lem");
+        writer.writeAttribute("wit", rdg_sample.getWitnesses().stream().map(x -> "#"+x).collect(Collectors.joining(" ")));
+
+        // add rank attribute to the hypernode
+        // todo: remove this when job is done
+        writer.writeAttribute("rank", nodes.stream().map(x -> x.getProperty("rank").toString()).collect(Collectors.joining(", ")));
+
         Long node_skip = 0L;
         Long count = 0L;
         for (Node node: nodes){
@@ -191,12 +184,12 @@ public class TeiExporter {
                     if (node_relations > 0){
                         populateVariants(node, variant_locus, writer, tx);
                     } else {
-                        writer.writeCharacters(node.getProperty("text").toString()+" ");
+                        addRdgContent(node.getProperty("text").toString()+" ", writer);
+                        // writer.writeCharacters(node.getProperty("text").toString()+" ");
                     }
                 }
             }
         }
-
         writer.writeEndElement();
 
         List<Map<String, Object>> filtered_variants = variant_list.stream().filter(x -> x.get("rank") == tx.getNodeByElementId(node_sample.getElementId()).getProperty("rank")).collect(Collectors.toList());
@@ -219,8 +212,11 @@ public class TeiExporter {
                 List<String> hn_nodes = tmp_nodes.stream().map(x -> x.getProperty("text").toString()).collect(Collectors.toList());
                 if(hn_nodes.size() == hn_node_count){
                     writer.writeStartElement("rdg");
+                    ReadingModel w_node = new ReadingModel(tmp_nodes.get(1));
+                    writer.writeAttribute("wit", w_node.getWitnesses().stream().map(x -> "#"+x).collect(Collectors.joining(" ")));
                     for(String n: hn_nodes){
-                        writer.writeCharacters(n+" ");
+                        addRdgContent(n+" ", writer);
+                        // writer.writeCharacters(n+" ");
                     }
                     writer.writeEndElement();
                 }
@@ -253,24 +249,22 @@ public class TeiExporter {
             if(Objects.equals(section_node.getProperty("section_id"), variant.getProperty("section_id"))){
                 HashMap<String, String> xmlement = find_lemma(variant);
                 ReadingModel rdg = new ReadingModel(variant);
-                xmlement.put("w", String.join(", ", rdg.getWitnesses()));
+                xmlement.put("wit", rdg.getWitnesses().stream().map(x -> "#"+x).collect(Collectors.joining(" ")));
                 app_elements.add(xmlement);
             }
         }
         for(Map<String, String> el: app_elements){
             writer.writeStartElement(el.get("el"));
-            writer.writeAttribute("w", el.get("w"));
-            // if (section_node.getSingleRelationship(ERelations.SEQUENCE, Direction.INCOMING) != null){
-            // }
-            addRdgContent(el.get("text"), writer, false);
+            writer.writeAttribute("wit", el.get("wit"));
+            addRdgContent(el.get("text"), writer);
             writer.writeEndElement();
         }
         writer.writeEndElement();
     }
-    public static void addRdgContent(String rdgTextContent, XMLStreamWriter writer, boolean lite){
+    public static void addRdgContent(String rdgTextContent, XMLStreamWriter writer){
         List<String> nc_elements = new ArrayList<>(List.of("gap", "unclear", "space", "c"));
         try{
-            List<String> elements = splitTextAndXml(cleanText(rdgTextContent), lite);
+            List<String> elements = splitTextAndXml(cleanText(rdgTextContent));
             for (String el : elements) {
                 if (isValidXml(el)) {
                     XMLInputFactory inputFactory = XMLInputFactory.newInstance();
@@ -309,22 +303,7 @@ public class TeiExporter {
                     }
                     reader.close();
                 } else {
-                    // String cleanedText = el.trim();
-                    // String tmp = cleanText(el);
                     writer.writeCharacters(el);
-                    // List<String> top_elements = splitTextAndXml(cleanText(el), true);
-                    // for (String top_el: top_elements){
-                    //     if(isNonEnclosingElement(top_el)){
-                    //
-                    //         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-                    //         DocumentBuilder builder = factory.newDocumentBuilder();
-                    //         InputSource inputSource = new InputSource(new StringReader(top_el));
-                    //         Document document = builder.parse(inputSource);
-                    //         System.out.println(document);
-                    //     } else {
-                    //         writer.writeCharacters(top_el);
-                    //     }
-                    // }
                 }
             }
         } catch (Exception e) {
@@ -350,7 +329,7 @@ public class TeiExporter {
     public static String cleanText(String input){
 
         String res = null;
-        Pattern xmlPattern = Pattern.compile("\\R*\\t");
+        Pattern xmlPattern = Pattern.compile("\\R|\\t");
         Matcher matcher = xmlPattern.matcher(input);
 
         while(matcher.find()){
@@ -362,21 +341,21 @@ public class TeiExporter {
         }
         return input;
     }
-    public static List<String> splitTextAndXml(String input, boolean lite) {
+    /**
+     * Splits the input text into a list of strings, separating text and XML elements.
+     *
+     * @param input The input text to be split.
+     * @return A list of strings containing the separated text and XML elements.
+     */
+    public static List<String> splitTextAndXml(String input) {
         List<String> result = new ArrayList<>();
         if (input == null || input.isEmpty()) {
             return result;
         }
 
         Pattern xmlPattern = Pattern.compile("<(?<tag>\\w+).*>(.*?)<\\/(\\k<tag>)>");
-        Pattern ncXmlPattern = Pattern.compile("<\\w+.*?\\/>");
 
-        Matcher matcher;
-        if(lite){
-            matcher = ncXmlPattern.matcher(input);
-        } else {
-            matcher = xmlPattern.matcher(input);
-        }
+        Matcher matcher = xmlPattern.matcher(input);
 
         int lastEnd = 0;
         while (matcher.find()) {
@@ -404,6 +383,12 @@ public class TeiExporter {
 
         return result;
     }
+    /**
+     * Checks if the given XML string is valid.
+     *
+     * @param xmlString The XML string to check.
+     * @return true if the XML string is valid, false otherwise.
+     */
     public static boolean isValidXml(String xmlString) {
         try {
             XMLInputFactory factory = XMLInputFactory.newInstance();
@@ -414,7 +399,6 @@ public class TeiExporter {
             reader.close();
             return true;
         } catch (Exception e) {
-            // System.out.println("Invalid XML: " + e.getMessage());
             return false;
         }
     }

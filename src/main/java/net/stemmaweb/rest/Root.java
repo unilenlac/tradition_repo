@@ -349,7 +349,7 @@ public class Root {
         writer.writeStartElement("body");
 
         // return new TeiExporter(db).SimpleHnExporter(tradition, section);
-        addRdgContent(s_8, writer, true);
+        addRdgContent(s_8, writer);
 
         writer.writeEndElement();
         return Response.ok().entity(result.toString()).build();
