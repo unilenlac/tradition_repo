@@ -21,7 +21,10 @@ import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
+import javax.xml.stream.XMLStreamException;
 
+import net.stemmaweb.builders.XmlBuilder;
+import net.stemmaweb.directors.DocumentDesigner;
 import net.stemmaweb.exporter.*;
 import org.glassfish.jersey.media.multipart.FormDataParam;
 import org.json.JSONObject;
@@ -88,9 +91,9 @@ public class Tradition {
      * @param sectionId - the ID of the requested tradition section
      */
     @Path("/section/{sectionId}")
-    public Section getSection(@PathParam("sectionId") String sectionId) {
+    public Section getSection(@PathParam("sectionId") String sectionId) throws Exception {
         try(Transaction tx = db.beginTx()){
-            ArrayList<SectionModel> tradSections = produceSectionList(VariantGraphService.getTraditionNode(traditionId, tx));
+            ArrayList<SectionModel> tradSections = produceSectionList(VariantGraphService.getTraditionNode(traditionId, tx), tx);
             if (tradSections != null)
                 for (SectionModel s : tradSections)
                     if (s.getId().equals(sectionId))
@@ -203,38 +206,34 @@ public class Tradition {
         }
     }
 
-    private ArrayList<SectionModel> produceSectionList (Node traditionNode) {
+    public static ArrayList<SectionModel> produceSectionList(Node traditionNode, Transaction tx) throws Exception {
         ArrayList<SectionModel> sectionList = new ArrayList<>();
-        try (Transaction tx = db.beginTx()) {
-        	traditionNode = tx.getNodeByElementId(traditionNode.getElementId());
-            ArrayList<Node> sectionNodes = DatabaseService.getRelated(traditionNode, ERelations.PART, tx);
-            int depth = sectionNodes.size();
-            if (depth > 0) {
-                for(Node n: sectionNodes) {
-                    if (!n.getRelationships(Direction.INCOMING, ERelations.NEXT)
-                            .iterator()
-                            .hasNext()) {
-                        tx.traversalDescription()
-                                .depthFirst()
-                                .relationships(ERelations.NEXT, Direction.OUTGOING)
-                                .evaluator(Evaluators.toDepth(depth))
-                                .uniqueness(Uniqueness.NODE_GLOBAL)
-                                .traverse(n)
-                                .nodes()
-                                .forEach(r -> sectionList.add(new SectionModel(r)));
-                        break;
-                    }
+
+        traditionNode = tx.getNodeByElementId(traditionNode.getElementId());
+        ArrayList<Node> sectionNodes = DatabaseService.getRelated(traditionNode, ERelations.PART, tx);
+        int depth = sectionNodes.size();
+        if (depth > 0) {
+            for(Node n: sectionNodes) {
+                if (!n.getRelationships(Direction.INCOMING, ERelations.NEXT)
+                        .iterator()
+                        .hasNext()) {
+                    tx.traversalDescription()
+                            .depthFirst()
+                            .relationships(ERelations.NEXT, Direction.OUTGOING)
+                            .evaluator(Evaluators.toDepth(depth))
+                            .uniqueness(Uniqueness.NODE_GLOBAL)
+                            .traverse(n)
+                            .nodes()
+                            .forEach(r -> sectionList.add(new SectionModel(r)));
+                    break;
                 }
             }
-            tx.close();
-            if (sectionList.size() != depth) {
-                throw new Exception(
-                        String.format("Section list and section node mismatch: %d nodes, %d sections found",
-                                depth, sectionList.size()));
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-            return null;
+        }
+        // tx.close();
+        if (sectionList.size() != depth) {
+            throw new Exception(
+                    String.format("Section list and section node mismatch: %d nodes, %d sections found",
+                            depth, sectionList.size()));
         }
         return sectionList;
     }
@@ -269,7 +268,7 @@ public class Tradition {
 
             // Make a new section node to connect to the tradition in question.
             Node traditionNode = VariantGraphService.getTraditionNode(traditionId, tx);
-            ArrayList<SectionModel> existingSections = produceSectionList(traditionNode);
+            ArrayList<SectionModel> existingSections = produceSectionList(traditionNode, tx);
             Node sectionNode = createNewSection(traditionNode.getElementId(), sectionName);
             if (sectionNode == null)
                 return Response.serverError().entity(jsonerror("Error creating new section node on tradition")).build();
@@ -435,7 +434,7 @@ public class Tradition {
             Node traditionNode = VariantGraphService.getTraditionNode(traditionId, tx);
             if (traditionNode == null)
                 return Response.status(Status.NOT_FOUND).entity(jsonerror("tradition not found")).build();
-            List<SectionModel> smlist = produceSectionList(traditionNode);
+            List<SectionModel> smlist = produceSectionList(traditionNode, tx);
             if (smlist == null)
                 return Response.ok().build();
 
@@ -472,11 +471,13 @@ public class Tradition {
             if (traditionNode == null)
                 return Response.status(Status.NOT_FOUND).entity(jsonerror("tradition not found")).build();
 
-            ArrayList<SectionModel> sectionList = produceSectionList(traditionNode);
+            ArrayList<SectionModel> sectionList = produceSectionList(traditionNode, tx);
             if (sectionList == null)
                 return Response.serverError().entity(jsonerror("Something went wrong building section list")).build();
 
             return Response.ok(sectionList).build();
+        }catch (Exception e) {
+            return Response.serverError().entity(jsonerror(e.getMessage())).build();
         }
     }
 
@@ -559,7 +560,7 @@ public class Tradition {
             Node traditionNode = VariantGraphService.getTraditionNode(traditionId, tx);
             if (traditionNode == null)
                 return Response.status(Status.NOT_FOUND).entity(jsonerror("tradition not found")).build();
-            ArrayList<SectionModel> ourSections = produceSectionList(traditionNode);
+            ArrayList<SectionModel> ourSections = produceSectionList(traditionNode, tx);
             if (ourSections == null)
                 return Response.serverError().entity(jsonerror("section lookup failed")).build();
             for (SectionModel s : ourSections) {
@@ -570,6 +571,8 @@ public class Tradition {
                 relList.addAll(sectRels);
             }
            return Response.ok(relList).build();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
     }
 
@@ -622,7 +625,7 @@ public class Tradition {
                 return Response.status(Status.NOT_FOUND)
                         .entity(jsonerror("There is no tradition with this id")).build();
 
-            ArrayList<SectionModel> allSections = produceSectionList(traditionNode);
+            ArrayList<SectionModel> allSections = produceSectionList(traditionNode, tx);
             if (allSections == null)
                 return Response.serverError()
                         .entity(jsonerror("Tradition has no sections")).build();
@@ -637,6 +640,8 @@ public class Tradition {
 
             }
             return Response.ok(readingModels).build();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
     }
 
@@ -1055,13 +1060,16 @@ public class Tradition {
     }
 
     @GET
-    @Path("/teicat")
+    @Path("/xml")
     @Produces("text/xml; charset=utf-8")
     @ReturnType("java.lang.String")
-    public Response getTEICat(@QueryParam("start_section") String startSection, @QueryParam("end_section") String endSection) {
+    public Response getTEICat(@QueryParam("start_section") String startSection, @QueryParam("end_section") String endSection) throws XMLStreamException {
         // return new TeiExporter(db).SimpleHnExporter(tradition, section);
-        System.out.println("TEI CAT export requested for tradition " + traditionId + " from section " + startSection + " to section " + endSection);
-        return Response.ok("TEI CAT export requested for tradition " + traditionId + " from section " + startSection + " to section " + endSection).build();
+        XmlBuilder builder = new XmlBuilder();
+        DocumentDesigner doc = new DocumentDesigner(builder, db);
+        doc.designTradition(this.traditionId, startSection, endSection);
+        String xml = builder.getDocument();
+        return Response.ok().entity(xml).build();
     }
 }
 

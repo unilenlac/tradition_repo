@@ -33,7 +33,12 @@ import javax.ws.rs.Produces;
 import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
+import javax.xml.stream.XMLStreamException;
 
+import net.stemmaweb.builders.DocumentBuilder;
+import net.stemmaweb.builders.XmlBuilder;
+import net.stemmaweb.directors.DocumentDesigner;
+import net.stemmaweb.exporter.TeiExporter;
 import net.stemmaweb.model.*;
 import org.neo4j.graphdb.Direction;
 import org.neo4j.graphdb.GraphDatabaseService;
@@ -1697,6 +1702,25 @@ public class Section {
                 excWitnesses,
                 "true".equals(excludeLayers)
         );
+    }
+    /**
+     * Returns a TEI XML file that contains the base text and the variants.
+     *
+     * @summary Download a TEI XML file
+     *
+     * @return the TEI XML as plaintext
+     */
+    @GET
+    @Path("/xml")
+    @Produces("application/xml; charset=utf-8")
+    @ReturnType("java.lang.Void")
+    public Response getXml() throws XMLStreamException {
+        // return new TeiExporter(db).SimpleHnExporter(tradId, sectId);
+        XmlBuilder builder = new XmlBuilder();
+        DocumentDesigner doc = new DocumentDesigner(builder, db);
+        doc.designSection(tradId, sectId);
+        String xml = builder.getDocument();
+        return Response.ok().entity(xml).build();
     }
 
     /**
