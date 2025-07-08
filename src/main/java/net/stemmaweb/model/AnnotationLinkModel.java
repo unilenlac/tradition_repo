@@ -27,15 +27,16 @@ public class AnnotationLinkModel {
 
     public AnnotationLinkModel() {}
 
-    public AnnotationLinkModel(Relationship r) {
-//        GraphDatabaseService db = r.getGraphDatabase();
-        GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
-        try (Transaction tx = db.beginTx()) {
+    public AnnotationLinkModel(Relationship r, Transaction tx) {
+        // GraphDatabaseService db = r.getGraphDatabase();
+        // GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+        try {
             setType(r.getType().name());
             setTarget(r.getEndNode().getElementId());
             if (r.hasProperty("follow"))
                 setFollow(r.getProperty("follow").toString());
-            tx.close();
+        } catch (Exception e){
+            e.printStackTrace();
         }
     }
 

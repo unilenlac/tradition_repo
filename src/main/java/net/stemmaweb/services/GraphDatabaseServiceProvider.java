@@ -2,12 +2,15 @@ package net.stemmaweb.services;
 
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
 // import org.neo4j.common.DependencyResolver.SelectionStrategy;
 import org.neo4j.common.DependencyResolver;
+import net.stemmaweb.loggin.CustomLogProvider;
 import org.neo4j.configuration.GraphDatabaseSettings;
 import org.neo4j.dbms.api.DatabaseManagementService;
 import org.neo4j.dbms.api.DatabaseManagementServiceBuilder;
@@ -18,6 +21,8 @@ import org.neo4j.exceptions.KernelException;
 import org.neo4j.graphdb.GraphDatabaseService;
 //import org.neo4j.kernel.api.procedure.GlobalProcedures;
 import org.neo4j.kernel.internal.GraphDatabaseAPI;
+import net.stemmaweb.Config;
+import org.neo4j.logging.LogProvider;
 //import org.neo4j.test.TestDatabaseManagementServiceBuilder;
 //import scala.reflect.runtime.Settings;
 
@@ -33,18 +38,38 @@ public class GraphDatabaseServiceProvider {
     private static DatabaseManagementService dbService;
 
     // Get the database that has been initialized for the app
-    public GraphDatabaseServiceProvider() {
-    }
 
-	public GraphDatabaseServiceProvider(Boolean test){
-		if (test){
+	public GraphDatabaseServiceProvider() {
+		Config config = Config.getInstance();
+		String db_location = config.getNeo4jPath();
+		if (db==null && config.getNeo4jTest()){
 			List<String> unrestricted_list = new ArrayList<>();
 			unrestricted_list.add("gds.*");
-			dbService = new DatabaseManagementServiceBuilder(Path.of("/somewhere/on/disk"))
-					.setConfig(GraphDatabaseSettings.plugin_dir, Path.of("/location/of/plugins"))
+			// Path tempDbPath = Files.createTempDirectory("neo4j-debug-test");
+			// LogProvider logProvider = new CustomLogProvider();
+
+			dbService = new DatabaseManagementServiceBuilder(Path.of("/Users/rdiaz/Documents/testdb"))
+					//.setUserLogProvider(logProvider)
+					//.setConfig(GraphDatabaseSettings.data_directory, Path.of("/testdb/data"))
+					.loadPropertiesFromFile( Path.of( "/Users/rdiaz/Documents/testdb/conf/neo4j.conf" ))
+					.setConfig(GraphDatabaseSettings.plugin_dir, Path.of("/Users/rdiaz/Documents/testdb/plugins"))
 					.setConfig(GraphDatabaseSettings.procedure_unrestricted, unrestricted_list)
 					.build();
 			db = dbService.database(GraphDatabaseSettings.DEFAULT_DATABASE_NAME);
+			registerShutdownHook(dbService);
+		}else if(db==null && !config.getNeo4jTest()){
+			File n4j_config = new File(db_location + "/conf/neo4j.conf");
+			Path of = Path.of(db_location + "/");
+			if (n4j_config.exists()){
+				dbService = new DatabaseManagementServiceBuilder(of)
+						.setConfig(GraphDatabaseSettings.max_concurrent_transactions, 0)
+						.loadPropertiesFromFile( Path.of( of + "/conf/neo4j.conf" ) )
+						.build();
+			}else{
+				dbService = new DatabaseManagementServiceBuilder(of).build();
+			}
+			db = dbService.database(GraphDatabaseSettings.DEFAULT_DATABASE_NAME);
+			registerShutdownHook(dbService);
 		}
 	}
 

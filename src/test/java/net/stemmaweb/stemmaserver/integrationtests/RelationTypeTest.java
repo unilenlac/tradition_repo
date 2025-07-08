@@ -1,5 +1,6 @@
 package net.stemmaweb.stemmaserver.integrationtests;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -11,6 +12,7 @@ import javax.ws.rs.core.GenericType;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 
+import net.stemmaweb.services.GraphDatabaseServiceProvider;
 import org.glassfish.jersey.test.JerseyTest;
 import org.neo4j.dbms.api.DatabaseManagementService;
 import org.neo4j.dbms.api.DatabaseManagementServiceBuilder;
@@ -29,20 +31,19 @@ import net.stemmaweb.model.RelationTypeModel;
 import net.stemmaweb.stemmaserver.Util;
 
 public class RelationTypeTest extends TestCase {
-    private GraphDatabaseService db;
+    private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
+    private final GraphDatabaseService db = dbServiceProvider.getDatabase();
     private JerseyTest jerseyTest;
-    private DatabaseManagementService dbbuilder;
-
     private String tradId;
     private HashMap<String,String> readingLookup;
+
+    public RelationTypeTest() throws IOException {
+    }
 
 
     public void setUp() throws Exception {
         super.setUp();
-        dbbuilder = new DatabaseManagementServiceBuilder(Path.of("")).build();
-    	dbbuilder.createDatabase("stemmatest");
-    	db = dbbuilder.database("stemmatest");
-        Util.setupTestDB(db, "1");
+        Util.setupTestDB(db);
 
         // Create a JerseyTestServer for the necessary REST API calls
         jerseyTest = Util.setupJersey();
@@ -521,10 +522,12 @@ public class RelationTypeTest extends TestCase {
     }
 
     public void tearDown() throws Exception {
-//        db.shutdown();
-    	if (dbbuilder != null) {
-    		dbbuilder.shutdownDatabase(db.databaseName());
-    	}
+        DatabaseManagementService service = dbServiceProvider.getManagementService();
+
+        if (service != null) {
+            service.shutdownDatabase(db.databaseName());
+        }
+
         jerseyTest.tearDown();
         super.tearDown();
     }

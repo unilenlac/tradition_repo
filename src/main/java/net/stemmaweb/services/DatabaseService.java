@@ -35,7 +35,6 @@ public class DatabaseService {
                 node.setProperty("name", "Root node");
                 tx.commit();
             }
-            tx.close();
         }
     }
 
@@ -48,8 +47,8 @@ public class DatabaseService {
      * @return a list of all nodes related to startNode by the given relationship
      */
     public static ArrayList<Node> getRelated (Node startNode, RelationshipType relType, Transaction tx) {
-//        GraphDatabaseService db = startNode.getGraphDatabase();
-    	GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+        // GraphDatabaseService db = startNode.getGraphDatabase();
+    	// GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
     	ArrayList<Node> result = null;
 
         result = getRelatedNode(startNode, relType, tx);
@@ -71,7 +70,6 @@ public class DatabaseService {
 
     public static ArrayList<Node> getRelatedNode (Node startNode, RelationshipType relType, Transaction tx) {
 
-//        try (Transaction tx = node.getGraphDatabase().beginTx()) {
         ArrayList<Node> result = new ArrayList<>();
         if (tx == null) {
             GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();

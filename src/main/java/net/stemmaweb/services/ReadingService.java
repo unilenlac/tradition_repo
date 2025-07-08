@@ -333,24 +333,34 @@ public class ReadingService {
         	GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
         	String sectionId = String.valueOf(startNode.getProperty("section_id"));
             Transaction tx = db.beginTx();
-            String tradId = tx.getNodeByElementId(sectionId)
-                    .getSingleRelationship(ERelations.PART, Direction.INCOMING).getStartNode()
-                    .getProperty("id").toString();
+            Node tradNode = tx.getNodeByElementId(sectionId)
+                    .getSingleRelationship(ERelations.PART, Direction.INCOMING).getStartNode();
+                    //.getProperty("id").toString();
 //            this.colocatedNodes = buildColocationLookup(tradId, sectionId, startNode.getGraphDatabase());
-            this.colocatedNodes = buildColocationLookup(tradId, sectionId, tx);
+            this.colocatedNodes = buildColocationLookup(tradNode, startNode, tx);
             this.recalculateAll = recalculateAll;
             tx.close();
         }
 
-        RankCalcEvaluate(Node startNode, Boolean recalculateAll, Transaction tx) throws Exception {
+        RankCalcEvaluate(Node startNode, Node sectionNode, Boolean recalculateAll, Transaction tx) throws Exception {
         	// Get the list of colocated nodes in this section.
-//            GraphDatabaseService db = startNode.getGraphDatabase();
-        	String sectionId = String.valueOf(startNode.getProperty("section_id"));
-        	String tradId = tx.getNodeByElementId(sectionId)
-        			.getSingleRelationship(ERelations.PART, Direction.INCOMING).getStartNode()
-        			.getProperty("id").toString();
-//            this.colocatedNodes = buildColocationLookup(tradId, sectionId, startNode.getGraphDatabase());
-        	this.colocatedNodes = buildColocationLookup(tradId, sectionId, tx);
+            // GraphDatabaseService db = startNode.getGraphDatabase();
+        	// String sectionId = startNode.getElementId();
+
+            /*
+            String tradId;
+            if(startNode.hasRelationship(ERelations.PART)){
+        	    tradId = startNode.getSingleRelationship(ERelations.PART, Direction.INCOMING).getStartNode().getProperty("id").toString();
+            }else{
+                tradId = startNode.getProperty("id").toString();
+            }
+            if(!startNode.hasRelationship(ERelations.PART) && startNode.hasLabel(Nodes.READING)) {
+                String section_id = startNode.getProperty("section_id").toString();
+            }
+            */
+
+            // this.colocatedNodes = buildColocationLookup(tradId, sectionId, startNode.getGraphDatabase());
+        	this.colocatedNodes = buildColocationLookup(startNode, sectionNode, tx);
         	this.recalculateAll = recalculateAll;
         }
         
@@ -363,7 +373,11 @@ public class ReadingService {
             Long maxParentRank = maxParentRank(thisNode);
             // If this is the first node in the sequence, then maxParentRank had better not
             // be null. This should also work for the #START# node.
-            assert path.lastRelationship() != null || (maxParentRank != null);
+            if(path.lastRelationship() != null || (maxParentRank != null)){
+                return Evaluation.EXCLUDE_AND_PRUNE;
+                // throw new IllegalArgumentException("Object cannot be null");
+            }
+            // assert path.lastRelationship() != null || (maxParentRank != null);
 
             // If maxParentRank is null, we remove our rank and stop calculating from here
             if (maxParentRank == null) {
@@ -414,6 +428,7 @@ public class ReadingService {
      * @return list of nodes whose ranks were changed
      */
 
+    /*
     public static Set<Node> recalculateRank (Node startNode, boolean recalculateAll) throws Exception {
         RankCalcEvaluate e = new RankCalcEvaluate(startNode, recalculateAll);
         AlignmentTraverse a = new AlignmentTraverse(startNode);
@@ -463,8 +478,8 @@ public class ReadingService {
 
         // TEMPORARY: Test that our colocated groups are actually colocated
         Node ourSection = tx.getNodeByElementId(startNode.getProperty("section_id").toString());
-        String tradId = VariantGraphService.getTraditionNode(ourSection, tx).getProperty("id").toString();
-        List<Set<Node>> clusters = RelationService.getClusters(tradId, ourSection.getElementId(), tx, true);
+        Node tradNode = VariantGraphService.getTraditionNode(ourSection, tx);
+        List<Set<Node>> clusters = RelationService.getClusters(tradNode, ourSection, tx, true);
         for (Set<Node> cluster : clusters) {
             Long clusterRank = null;
             for (Node n : cluster) {
@@ -480,10 +495,10 @@ public class ReadingService {
         tx.close();
         return changed;
     }
-
-    public static Set<Node> recalculateRank (Node startNode, boolean recalculateAll, Transaction tx) throws Exception {
-    	RankCalcEvaluate e = new RankCalcEvaluate(startNode, recalculateAll, tx);
-    	AlignmentTraverse a = new AlignmentTraverse(startNode);
+    */
+    public static Set<Node> recalculateRank (Node tradNode, Node startNode, boolean recalculateAll, Transaction tx) throws Exception {
+    	RankCalcEvaluate e = new RankCalcEvaluate(tradNode, startNode, recalculateAll, tx);
+    	AlignmentTraverse a = new AlignmentTraverse(startNode, tx);
         // GraphDatabaseService db = startNode.getGraphDatabase();
     	// Traverse the sequence graph from our start node, putting a mark on
     	// all the nodes we expect to visit
@@ -521,20 +536,24 @@ public class ReadingService {
     	}
     	
     	// TEMPORARY: Make sure that we did visit all expected nodes
-    	Node sectionStart = VariantGraphService.getStartNode(startNode.getProperty("section_id").toString(), tx);
+        // this should be tested separately...
+
+    	// Node sectionStart = VariantGraphService.getStartNode(startNode.getProperty("section_id").toString(), tx);
+        /*
     	for (Node n : tx.traversalDescription().depthFirst()
     			.expand(new AlignmentTraverse())
     			.uniqueness(Uniqueness.RELATIONSHIP_GLOBAL)
-    			.traverse(sectionStart).nodes()) {
+    			.traverse(startNode).nodes()) {
     		if (n.hasProperty("touched"))
     			throw new Exception ("End node not reached during recalculation!");
     	}
+         */
     	
     	
     	// TEMPORARY: Test that our colocated groups are actually colocated
-    	Node ourSection = tx.getNodeByElementId(startNode.getProperty("section_id").toString());
-    	String tradId = VariantGraphService.getTraditionNode(ourSection, tx).getProperty("id").toString();
-    	List<Set<Node>> clusters = RelationService.getClusters(tradId, ourSection.getElementId(), tx, true);
+    	// Node ourSection = tx.getNodeByElementId(startNode.getProperty("section_id").toString());
+    	// String tradId = VariantGraphService.getTraditionNode(startNode, tx).getProperty("id").toString();
+    	List<Set<Node>> clusters = RelationService.getClusters(tradNode, startNode, tx, true);
     	for (Set<Node> cluster : clusters) {
     		Long clusterRank = null;
     		for (Node n : cluster) {
@@ -549,10 +568,12 @@ public class ReadingService {
     	// END TEMPORARY
     	return changed;
     }
-    
+
+    /*
     public static Set<Node> recalculateRank (Node startNode) throws Exception {
         return recalculateRank(startNode, false);
     }
+    */
 
     /**
      * A traversal expander for crawling an alignment, which includes sequence paths
@@ -568,10 +589,10 @@ public class ReadingService {
         public AlignmentTraverse() {}
 
         // Walk the graph of sequences and colocated relations
-        public AlignmentTraverse(Node referenceNode) throws Exception {
+        public AlignmentTraverse(Node referenceNode, Transaction tx) throws Exception {
             // Get the colocated types for this node's tradition
-            GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
-            List<RelationTypeModel> rtms = RelationService.ourRelationTypes(referenceNode, db.beginTx());
+            // GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+            List<RelationTypeModel> rtms = RelationService.ourRelationTypes(referenceNode, tx);
             for (RelationTypeModel rtm : rtms)
                 if (rtm.getIs_colocation())
                     includeRelationTypes.add(rtm.getName());
@@ -650,7 +671,7 @@ public class ReadingService {
         Node sectionNode = tx.getNodeByElementId(firstReading.getProperty("section_id").toString());
         Node traditionNode = VariantGraphService.getTraditionNode(sectionNode, tx);
         Map<String, Set<Node>> colocatedLookup = buildColocationLookup(
-                traditionNode.getProperty("id").toString(), sectionNode.getElementId(), tx
+                traditionNode, sectionNode, tx
         ); // break
 
         // Get the relevant cluster sets
@@ -673,7 +694,7 @@ public class ReadingService {
 
         // For each node in the lower cluster, see if we can reach any node in the
         // higher cluster.
-        AlignmentTraverse alignmentEvaluator = new AlignmentTraverse(firstReading);
+        AlignmentTraverse alignmentEvaluator = new AlignmentTraverse(firstReading, tx);
         RankEvaluate rankEvaluator = new RankEvaluate(maxRank);
         for (Node lower : reverse ? secondCluster : firstCluster) {
             boolean followed_sequence = false;
@@ -693,10 +714,10 @@ public class ReadingService {
         return false;
     }
 
-    private static Map<String, Set<Node>> buildColocationLookup (String tradId, String sectionId, Transaction tx)
+    private static Map<String, Set<Node>> buildColocationLookup (Node tradNode, Node sectionNode, Transaction tx)
             throws Exception {
         Map<String, Set<Node>> result = new HashMap<>();
-        List<Set<Node>> clusters = RelationService.getClusters(tradId, sectionId, tx, true);
+        List<Set<Node>> clusters = RelationService.getClusters(tradNode, sectionNode, tx, true);
         for (Set<Node> cluster : clusters)
             for (Node n : cluster)
                 result.put(n.getElementId(), cluster);

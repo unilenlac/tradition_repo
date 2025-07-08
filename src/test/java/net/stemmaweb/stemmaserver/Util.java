@@ -25,6 +25,7 @@ import javax.ws.rs.core.GenericType;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 
+import net.stemmaweb.rest.ERelations;
 import org.apache.commons.io.IOUtils;
 import org.glassfish.jersey.client.ClientResponse;
 import org.glassfish.jersey.media.multipart.FormDataBodyPart;
@@ -192,17 +193,22 @@ public class Util {
         return null;
     }
 
-    public static void setupTestDB(GraphDatabaseService db, String userId) {
+    public static void setupTestDB(GraphDatabaseService db) {
         // Populate the test database with the root node and a user with id 1
         DatabaseService.createRootNode(db);
-        try(Transaction tx = db.beginTx()) {
-            // Node rootNode = db.findNode(Nodes.ROOT, "name", "Root node");
-            Node node = tx.createNode(Nodes.USER);
-            node.setProperty("id", userId);
-            node.setProperty("role", "admin");
 
-            // rootNode.createRelationshipTo(node, ERelations.SEQUENCE);
-            tx.commit();
+        try (Transaction tx = db.beginTx()) {
+            if(!DatabaseService.userExists("admin@example.org", db)) {
+                Node rootNode = tx.findNode(Nodes.ROOT, "name", "Root node");
+                Node node = tx.createNode(Nodes.USER);
+                node.setProperty("id", "admin@example.org");
+                node.setProperty("role", "admin");
+                node.setProperty("passphrase", "BdSWkrdV+ZxFBLUQQY7+7uv9RmiSVA8nrPmjGjJtZQQ"); // = userpass
+                node.setProperty("email", "admin@example.org");
+
+                rootNode.createRelationshipTo(node, ERelations.SYSTEMUSER);
+                tx.commit();
+            }
         }
     }
 
@@ -241,7 +247,7 @@ public class Util {
         if (tDir != null) form.field("direction", tDir);
         if (userId != null) form.field("userId", userId);
         if (fName != null) {
-            // It could be a filename or it could be a content string. Try one and then
+            // It could be a filename it could be a content string. Try one and then
             // the other.
             InputStream input = getFileOrStringContent(fName);
             FormDataBodyPart fdp = new FormDataBodyPart("file", input,
@@ -255,10 +261,11 @@ public class Util {
     }
 
     public static Response addSectionToTradition(JerseyTest jerseyTest, String traditionId, String fileName,
-                                                        String fileType, String sectionName) {
+                                                        String fileType, String sectionName, Boolean addSingleSection) {
         FormDataMultiPart form = new FormDataMultiPart();
         form.field("filetype", fileType);
         form.field("name", sectionName);
+        form.field("addSingleSection", String.valueOf(addSingleSection));
         InputStream input = getFileOrStringContent(fileName);
         FormDataBodyPart fdp = new FormDataBodyPart("file", input,
                 MediaType.APPLICATION_OCTET_STREAM_TYPE);
@@ -286,7 +293,7 @@ public class Util {
         int i = 0;
         while (i < 3) {
             String fileName = String.format("src/TestFiles/florilegium_%c.csv", 120 + i++);
-            jerseyResult = Util.addSectionToTradition(jerseyTest, florId, fileName, "csv", String.format("part %d", i));
+            jerseyResult = Util.addSectionToTradition(jerseyTest, florId, fileName, "csv", String.format("part %d", i), true);
             florIds.add(Util.getValueFromJson(jerseyResult, "sectionId"));
         }
         return florIds;

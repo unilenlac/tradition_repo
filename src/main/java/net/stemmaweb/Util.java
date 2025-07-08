@@ -3,6 +3,7 @@ package net.stemmaweb;
 import com.sun.xml.txw2.output.IndentingXMLStreamWriter;
 import net.stemmaweb.model.ReadingModel;
 import net.stemmaweb.rest.ERelations;
+import net.stemmaweb.services.VariantGraphService;
 import org.neo4j.graphdb.Direction;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.Result;
@@ -13,6 +14,7 @@ import javax.xml.stream.*;
 import java.io.StringReader;
 import java.io.StringWriter;
 import java.util.*;
+import java.util.concurrent.Callable;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -34,6 +36,8 @@ public class Util {
     public static String jsonresp (String key, Long value) {
         return String.format("{\"%s\": %d}", key, value);
     }
+
+    private Config config = Config.getInstance();
 
     private static String escape(String raw) {
         String escaped = raw;
@@ -68,7 +72,7 @@ public class Util {
         int hn_node_count = nodes.size();
         List<Map<String, Object>> remaining_hn = filtered_hn.stream().filter(x -> !x.get("hyperId").equals(top_hn.get("hyperId"))).collect(Collectors.toList());
         Node node_sample = nodes.get(1);
-        ReadingModel rdg_sample = new ReadingModel(node_sample);
+        ReadingModel rdg_sample = new ReadingModel(node_sample, tx);
         writer.writeStartElement("lem");
         writer.writeAttribute("wit", rdg_sample.getWitnesses().stream().map(x -> "#"+x).collect(Collectors.joining(" ")));
 
@@ -99,7 +103,9 @@ public class Util {
                     if (node_relations > 0){
                         populateVariants(node, variant_locus, writer, tx);
                     } else {
-                        addRdgContent(node.getProperty("text").toString()+" ", writer);
+                        String string = node.getProperty("text").toString();
+                        if(string!=null && string.length() > 0)
+                            addRdgContent(string+" ", writer);
                     }
                 }
             }
@@ -125,10 +131,11 @@ public class Util {
                 List<String> hn_nodes = tmp_nodes.stream().map(x -> x.getProperty("text").toString()).collect(Collectors.toList());
                 if(hn_nodes.size() == hn_node_count){
                     writer.writeStartElement("rdg");
-                    ReadingModel w_node = new ReadingModel(tmp_nodes.get(1));
+                    ReadingModel w_node = new ReadingModel(tmp_nodes.get(1), tx);
                     writer.writeAttribute("wit", w_node.getWitnesses().stream().map(x -> "#"+x).collect(Collectors.joining(" ")));
                     for(String n: hn_nodes){
-                        addRdgContent(n+" ", writer);
+                        if(n!=null && n.length() > 0)
+                            addRdgContent(n+" ", writer);
                     }
                     writer.writeEndElement();
                 }
@@ -160,7 +167,7 @@ public class Util {
             Node variant = (Node) filtered_variants.next().get("node");
             if(Objects.equals(section_node.getProperty("section_id"), variant.getProperty("section_id"))){
                 HashMap<String, String> xmlement = find_lemma(variant);
-                ReadingModel rdg = new ReadingModel(variant);
+                ReadingModel rdg = new ReadingModel(variant, tx);
                 xmlement.put("wit", rdg.getWitnesses().stream().map(x -> "#"+x).collect(Collectors.joining(" ")));
                 app_elements.add(xmlement);
             }
@@ -172,9 +179,11 @@ public class Util {
             writer.writeEndElement();
         }
         writer.writeEndElement();
+        writer.writeCharacters(" ");
     }
     public void addRdgContent(String rdgTextContent, XMLStreamWriter writer){
-        List<String> nc_elements = new ArrayList<>(List.of("gap", "unclear", "space", "c"));
+
+        List<String> nc_elements = new ArrayList<>(List.of(config.getExporterNcs().split(", ")));
         try{
             List<String> elements = splitTextAndXml(cleanText(rdgTextContent));
             for (String el : elements) {
@@ -383,5 +392,24 @@ public class Util {
                 "MATCH (p:READING {section_id: '%s', rank: %d})-[:RELATED]->*(nn)\n" +
                 "RETURN p as node", section_id, rank, section_id, rank);
         return tx.execute(query);
+    }
+
+    public static Boolean isElementId(String input, String regex){
+        Pattern pattern = Pattern.compile(regex);
+        Matcher matcher = pattern.matcher(input);
+        return matcher.matches();
+    }
+    @FunctionalInterface
+    interface TwoArgFunction<T, U, R> {
+        R apply(T arg1, U arg2) throws Exception;
+    }
+    public static Callable<Node> getTraditionNodeCallable(String tradId, Transaction tx) {
+        String re = "\\d+:.*:\\d+";
+        boolean res = isElementId(tradId, re);
+        if (res){
+            return () -> tx.getNodeByElementId(tradId);
+        }else{
+            return () -> VariantGraphService.getTraditionNode(tradId, tx);
+        }
     }
 }

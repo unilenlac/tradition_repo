@@ -37,7 +37,7 @@ public class RelationTypeModel implements Comparable<RelationTypeModel> {
      * If A and B are related at bindlevel 0, and B and C at bindlevel 1, it implies
      * that A and C have the same relationship as B and C do.
      */
-    private int     bindlevel;
+    private int bindlevel;
     /**
      * Whether this relationship should be replaced silently by a stronger type if
      * requested. This is used primarily for the internal 'collated' relationship, only
@@ -174,8 +174,8 @@ public class RelationTypeModel implements Comparable<RelationTypeModel> {
      * @param traditionNode - The tradition to which this model belongs
      * @return the created RelationType node
      */
-    public Node instantiate (Node traditionNode) {
-        return match_relation_node(traditionNode, false);
+    public Node instantiate (Node traditionNode, Transaction tx) {
+        return match_relation_node(traditionNode, false, tx);
     }
 
     /**
@@ -183,8 +183,8 @@ public class RelationTypeModel implements Comparable<RelationTypeModel> {
      * @param traditionNode - The tradition to which this model belongs
      * @return the updated RelationType node
      */
-    public Node update (Node traditionNode) {
-        return match_relation_node(traditionNode, true);
+    public Node update (Node traditionNode, Transaction tx) {
+        return match_relation_node(traditionNode, true, tx);
     }
 
     /**
@@ -192,20 +192,20 @@ public class RelationTypeModel implements Comparable<RelationTypeModel> {
      * @param traditionNode - The tradition on which to perform the lookup
      * @return - The correspondingly named RELATION_TYPE node, or null
      */
-    public Node lookup (Node traditionNode, Transaction tx) {
-//        GraphDatabaseService db = traditionNode.getGraphDatabase();
+    public Node lookup (Node traditionNode) {
+        // GraphDatabaseService db = traditionNode.getGraphDatabase();
         // GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
         Node relTypeNode = null;
         // try (Transaction tx = db.beginTx()) {
-        	traditionNode = tx.getNodeByElementId(traditionNode.getElementId());
+        	//traditionNode = tx.getNodeByElementId(traditionNode.getElementId());
 
         	// First see if there is a type with this name
-            for (Relationship r : traditionNode.getRelationships(Direction.OUTGOING, ERelations.HAS_RELATION_TYPE)) {
-                if (r.getEndNode().getProperty("name").toString().equals(this.thename)) {
-                    relTypeNode = r.getEndNode();
-                    break;
-                }
+        for (Relationship r : traditionNode.getRelationships(Direction.OUTGOING, ERelations.HAS_RELATION_TYPE)) {
+            if (r.getEndNode().getProperty("name").toString().equals(this.thename)) {
+                relTypeNode = r.getEndNode();
+                break;
             }
+        }
             // tx.close();
         // } catch (Exception e) {
         //     e.printStackTrace();
@@ -214,17 +214,14 @@ public class RelationTypeModel implements Comparable<RelationTypeModel> {
         return relTypeNode;
     }
 
-    private Node match_relation_node(Node traditionNode, Boolean allow_update) {
-//        GraphDatabaseService db = traditionNode.getGraphDatabase();
-        GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
-        try (Transaction tx = db.beginTx()) {
-        	traditionNode = tx.getNodeByElementId(traditionNode.getElementId());
-        	Node relType = this.lookup(traditionNode, tx);
+    private Node match_relation_node(Node traditionNode, Boolean allow_update, Transaction tx) {
+        try {
+            Node relType = this.lookup(traditionNode);
             if (relType == null) {
-                // Create the node if it doesn't exist
+
                 relType = tx.createNode(Nodes.RELATION_TYPE);
                 this.update_reltype(relType);
-                traditionNode.createRelationshipTo(relType, ERelations.HAS_RELATION_TYPE);
+                // traditionNode.createRelationshipTo(relType, ERelations.HAS_RELATION_TYPE);
             } else {
                 // Check that the node matches our values, if it does exist
                 if (!(this.description.equals(relType.getProperty("description"))
@@ -238,7 +235,6 @@ public class RelationTypeModel implements Comparable<RelationTypeModel> {
                     else throw new Exception("Another relation type by this name already exists");
                 }
             }
-            tx.commit();
             return relType;
         } catch (Exception e) {
             e.printStackTrace();

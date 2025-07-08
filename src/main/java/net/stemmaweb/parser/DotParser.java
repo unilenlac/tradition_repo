@@ -41,7 +41,7 @@ public class DotParser {
      * @param stemmaSpec - A StemmaModel containing the specification for the stemma
      * @return a Response whose entity is a JSON response, either {'name':stemmaName} or {'error':errorMessage}
      */
-    public Response importStemmaFromDot(String tradId, StemmaModel stemmaSpec) {
+    public Response importStemmaFromDot(String tradId, StemmaModel stemmaSpec, Transaction tx) {
         Status result = null;
         Graph stemma = null;
         try {
@@ -64,7 +64,7 @@ public class DotParser {
 
         // Save the graph into Neo4J.
         if (result == null)
-            result = saveToNeo(stemma, tradId, stemmaSpec.getIdentifier());
+            result = saveToNeo(stemma, tradId, stemmaSpec.getIdentifier(), tx);
 
         // Return our answer.
         String returnKey = result == Status.CREATED ? "name" : "error";
@@ -73,10 +73,10 @@ public class DotParser {
                 .build();
     }
 
-    private Status saveToNeo(Graph stemma, String tradId, String stemmaName) {
+    private Status saveToNeo(Graph stemma, String tradId, String stemmaName, Transaction tx) {
         // Check for the existence of the tradition
 
-        try (Transaction tx = db.beginTx()) {
+        try {
             Node traditionNode = VariantGraphService.getTraditionNode(tradId, tx);
             if (traditionNode == null)
                 return Status.NOT_FOUND;
@@ -120,7 +120,7 @@ public class DotParser {
                         return Status.CONFLICT;
                     }
                 } else {
-                    existingWitness = Util.createWitness(traditionNode, sigil, hypothetical);
+                    existingWitness = Util.createWitness(traditionNode, sigil, hypothetical, tx);
                     // Does it have a label separate from its ID?
                     String displayLabel = witness.getAttribute("label");
                     if (displayLabel != null) {
@@ -153,7 +153,7 @@ public class DotParser {
                         .evaluator(Evaluators.all())
                         .traverse(witness).nodes().iterator();
                 @SuppressWarnings("UnusedAssignment")
-                Node chainpoint = pathNodes.next();
+                Node chainpoint;
                 while(pathNodes.hasNext()) {
                     chainpoint = pathNodes.next();
                     if (chainpoint.equals(witness)) {
@@ -205,7 +205,7 @@ public class DotParser {
             // Save the stemma to the tradition.
             traditionNode.createRelationshipTo(stemmaNode, ERelations.HAS_STEMMA);
 
-            tx.commit();
+            // tx.commit();
         } catch (Exception e) {
             e.printStackTrace();
             messageValue = e.toString();

@@ -40,15 +40,19 @@ public class TabularExporter {
     }
 
     public Response exportAsJSON(String tradId, List<String> conflate, List<String> sectionList, boolean excludeLayers) {
-        ArrayList<Node> traditionSections;
-        try {
-            traditionSections = getSections(tradId, sectionList);
+        try (Transaction tx = db.beginTx()){
+
+            ArrayList<Node> traditionSections;
+            Node tradNode = tx.getNodeByElementId(tradId);
+            traditionSections = getSections(tradNode, sectionList, tx);
             if(traditionSections==null) {
                 return Response.status(Response.Status.NOT_FOUND).build();
             }
 
+            tx.commit();
             return Response.ok(getTraditionAlignment(traditionSections, conflate, excludeLayers),
                     MediaType.APPLICATION_JSON_TYPE).build();
+
         } catch (TabularExporterException e) {
             return Response.status(Response.Status.BAD_REQUEST).entity(jsonerror(e.getMessage())).build();
         } catch (Exception e) {
@@ -71,12 +75,13 @@ public class TabularExporter {
     ) {
 
         ArrayList<Node> traditionSections;
-        try {
-            traditionSections = getSections(tradId, sectionList);
+        try (Transaction tx = db.beginTx()) {
+            Node tradNode = tx.getNodeByElementId(tradId);
+            traditionSections = getSections(tradNode, sectionList, tx);
             if(traditionSections==null) {
                 return Response.status(Response.Status.NOT_FOUND).build();
             }
-
+            tx.commit();
             return getCriticalApparatus(tradId, traditionSections, significant, excludeType1,
                   excludeNonsense, combine, suppressMatching, baseWitness, conflate, excWitnesses, excludeLayers);
         } catch (TabularExporterException e) {
@@ -88,11 +93,12 @@ public class TabularExporter {
 
     }
 
-    public Response exportAsCSV(String tradId, char separator, List<String> conflate, List<String> sectionList,
-                                boolean excludeLayers) {
+    public Response exportAsCSV(String tradId, char separator, List<String> conflate, List<String> sectionList, boolean excludeLayers) {
         AlignmentModel wholeTradition;
-        try {
-            wholeTradition = returnFullAlignment(tradId, conflate, sectionList, excludeLayers);
+        try (Transaction tx = db.beginTx()) {
+            Node tradNode = tx.getNodeByElementId(tradId);
+            wholeTradition = returnFullAlignment(tradNode, conflate, sectionList, excludeLayers, tx);
+            tx.commit();
         } catch (TabularExporterException e) {
             return Response.status(Response.Status.BAD_REQUEST).entity(jsonerror(e.getMessage())).build();
         } catch (Exception e) {
@@ -133,11 +139,12 @@ public class TabularExporter {
     }
 
 
-    public Response exportAsCharMatrix(String tradId, int maxVars, List<String> conflate, List<String> sectionList,
-                                       boolean excludeLayers) {
+    public Response exportAsCharMatrix(String tradId, int maxVars, List<String> conflate, List<String> sectionList, boolean excludeLayers) {
         AlignmentModel wholeTradition;
-        try {
-            wholeTradition = returnFullAlignment(tradId, conflate, sectionList, excludeLayers);
+        try (Transaction tx = db.beginTx()) {
+            Node tradNode = tx.getNodeByElementId(tradId);
+            wholeTradition = returnFullAlignment(tradNode, conflate, sectionList, excludeLayers, tx);
+            tx.commit();
             if (wholeTradition==null) return Response.status(Response.Status.NOT_FOUND).build();
         } catch (TabularExporterException e) {
             return Response.status(Response.Status.BAD_REQUEST).entity(jsonerror(e.getMessage())).build();
@@ -209,10 +216,9 @@ public class TabularExporter {
         return Response.ok(charMatrix.toString()).build();
     }
 
-    private AlignmentModel returnFullAlignment(String tradId, List<String> conflate, List<String> sectionList,
-                                               boolean excludeLayers)
+    private AlignmentModel returnFullAlignment(Node tradNode, List<String> conflate, List<String> sectionList, boolean excludeLayers, Transaction tx)
             throws Exception {
-        ArrayList<Node> traditionSections = getSections(tradId, sectionList);
+        ArrayList<Node> traditionSections = getSections(tradNode, sectionList, tx);
         if(traditionSections==null) return null;
         return getTraditionAlignment(traditionSections, conflate, excludeLayers);
     }
@@ -225,9 +231,9 @@ public class TabularExporter {
         return shortened;
     }
 
-    private ArrayList<Node> getSections(String tradId, List<String> sectionList)
+    private ArrayList<Node> getSections(Node tradNode, List<String> sectionList, Transaction tx)
     throws TabularExporterException {
-        ArrayList<Node> traditionSections = VariantGraphService.getSectionNodes(tradId, db);
+        ArrayList<Node> traditionSections = VariantGraphService.getSectionNodes(tradNode, tx);
         // Does the tradition exist in the first place?
         if (traditionSections.isEmpty()) return null;
 
@@ -237,9 +243,8 @@ public class TabularExporter {
         // Do the real work
         ArrayList<Node> collectedSections = new ArrayList<>();
         for (String sectionId : sectionList) {
-            try (Transaction tx = db.beginTx()) {
+            try {
                 collectedSections.add(tx.getNodeByElementId(sectionId));
-                tx.close();
             } catch (NotFoundException e) {
                 throw new TabularExporterException("Section " + sectionId + " not found in tradition");
             }
@@ -258,7 +263,7 @@ public class TabularExporter {
         int length = 0;
         for (Node sectionNode : traditionSections) {
             if (collapseRelated != null) VariantGraphService.normalizeGraph(sectionNode, collapseRelated, db.beginTx());
-            AlignmentModel asJson = new AlignmentModel(sectionNode, excludeLayers);
+            AlignmentModel asJson = new AlignmentModel(sectionNode, excludeLayers, db.beginTx());
             if (collapseRelated != null) VariantGraphService.clearNormalization(sectionNode);
             // Save the alignment to our tables list
             tables.add(asJson);

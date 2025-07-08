@@ -56,41 +56,38 @@ public class Util {
     }
 
     // Start and end node creation
-    static Node createEndNode(Node parentNode, Long rank) {
-//        GraphDatabaseService db = parentNode.getGraphDatabase();
-        GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+    static Node createEndNode(Node parentNode, Long rank, Transaction tx) {
+        // GraphDatabaseService db = parentNode.getGraphDatabase();
+        // GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
         Node endNode;
-        try (Transaction tx = db.beginTx()) {
-            Node parentNodeTx = tx.getNodeByElementId(parentNode.getElementId());
+        // try (Transaction tx = db.beginTx()) {
+            // Node parentNodeTx = tx.getNodeByElementId(parentNode.getElementId());
 	        endNode = tx.createNode(Nodes.READING);
 	        endNode.setProperty("is_end", true);
 	        endNode.setProperty("section_id", parentNode.getElementId());
 	        endNode.setProperty("text", "#END#");
             endNode.setProperty("rank", rank);
-	        parentNodeTx.createRelationshipTo(endNode, ERelations.HAS_END);
-	        tx.commit();
-        }
+	        parentNode.createRelationshipTo(endNode, ERelations.HAS_END);
+	    //     tx.commit();
+        // }
         return endNode;
     }
 
     // Witness node creation
-    static Node createWitness(Node traditionNode, String sigil, Boolean hypothetical) throws IllegalArgumentException {
+    static Node createWitness(Node traditionNode, String sigil, Boolean hypothetical, Transaction tx) throws IllegalArgumentException {
         // First check if the sigil has any characters that will cause trouble for REST
-        for (String illegal : new String[] {"<", ">", "#", "%", "\"", "{", "}", "|", "\\", "^", "[", "]", "`", "(", ")"})
+        for (String illegal : new String[] {"<", ">", "#", "%", "\"", "{", "}", "|", "\\", "^", "`", "(", ")"})
             if (sigil.contains(illegal))
                 throw new IllegalArgumentException("The character " + illegal + " may not appear in a sigil name.");
         Node witnessNode;
 
-        GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
-        try (Transaction tx = db.beginTx()) {
-            Node trad = tx.getNodeByElementId(traditionNode.getElementId());
-	        witnessNode = tx.createNode(Nodes.WITNESS);
-	        witnessNode.setProperty("sigil", sigil);
-	        witnessNode.setProperty("hypothetical", hypothetical);
-	        witnessNode.setProperty("quotesigil", !isDotId(sigil));
-            trad.createRelationshipTo(witnessNode, ERelations.HAS_WITNESS);
-	        tx.commit();
-        }
+        Node trad = tx.getNodeByElementId(traditionNode.getElementId());
+        witnessNode = tx.createNode(Nodes.WITNESS);
+        witnessNode.setProperty("sigil", sigil);
+        witnessNode.setProperty("hypothetical", hypothetical);
+        witnessNode.setProperty("quotesigil", !isDotId(sigil));
+        trad.createRelationshipTo(witnessNode, ERelations.HAS_WITNESS);
+
         return witnessNode;
     }
 
@@ -100,23 +97,25 @@ public class Util {
         ArrayList<Node> existingWit = DatabaseService.getRelatedWitness(traditionNode, ERelations.HAS_WITNESS, sigil, tx);
 
         if (existingWit.size() == 0) {
-            return createWitness(traditionNode, sigil, false);
+            return createWitness(traditionNode, sigil, false, tx);
         } else {
             return existingWit.get(0);
         }
     }
 
-    static void ensureSectionLink (Node traditionNode, Node sectionNode) {
-//        GraphDatabaseService db = traditionNode.getGraphDatabase();
-        GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
-        try (Transaction tx = db.beginTx()) {
-            String tradId = traditionNode.getProperty("id").toString();
-            ArrayList<Node> tsections = VariantGraphService.getSectionNodes(tradId, db);
+    static void ensureSectionLink (Node traditionNode, Node sectionNode, Transaction tx) {
+        // GraphDatabaseService db = traditionNode.getGraphDatabase();
+        // GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+        try  {
+            // String tradId = traditionNode.getProperty("id").toString();
+            ArrayList<Node> tsections = VariantGraphService.getSectionNodes(traditionNode, tx);
             if (!tsections.contains(sectionNode)) {
                 traditionNode.createRelationshipTo(sectionNode, ERelations.PART);
                 if (!tsections.isEmpty())
                     tsections.get(tsections.size()-1).createRelationshipTo(sectionNode, ERelations.NEXT);
             }
+        } catch (Exception e){
+            e.printStackTrace();
         }
     }
 

@@ -3,6 +3,7 @@ package net.stemmaweb.model;
 import javax.xml.bind.annotation.XmlRootElement;
 
 import org.neo4j.graphdb.Relationship;
+import org.neo4j.graphdb.Transaction;
 
 /**
  * Provides a model for a relationship outside of the database. Can be parsed
@@ -97,8 +98,8 @@ public class RelationModel {
 
     }
 
-    public RelationModel(Relationship rel) {
-        this(rel, false);
+    public RelationModel(Relationship rel, Transaction tx) {
+        this(rel, false, tx);
     }
 
     /**
@@ -106,12 +107,12 @@ public class RelationModel {
      * @param rel - The relationship node to initialize from
      * @param includeReadings - Whether to set the source_reading and target_reading fields
      */
-    public RelationModel(Relationship rel, Boolean includeReadings){
+    public RelationModel(Relationship rel, Boolean includeReadings, Transaction tx){
         source = rel.getStartNode().getElementId();
         target = rel.getEndNode().getElementId();
         if (includeReadings) {
-            source_reading = new ReadingModel(rel.getStartNode());
-            target_reading = new ReadingModel(rel.getEndNode());
+            source_reading = new ReadingModel(rel.getStartNode(), tx);
+            target_reading = new ReadingModel(rel.getEndNode(), tx);
         }
 
         Iterable<String> properties = rel.getPropertyKeys();

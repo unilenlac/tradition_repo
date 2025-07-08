@@ -5,6 +5,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -19,6 +20,7 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 
+import net.stemmaweb.services.GraphDatabaseServiceProvider;
 import org.glassfish.jersey.client.ClientProperties;
 import org.glassfish.jersey.media.multipart.FormDataMultiPart;
 import org.glassfish.jersey.test.JerseyTest;
@@ -47,8 +49,8 @@ import net.stemmaweb.stemmaserver.Util;
  */
 public class StemmawebLegacyTest {
 
-    private GraphDatabaseService db;
-    private DatabaseManagementService dbbuilder;
+    private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
+    private final GraphDatabaseService db = dbServiceProvider.getDatabase();
 
     /*
      * JerseyTest is the test environment to Test api calls it provides a
@@ -56,13 +58,15 @@ public class StemmawebLegacyTest {
      */
     private JerseyTest jerseyTest;
 
+    public StemmawebLegacyTest() throws IOException {
+    }
+
     // private String rootNodeId;
 
     @Before
     public void setUp() throws Exception {
-        dbbuilder = new DatabaseManagementServiceBuilder(Path.of("")).build();    	dbbuilder.createDatabase("stemmatest");
-    	db = dbbuilder.database("stemmatest");
-        Util.setupTestDB(db, "1");
+
+        Util.setupTestDB(db);
 
         /*
          * Create a JersyTestServer serving the Resource under test
@@ -1299,10 +1303,12 @@ public class StemmawebLegacyTest {
      */
     @After
     public void tearDown() throws Exception {
-//        db.shutdown();
-    	if (dbbuilder != null) {
-    		dbbuilder.shutdownDatabase(db.databaseName());
-    	}
+        DatabaseManagementService service = dbServiceProvider.getManagementService();
+
+        if (service != null) {
+            service.shutdownDatabase(db.databaseName());
+        }
+
         jerseyTest.tearDown();
     }
 }

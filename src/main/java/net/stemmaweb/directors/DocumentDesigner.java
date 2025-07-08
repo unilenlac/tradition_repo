@@ -1,5 +1,6 @@
 package net.stemmaweb.directors;
 
+import net.stemmaweb.Config;
 import net.stemmaweb.builders.DocumentBuilder;
 import net.stemmaweb.builders.XmlBuilder;
 import net.stemmaweb.model.SectionModel;
@@ -18,6 +19,7 @@ public class DocumentDesigner {
 
     public XmlBuilder builder;
     private final GraphDatabaseService db;
+    private final Config config = Config.getInstance();
     public DocumentDesigner(XmlBuilder builder, GraphDatabaseService db){
         this.db = db;
         this.builder = builder;
@@ -33,16 +35,20 @@ public class DocumentDesigner {
         writer.writeEndDocument();
     }
     public void designTradition(String tradition_id, String start_section_id, String end_section_id) throws XMLStreamException {
+
         XMLStreamWriter writer = builder.document.getWriter();
         writer.writeStartDocument();
         writer.writeStartElement("TEI");
         writer.writeAttribute("xmlns", "http://www.tei-c.org/ns/1.0");
-
-        writer.writeStartElement("text");
-        writer.writeStartElement("body");
-        writer.writeStartElement("div");
-        writer.writeStartElement("p");
         try(Transaction tx = db.beginTx()){
+            writer.writeStartElement("teiHeader");
+            builder.addHeaderToWriter(tradition_id, writer, tx, config);
+            writer.writeEndElement();
+
+            writer.writeStartElement("text");
+            writer.writeStartElement("body");
+            writer.writeStartElement("div");
+            writer.writeStartElement("p");
 
             Node tradition_node = tx.findNode(Nodes.TRADITION, "id", tradition_id);
 

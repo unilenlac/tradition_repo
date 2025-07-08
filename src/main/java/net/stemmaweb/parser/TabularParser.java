@@ -119,7 +119,7 @@ public class TabularParser {
             traditionNode = VariantGraphService.getTraditionNode(parentNode, tx);
             // Make the start node
             Node startNode = Util.createStartNode(parentNode, tx);
-            Node endNode = Util.createEndNode(parentNode, (long) tableData.size());
+            Node endNode = Util.createEndNode(parentNode, (long) tableData.size(), tx);
             // endNode.setProperty("rank", (long) tableData.size());
 
             // Make the COLLATED relation type
@@ -228,7 +228,7 @@ public class TabularParser {
                 }
                 // Create a COLLATED link between all non-meta readings created at the same rank, to preserve
                 // the collation as it was uploaded.
-                List<ReadingModel> collatedReadings = createdReadings.values().stream().map(ReadingModel::new)
+                List<ReadingModel> collatedReadings = createdReadings.values().stream().map(n -> new ReadingModel(n, tx))
                         .filter(x -> !x.isMeta()).collect(Collectors.toList());
                 int i = collatedReadings.size();
                 Relation relRest = new Relation(traditionNode.getProperty("id").toString());

@@ -105,7 +105,7 @@ public class TeiExporter {
                         populateHypernodes(top_hn_object, hn_table, hn_stats, variant_table, writer, tx);
                         writer.writeEndElement();
                     }
-                    ReadingModel rdg = new ReadingModel(node);
+                    ReadingModel rdg = new ReadingModel(node, tx);
                     TraditionModel tradition = new TraditionModel(tradition_node);
                     int trad_w_count = tradition.getWitnesses().size();
                     int rdg_w_count = rdg.getWitnesses().size();
@@ -156,7 +156,7 @@ public class TeiExporter {
         int hn_node_count = nodes.size();
         List<Map<String, Object>> remaining_hn = filtered_hn.stream().filter(x -> !x.get("hyperId").equals(top_hn.get("hyperId"))).collect(Collectors.toList());
         Node node_sample = nodes.get(1);
-        ReadingModel rdg_sample = new ReadingModel(node_sample);
+        ReadingModel rdg_sample = new ReadingModel(node_sample, tx);
         writer.writeStartElement("lem");
         writer.writeAttribute("wit", rdg_sample.getWitnesses().stream().map(x -> "#"+x).collect(Collectors.joining(" ")));
 
@@ -213,7 +213,7 @@ public class TeiExporter {
                 List<String> hn_nodes = tmp_nodes.stream().map(x -> x.getProperty("text").toString()).collect(Collectors.toList());
                 if(hn_nodes.size() == hn_node_count){
                     writer.writeStartElement("rdg");
-                    ReadingModel w_node = new ReadingModel(tmp_nodes.get(1));
+                    ReadingModel w_node = new ReadingModel(tmp_nodes.get(1), tx);
                     writer.writeAttribute("wit", w_node.getWitnesses().stream().map(x -> "#"+x).collect(Collectors.joining(" ")));
                     for(String n: hn_nodes){
                         addRdgContent(n+" ", writer);
@@ -248,7 +248,7 @@ public class TeiExporter {
             Node variant = (Node) filtered_variants.next().get("node");
             if(Objects.equals(section_node.getProperty("section_id"), variant.getProperty("section_id"))){
                 HashMap<String, String> xmlement = find_lemma(variant);
-                ReadingModel rdg = new ReadingModel(variant);
+                ReadingModel rdg = new ReadingModel(variant, tx);
                 xmlement.put("wit", rdg.getWitnesses().stream().map(x -> "#"+x).collect(Collectors.joining(" ")));
                 app_elements.add(xmlement);
             }

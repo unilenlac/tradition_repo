@@ -4,8 +4,10 @@ import static java.time.LocalDateTime.now;
 import static net.stemmaweb.Util.jsonerror;
 import static net.stemmaweb.Util.jsonresp;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.util.*;
+import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
 
 import javax.ws.rs.Consumes;
@@ -23,6 +25,7 @@ import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 import javax.xml.stream.XMLStreamException;
 
+import net.stemmaweb.Util;
 import net.stemmaweb.builders.XmlBuilder;
 import net.stemmaweb.directors.DocumentDesigner;
 import net.stemmaweb.exporter.*;
@@ -59,6 +62,7 @@ import net.stemmaweb.services.GraphDatabaseServiceProvider;
 import net.stemmaweb.services.ReadingService;
 import net.stemmaweb.services.RelationService;
 import net.stemmaweb.services.VariantGraphService;
+import scala.util.control.TailCalls;
 //import org.neo4j.helpers.collection.IteratorUtil; // Neo4j 2.x
 
 
@@ -152,7 +156,9 @@ public class Tradition {
      * @param name - the name of the requested annotation label
      */
     @Path("/annotationlabel/{name}")
-    public AnnotationLabel getAnnotationType(@PathParam("name") String name) { return new AnnotationLabel(traditionId, name); }
+    public AnnotationLabel getAnnotationType(@PathParam("name") String name) {
+        return new AnnotationLabel(traditionId, name);
+    }
 
     /**
      * Delegates to {@link net.stemmaweb.rest.Annotation Annotation} module
@@ -209,7 +215,6 @@ public class Tradition {
     public static ArrayList<SectionModel> produceSectionList(Node traditionNode, Transaction tx) throws Exception {
         ArrayList<SectionModel> sectionList = new ArrayList<>();
 
-        traditionNode = tx.getNodeByElementId(traditionNode.getElementId());
         ArrayList<Node> sectionNodes = DatabaseService.getRelated(traditionNode, ERelations.PART, tx);
         int depth = sectionNodes.size();
         if (depth > 0) {
@@ -229,7 +234,7 @@ public class Tradition {
                 }
             }
         }
-        // tx.close();
+
         if (sectionList.size() != depth) {
             throw new Exception(
                     String.format("Section list and section node mismatch: %d nodes, %d sections found",
@@ -261,20 +266,22 @@ public class Tradition {
     @ReturnType("java.lang.Void")
     public Response addSection(@FormDataParam("name") String sectionName,
                                @FormDataParam("filetype") String filetype,
+                               @FormDataParam("addSingleSection") @DefaultValue("true") String addSingleSection,
                                @FormDataParam("file") InputStream uploadedInputStream) {
 
 
         try(Transaction tx = db.beginTx()){
 
             // Make a new section node to connect to the tradition in question.
-            Node traditionNode = VariantGraphService.getTraditionNode(traditionId, tx);
+            Callable<Node> getTraditionNode = Util.getTraditionNodeCallable(traditionId, tx);
+            Node traditionNode = getTraditionNode.call();
             ArrayList<SectionModel> existingSections = produceSectionList(traditionNode, tx);
-            Node sectionNode = createNewSection(traditionNode.getElementId(), sectionName);
+            Node sectionNode = createNewSection(traditionNode.getElementId(), sectionName, tx);
             if (sectionNode == null)
                 return Response.serverError().entity(jsonerror("Error creating new section node on tradition")).build();
 
             // Dispatch the data for parsing, with the new section node as the parent node
-            Response result = parseDispatcher(sectionNode, filetype, uploadedInputStream, true);
+            Response result = parseDispatcher(sectionNode, filetype, uploadedInputStream, Boolean.parseBoolean(addSingleSection), tx);
 
             // Handle the result
             if (result.getStatus() > 201) {
@@ -304,20 +311,14 @@ public class Tradition {
 
 
     // utility method for creating a new section on a tradition
-    private static Node createNewSection(String traditionNodeId, String sectionName) {
+    private static Node createNewSection(String traditionNodeId, String sectionName, Transaction tx) {
         Node sectionNode;
-//        GraphDatabaseService db = traditionNode.getGraphDatabase();
-        GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
-        try (Transaction tx = db.beginTx()) {
-            sectionNode = tx.createNode(Nodes.SECTION);
-            Node traditionNode = tx.getNodeByElementId(traditionNodeId); 
-            sectionNode.setProperty("name", sectionName);
-            traditionNode.createRelationshipTo(sectionNode, ERelations.PART);
-            tx.commit();
-        } catch (Exception e) {
-            e.printStackTrace();
-            return null;
-        }
+
+        sectionNode = tx.createNode(Nodes.SECTION);
+        Node traditionNode = tx.getNodeByElementId(traditionNodeId);
+        sectionNode.setProperty("name", sectionName);
+        traditionNode.createRelationshipTo(sectionNode, ERelations.PART);
+
         return sectionNode;
     }
 
@@ -331,12 +332,12 @@ public class Tradition {
      *                          a new tradition entirely
      * @return a Response indicating the result
      */
-    static Response parseDispatcher(Node parentNode, String filetype, InputStream uploadedInputStream, boolean addSingleSection) {
+    static Response parseDispatcher(Node parentNode, String filetype, InputStream uploadedInputStream, boolean addSingleSection, Transaction tx) {
         Response result = null;
         // All parsers except GraphML expect a section node; create it here if we are not adding a
         // section to an existing tradition.
         if (!addSingleSection && !filetype.startsWith("graphml")) {
-            Node sectionNode = createNewSection(parentNode.getElementId(), "DEFAULT");
+            Node sectionNode = createNewSection(parentNode.getElementId(), "DEFAULT", tx);
             if (sectionNode == null)
                 return Response.serverError()
                         .entity(jsonerror("Error creating new section node on tradition")).build();
@@ -361,16 +362,16 @@ public class Tradition {
             result = new CollateXParser().parseCollateX(uploadedInputStream, parentNode);
         if (filetype.equals("cxjson"))
             // Pass it off to the CollateX JSON parser
-            result = new CollateXJsonParser().parseCollateXJson(uploadedInputStream, parentNode);
+            result = new CollateXJsonParser().parseCollateXJson(uploadedInputStream, parentNode, tx);
         if (filetype.equals("stemmaweb"))
             // Pass it off to the old Stemmaweb-format parser
-            result = new StemmawebParser().parseGraphML(uploadedInputStream, parentNode);
+            result = new StemmawebParser().parseGraphML(uploadedInputStream, parentNode, tx);
         if (filetype.equals("graphmlsingle"))
             // Pass it off to the legacy single-file GraphML parser
-            result = new GraphMLParser().parseGraphMLSingle(uploadedInputStream, parentNode, addSingleSection);
+            result = new GraphMLParser().parseGraphMLSingle(uploadedInputStream, parentNode, addSingleSection, tx);
         if (filetype.equals("graphml"))
             // Pass it off to the GraphML ZIP parser
-            result = new GraphMLParser().parseGraphMLZip(uploadedInputStream, parentNode, addSingleSection);
+            result = new GraphMLParser().parseGraphMLZip(uploadedInputStream, parentNode, addSingleSection, tx);
         // If we got this far, it was an unrecognized filetype.
         if (result == null)
             result = Response.status(Status.BAD_REQUEST).entity(jsonerror("Unrecognized file type " + filetype)).build();
@@ -395,27 +396,44 @@ public class Tradition {
     @ReturnType(clazz = AnnotationModel.class)
     public Response addAnnotation(AnnotationModel am) {
 
+        AnnotationModel result;
+        Annotation annoRest;
+
         try(Transaction tx = db.beginTx()){
 
             Node traditionNode = VariantGraphService.getTraditionNode(traditionId, tx);
-            Response result;
             if (traditionNode == null)
                 return Response.status(Status.NOT_FOUND).entity(jsonerror("tradition not found")).build();
 
             Node anno = tx.createNode();
             traditionNode.createRelationshipTo(anno, ERelations.HAS_ANNOTATION);
-            Annotation annoRest = new Annotation(traditionId, anno.getElementId());
-            result = annoRest.updateAnnotation(am);
-            if (result.getStatus() != Status.OK.getStatusCode())
-                // Abort the operation and return the non-OK result
-                return result;
-            // Otherwise, commit it
-            tx.commit();
-            return Response.status(Status.CREATED).entity(result.getEntity()).build();
 
+            result = Annotation.updateAnnotationMethod(am, anno.getElementId(), traditionNode, tx);
+            if (result==null)
+                // Abort the operation and return the non-OK result
+                return null;
+
+            tx.commit();
+            return Response.status(Status.CREATED).entity(result).build();
         } catch (Exception e) {
             return Response.serverError().entity(jsonerror(e.getMessage())).build();
         }
+    }
+
+    static public AnnotationModel add_annotation(AnnotationModel am, Node tradNode, Transaction tx){
+
+        AnnotationModel result = null;
+
+        try{
+
+            Node anno = tx.createNode();
+            tradNode.createRelationshipTo(anno, ERelations.HAS_ANNOTATION);
+            result = Annotation.updateAnnotationMethod(am, anno.getElementId(), tradNode, tx);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return result;
     }
 
     /**
@@ -439,7 +457,8 @@ public class Tradition {
                 return Response.ok().build();
 
             for (SectionModel sm : smlist) {
-                ReadingService.recalculateRank(VariantGraphService.getStartNode(sm.getId(), tx), true);
+                Node tradNode = tx.getNodeByElementId(traditionId);
+                ReadingService.recalculateRank(tradNode, VariantGraphService.getStartNode(sm.getId(), tx), true, tx);
             }
         } catch (Exception e) {
             return Response.serverError().entity(jsonerror(e.getMessage())).build();
@@ -662,7 +681,8 @@ public class Tradition {
     @ReturnType("java.util.List<net.stemmaweb.model.AnnotationModel>")
     public Response getAllAnnotations(@QueryParam("label") List<String> filterLabels) {
         try (Transaction tx = db.beginTx()) {
-            Node traditionNode = VariantGraphService.getTraditionNode(traditionId, db.beginTx());
+            Callable<Node> getTraditionNode = Util.getTraditionNodeCallable(traditionId, tx);
+            Node traditionNode = getTraditionNode.call();
             if (traditionNode == null)
                 return Response.status(Status.NOT_FOUND)
                         .entity(jsonerror("There is no tradition with this id")).build();
@@ -670,17 +690,20 @@ public class Tradition {
             List<AnnotationModel> result;
             ArrayList<AnnotationModel> allAnnotations = new ArrayList<>();
             traditionNode.getRelationships(Direction.OUTGOING, ERelations.HAS_ANNOTATION)
-                    .forEach(x -> allAnnotations.add(new AnnotationModel(x.getEndNode())));
+                    .forEach(x -> allAnnotations.add(new AnnotationModel(x.getEndNode(), tx)));
             if (filterLabels.size() > 0)
                 result = allAnnotations.stream().filter(x -> filterLabels.contains(x.getLabel()))
                         .collect(Collectors.toList());
             else
                 result = allAnnotations;
-            tx.close();
+            tx.commit();
             return Response.ok(result).build();
         } catch (Exception e) {
             e.printStackTrace();
             return Response.serverError().entity(e.getMessage()).build();
+        } catch (Throwable t) {
+            t.printStackTrace();
+            return Response.serverError().entity(jsonerror(t.getMessage())).build();
         }
     }
 
@@ -707,7 +730,7 @@ public class Tradition {
 
             List<AnnotationLabelModel> result = new ArrayList<>();
                 traditionNode.getRelationships(Direction.OUTGOING, ERelations.HAS_ANNOTATION_TYPE)
-                        .forEach(x -> result.add(new AnnotationLabelModel(x.getEndNode())));
+                        .forEach(x -> result.add(new AnnotationLabelModel(x.getEndNode(), tx)));
                 tx.close();
             return Response.ok(result).build();
         } catch (Exception e) {
@@ -736,7 +759,7 @@ public class Tradition {
             for (Node a : DatabaseService.getRelated(traditionNode, ERelations.HAS_ANNOTATION, tx)) {
                 boolean isPrimary = a.getProperty("primary", false).equals(true);
                 if (!a.hasRelationship(Direction.OUTGOING) && !isPrimary) {
-                    deleted.add(new AnnotationModel(a));
+                    deleted.add(new AnnotationModel(a, tx));
                     a.getRelationships(Direction.INCOMING).forEach(Relationship::delete);
                     a.delete();
                 }
@@ -817,7 +840,7 @@ public class Tradition {
             }
             // Generate the updated model to return it
             updatedTradition = new TraditionModel(traditionNode);
-            tx.close();
+            tx.commit();
         } catch (Exception e) {
             e.printStackTrace();
             return Response.serverError().entity(jsonerror(e.getMessage())).build();
@@ -871,6 +894,34 @@ public class Tradition {
         return Response.ok().build();
     }
 
+    static public Boolean delete_tradition(String traditionId, Transaction tx){
+        try {
+            /*
+             * Find all the nodes and relations to remove
+             */
+            Set<Relationship> removableRelations = new HashSet<>();
+            Set<Node> removableNodes = new HashSet<>();
+
+            Node foundTradition = VariantGraphService.getTraditionNode(traditionId, tx);
+
+            VariantGraphService.returnEntireTradition(foundTradition, tx)
+                    .nodes().forEach(x -> {
+                        x.getRelationships().forEach(removableRelations::add);
+                        removableNodes.add(x);
+                    });
+
+            /*
+             * Remove the nodes and relations
+             */
+            removableRelations.forEach(Relationship::delete);
+            removableNodes.forEach(Node::delete);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
+        }
+        return true;
+    }
+
     /*
      * Tradition export API
      *
@@ -911,10 +962,13 @@ public class Tradition {
     @ReturnType("java.lang.Void")
     public Response getGraphML() {
         try(Transaction tx = db.beginTx()){
-            if (VariantGraphService.getTraditionNode(traditionId, tx) == null)
+            Node tradNode = VariantGraphService.getTraditionNode(traditionId, tx);
+            if (tradNode == null)
                 return Response.status(Status.NOT_FOUND).type(MediaType.TEXT_PLAIN).entity("No such tradition found").build();
             GraphMLExporter exporter = new GraphMLExporter();
-            return exporter.writeNeo4J(traditionId, null);
+            Response res = exporter.writeNeo4J(tradNode, null, false, tx);
+            tx.commit();
+            return res;
         }
     }
 

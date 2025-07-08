@@ -4,10 +4,7 @@ import static net.stemmaweb.Util.jsonerror;
 import static net.stemmaweb.Util.jsonresp;
 
 import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.HashSet;
+import java.util.*;
 
 import javax.ws.rs.core.Response;
 import javax.xml.stream.XMLInputFactory;
@@ -15,12 +12,7 @@ import javax.xml.stream.XMLStreamConstants;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamReader;
 
-import org.neo4j.graphdb.Direction;
-import org.neo4j.graphdb.Entity;
-import org.neo4j.graphdb.GraphDatabaseService;
-import org.neo4j.graphdb.Node;
-import org.neo4j.graphdb.Relationship;
-import org.neo4j.graphdb.Transaction;
+import org.neo4j.graphdb.*;
 
 import net.stemmaweb.model.RelationModel;
 import net.stemmaweb.model.RelationTypeModel;
@@ -56,7 +48,7 @@ public class StemmawebParser {
      * @param parentNode - the section node to which the collation should be attached
      * @return Http Response with the id of the imported tradition
      */
-    public Response parseGraphML(InputStream xmldata, Node parentNode) {
+    public Response parseGraphML(InputStream xmldata, Node parentNode, Transaction tx) {
         XMLInputFactory factory;
         XMLStreamReader reader;
         factory = XMLInputFactory.newInstance();
@@ -85,12 +77,13 @@ public class StemmawebParser {
 
         String tradId;
 
-        try (Transaction tx = db.beginTx()) {
+        try {
         	// The information on the relevant tradition
         	parentNode = tx.getNodeByElementId(parentNode.getElementId());
         	Node traditionNode = parentNode.getSingleRelationship(ERelations.PART, Direction.INCOMING).getStartNode();
         	
             tradId = traditionNode.getProperty("id").toString();
+            int counter = 0;
             outer:
             while (true) {
                 // START READING THE GRAPHML FILE
@@ -122,11 +115,10 @@ public class StemmawebParser {
                                         if (qr.getStartNode().equals(to) || qr.getEndNode().equals(to)) {
                                             // If a RELATED link already exists, we have a problem.
                                             if (relKind.equals(ERelations.RELATED))
-                                                return Response.status(Response.Status.BAD_REQUEST)
-                                                        .entity(jsonerror("Tradition specifies the reading relation " +
-                                                                currentRelModel.getScope() + " -- " + currentRelModel.getTarget() +
-                                                                "twice"))
-                                                        .build();
+                                                throw new IllegalArgumentException("Tradition specifies the reading relation " +
+                                                        currentRelModel.getSource() + " -- " + currentRelModel.getTarget() +
+                                                        " twice");
+
                                             // It's a SEQUENCE link, so we are good.
                                             relship = qr;
                                             break;
@@ -147,9 +139,10 @@ public class StemmawebParser {
                                             RelationTypeModel rtm = new RelationTypeModel();
                                             rtm.setName(typeName);
                                             rtm.setDefaultsettings(true);
-                                            Response rtResult = new RelationType(tradId, typeName).create(rtm);
-                                            if (rtResult.getStatus() == Response.Status.INTERNAL_SERVER_ERROR.getStatusCode())
-                                                return rtResult;
+
+                                            Boolean rtResult = RelationType.create_type(rtm, tx, tradId);
+                                            if (!rtResult)
+                                                throw new IllegalArgumentException("Could not create relation type " + typeName + " for tradition " + tradId);
                                             else relationtypes.add(typeName);
                                         }
                                     }
@@ -181,7 +174,7 @@ public class StemmawebParser {
                                     if (relship.hasProperty(witnessClass))
                                         witList = (String[]) relship.getProperty(witnessClass);
                                     ArrayList<String> currentWits = new ArrayList<>(Arrays.asList(witList));
-                                    currentWits.add(edgeWitness);
+                                    currentWits.add(Objects.requireNonNullElse(edgeWitness, "-WnA-"));
                                     relship.setProperty(witnessClass, currentWits.toArray(new String[0]));
                                 }
                                 // Finished working on currentRel
@@ -201,7 +194,16 @@ public class StemmawebParser {
                                     // We are working on a relation node. Apply the data.
                                     String attr = keymap.get(reader.getAttributeValue("", "key"));
                                     String keytype = keytypes.get(attr);
-                                    String val = reader.getElementText();
+                                    // String val = reader.getElementText();
+                                    StringBuilder text = new StringBuilder();
+                                    // System.out.println("Reading data for " + attr + " in relation " + currentRelModel.getSource() + " -> " + currentRelModel.getTarget());
+                                    int nextEvent;
+                                    while ((nextEvent = reader.next()) != XMLStreamConstants.END_ELEMENT) {
+                                        if (nextEvent == XMLStreamConstants.CHARACTERS) {
+                                            text.append(reader.getText());
+                                        }
+                                    }
+                                    String val = text.toString().trim();
                                     switch (attr) {
                                         case "a_derivable_from_b":
                                             currentRelModel.setA_derivable_from_b(val.equals("1"));
@@ -259,8 +261,6 @@ public class StemmawebParser {
                                         // Tradition node attributes
                                         case "name":
                                             // I don't think this condition is ever met, and not sure why a label property would be set
-                                            // if (currentNode.hasProperty("label") && currentNode.getProperty("label").equals("TRADITION"))
-                                            //     break;
                                             if (currentNode.hasProperty("name")
                                                     && ((String)currentNode.getProperty("name")).length() == 0
                                                     && text.length() > 0) {
@@ -298,15 +298,18 @@ public class StemmawebParser {
                                 }
                                 break;
                             case "edge":
-                                currentRelModel = new RelationModel();
-                                currentRelModel.setSource(reader.getAttributeValue("", "source"));
-                                currentRelModel.setTarget(reader.getAttributeValue("", "target"));
-                                currentRelModel.setA_derivable_from_b(null);
-                                currentRelModel.setAlters_meaning(null);
-                                currentRelModel.setB_derivable_from_a(null);
-                                currentRelModel.setNon_independent(null);
-                                break;
+                                    // System.out.println("edge : " + reader.getAttributeValue("", "id"));
+                                    currentRelModel = new RelationModel();
+                                    currentRelModel.setSource(reader.getAttributeValue("", "source"));
+                                    currentRelModel.setTarget(reader.getAttributeValue("", "target"));
+                                    currentRelModel.setA_derivable_from_b(null);
+                                    currentRelModel.setAlters_meaning(null);
+                                    currentRelModel.setB_derivable_from_a(null);
+                                    currentRelModel.setNon_independent(null);
+                                    break;
                             case "node":
+
+                                // System.out.println("Node : " + reader.getAttributeValue("", "id"));
                                 assert(currentGraph != null);
                                 if (!currentGraph.equals("relationships")) {
                                     // only store nodes for the sequence graph
@@ -334,15 +337,21 @@ public class StemmawebParser {
 
             // Re-rank the entire tradition
             Node sectionStart = VariantGraphService.getStartNode(parentNode.getElementId(), tx);
-            ReadingService.recalculateRank(sectionStart, true, tx);
+            try{
+                ReadingService.recalculateRank(traditionNode, sectionStart, true, tx);
+            }catch (Throwable t) {
+                // This catches anything that is a Throwable (Exception or Error)
+                System.err.println("Caught something: " + t);
+                t.printStackTrace();
+            }
             // Calculate the common nodes; don't trust the old format for this.
-            VariantGraphService.calculateCommon(parentNode);
+            VariantGraphService.calculateCommon(parentNode, tx);
 
             // Create the witness nodes.
             witnesses.keySet().forEach(x -> Util.findOrCreateExtant(traditionNode, x, tx));
             // Set colocation information on relation types
             Util.setColocationFlags(traditionNode);
-            tx.commit();
+            // tx.commit();
         } catch (IllegalArgumentException e) {
             return Response.status(Response.Status.BAD_REQUEST).entity(jsonerror(e.getMessage())).build();
         } catch(Exception e) {
@@ -360,7 +369,7 @@ public class StemmawebParser {
                 DotParser parser = new DotParser(db);
                 StemmaModel sm = new StemmaModel();
                 sm.setDot(graph);
-                parser.importStemmaFromDot(tradId, sm);
+                parser.importStemmaFromDot(tradId, sm, tx);
             }
         }
 

@@ -3,6 +3,7 @@ package net.stemmaweb.rest;
 import static net.stemmaweb.Util.jsonerror;
 import static net.stemmaweb.services.RelationService.returnRelationType;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -81,7 +82,7 @@ public class Relation {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON + "; charset=utf-8")
     @ReturnType(clazz = GraphModel.class)
-    public Response create(RelationModel relationModel) {
+    public Response create(RelationModel relationModel) throws IOException {
         // Make sure a scope is set
         if (relationModel.getScope() == null) relationModel.setScope(SCOPE_LOCAL);
         String scope = relationModel.getScope();
@@ -102,11 +103,11 @@ public class Relation {
             assert(orm.isPresent());
             String thisRelId = orm.get().getId();
             if (!scope.equals(SCOPE_LOCAL)) {
-                Boolean use_normal = returnRelationType(tradId, relationModel.getType()).getUse_regular();
                 try (Transaction tx = db.beginTx()) {
+                    Node startingPoint = VariantGraphService.getTraditionNode(tradId, tx);
+                    Boolean use_normal = returnRelationType(startingPoint, relationModel.getType(), tx).getUse_regular();
                     Node readingA = tx.getNodeByElementId(relationModel.getSource());
                     Node readingB = tx.getNodeByElementId(relationModel.getTarget());
-                    Node startingPoint = VariantGraphService.getTraditionNode(tradId, tx);
                     if (scope.equals(SCOPE_SECTION))
                         startingPoint = tx.getNodeByElementId(String.valueOf(readingA.getProperty("section_id")));
                     Relationship thisRelation = tx.getRelationshipByElementId(thisRelId);
@@ -146,7 +147,7 @@ public class Relation {
                         HashSet cur_set = ranks.get(key);
                         if (cur_set != null) {
                             for (Object id : cur_set) {
-                                userel = new RelationModel(thisRelation);
+                                userel = new RelationModel(thisRelation, tx);
                                 userel.setSource(Long.toString((Long) id));
                                 userel.setTarget(node_id);
                                 response = this.create_local(userel);
@@ -203,7 +204,8 @@ public class Relation {
                     .build();
 
             // Get, or create implicitly, the relation type node for the given type.
-            RelationTypeModel rmodel = returnRelationType(tradId, relationModel.getType());
+            Node tradNode = VariantGraphService.getTraditionNode(tradId, tx);
+            RelationTypeModel rmodel = returnRelationType(tradNode, relationModel.getType(), tx);
 
             // Check that the relation type is compatible with the passed relation model
             if (!relationModel.getScope().equals("local") && !rmodel.getIs_generalizable())
@@ -217,13 +219,13 @@ public class Relation {
             if (colocation) {
                 Iterable<Relationship> relsA = readingA.getRelationships(ERelations.RELATED);
                 for (Relationship r : relsA) {
-                    RelationTypeModel rm = returnRelationType(tradId, r.getProperty("type").toString());
+                    RelationTypeModel rm = returnRelationType(tradNode, r.getProperty("type").toString(), tx);
                     if (rm.getIs_weak())
                         r.delete();
                 }
                 Iterable<Relationship> relsB = readingB.getRelationships(ERelations.RELATED);
                 for (Relationship r : relsB) {
-                    RelationTypeModel rm = returnRelationType(tradId, r.getProperty("type").toString());
+                    RelationTypeModel rm = returnRelationType(tradNode, r.getProperty("type").toString(), tx);
                     if (rm.getIs_weak())
                         r.delete();
                 }
@@ -246,8 +248,8 @@ public class Relation {
             Iterable<Relationship> relationships = readingA.getRelationships(ERelations.RELATED);
             for (Relationship relationship : relationships) {
                 if (relationship.getOtherNode(readingA).equals(readingB)) {
-                    RelationModel thisRel = new RelationModel(relationship);
-                    RelationTypeModel rtm = returnRelationType(tradId, thisRel.getType());
+                    RelationModel thisRel = new RelationModel(relationship, tx);
+                    RelationTypeModel rtm = returnRelationType(tradNode, thisRel.getType(), tx);
                     if (thisRel.getType().equals(relationModel.getType())) {
                         // TODO allow for update of existing relation
                         tx.close();
@@ -284,47 +286,52 @@ public class Relation {
      */
     private GraphModel createSingleRelation(Node readingA, Node readingB,
                                             RelationModel relModel, RelationTypeModel rtm) throws Exception {
-        ArrayList<ReadingModel> changedReadings = new ArrayList<>();
-        ArrayList<RelationModel> createdRelations = new ArrayList<>();
 
-        Boolean colocation = rtm.getIs_colocation();
-        Relationship relationAtoB = readingA.createRelationshipTo(readingB, ERelations.RELATED);
+        try(Transaction tx = db.beginTx()){
 
-        relationAtoB.setProperty("type", nullToEmptyString(relModel.getType()));
-        relationAtoB.setProperty("scope", nullToEmptyString(relModel.getScope()));
-        relationAtoB.setProperty("annotation", nullToEmptyString(relModel.getAnnotation()));
-        relationAtoB.setProperty("displayform",
-                nullToEmptyString(relModel.getDisplayform()));
-        relationAtoB.setProperty("a_derivable_from_b", relModel.getA_derivable_from_b());
-        relationAtoB.setProperty("b_derivable_from_a", relModel.getB_derivable_from_a());
-        relationAtoB.setProperty("alters_meaning", relModel.getAlters_meaning());
-        relationAtoB.setProperty("is_hyperrelation", relModel.getIs_hyperrelation());
-        relationAtoB.setProperty("hsource", relModel.getHSource());
-        relationAtoB.setProperty("htarget", relModel.getHTarget());
-        relationAtoB.setProperty("is_significant", relModel.getIs_significant());
-        relationAtoB.setProperty("non_independent", relModel.getNon_independent());
-        relationAtoB.setProperty("reading_a", readingA.getProperty("text"));
-        relationAtoB.setProperty("reading_b", readingB.getProperty("text"));
-        if (colocation) relationAtoB.setProperty("colocation", true);
+            ArrayList<ReadingModel> changedReadings = new ArrayList<>();
+            ArrayList<RelationModel> createdRelations = new ArrayList<>();
 
-        // Recalculate the ranks, if necessary
-        Long rankA = (Long) readingA.getProperty("rank");
-        Long rankB = (Long) readingB.getProperty("rank");
-        if (!rankA.equals(rankB) && colocation) {
-            // Which one is the lower-ranked reading? Promote it, and recalculate from that point
-            Long higherRank = rankA < rankB ? rankB : rankA;
-            Node lowerRanked = rankA < rankB ? readingA : readingB;
-            lowerRanked.setProperty("rank", higherRank);
-            changedReadings.add(new ReadingModel(lowerRanked));
-            Set<Node> changedRank = ReadingService.recalculateRank(lowerRanked);
-            for (Node cr : changedRank)
-                if (!cr.equals(lowerRanked))
-                    changedReadings.add(new ReadingModel(cr));
+            Boolean colocation = rtm.getIs_colocation();
+            Relationship relationAtoB = readingA.createRelationshipTo(readingB, ERelations.RELATED);
 
+            relationAtoB.setProperty("type", nullToEmptyString(relModel.getType()));
+            relationAtoB.setProperty("scope", nullToEmptyString(relModel.getScope()));
+            relationAtoB.setProperty("annotation", nullToEmptyString(relModel.getAnnotation()));
+            relationAtoB.setProperty("displayform",
+                    nullToEmptyString(relModel.getDisplayform()));
+            relationAtoB.setProperty("a_derivable_from_b", relModel.getA_derivable_from_b());
+            relationAtoB.setProperty("b_derivable_from_a", relModel.getB_derivable_from_a());
+            relationAtoB.setProperty("alters_meaning", relModel.getAlters_meaning());
+            relationAtoB.setProperty("is_hyperrelation", relModel.getIs_hyperrelation());
+            relationAtoB.setProperty("hsource", relModel.getHSource());
+            relationAtoB.setProperty("htarget", relModel.getHTarget());
+            relationAtoB.setProperty("is_significant", relModel.getIs_significant());
+            relationAtoB.setProperty("non_independent", relModel.getNon_independent());
+            relationAtoB.setProperty("reading_a", readingA.getProperty("text"));
+            relationAtoB.setProperty("reading_b", readingB.getProperty("text"));
+            if (colocation) relationAtoB.setProperty("colocation", true);
+
+            // Recalculate the ranks, if necessary
+            Long rankA = (Long) readingA.getProperty("rank");
+            Long rankB = (Long) readingB.getProperty("rank");
+            if (!rankA.equals(rankB) && colocation) {
+                // Which one is the lower-ranked reading? Promote it, and recalculate from that point
+                Long higherRank = rankA < rankB ? rankB : rankA;
+                Node lowerRanked = rankA < rankB ? readingA : readingB;
+                lowerRanked.setProperty("rank", higherRank);
+                changedReadings.add(new ReadingModel(lowerRanked, tx));
+                Node tradNode = VariantGraphService.getTraditionNode(tradId, tx);
+                Set<Node> changedRank = ReadingService.recalculateRank(tradNode, lowerRanked, false, tx);
+                for (Node cr : changedRank)
+                    if (!cr.equals(lowerRanked))
+                        changedReadings.add(new ReadingModel(cr, tx));
+
+            }
+
+            createdRelations.add(new RelationModel(relationAtoB, tx));
+            return new GraphModel(changedReadings, createdRelations, new ArrayList<>());
         }
-
-        createdRelations.add(new RelationModel(relationAtoB));
-        return new GraphModel(changedReadings, createdRelations, new ArrayList<>());
     }
 
     /**
@@ -355,8 +362,9 @@ public class Relation {
         // Now go through all the relations that have been created, and make sure that any
         // transitivity effects have been accounted for.
         Transaction tx = db.beginTx();
+        Node tradNode = VariantGraphService.getTraditionNode(tradId, tx);
         for (RelationModel rm : newRelationResult.getRelations()) {
-            TransitiveRelationTraverser relTraverser = new TransitiveRelationTraverser(tradId, rtm);
+            TransitiveRelationTraverser relTraverser = new TransitiveRelationTraverser(tradNode, rtm, tx);
             Node startNode = tx.getNodeByElementId(rm.getSource());
             ArrayList<Node> relatedNodes = new ArrayList<>();
             // Get all the readings that are related by this or a more closely-bound type.
@@ -389,7 +397,7 @@ public class Relation {
                 // Get the nodes we are directly related to, and the relations involved, if
                 // they meet the criteria
                 for (Relationship r : sibling.getRelationships(ERelations.RELATED)) {
-                    RelationTypeModel othertm = returnRelationType(tradId, r.getProperty("type").toString());
+                    RelationTypeModel othertm = returnRelationType(tradNode, r.getProperty("type").toString(), tx);
                     if (othertm.getBindlevel() > rtm.getBindlevel() && othertm.getIs_transitive())
                         connections.put(r.getOtherNode(sibling), r);
                 }
@@ -397,8 +405,8 @@ public class Relation {
                 HashSet<Node> cousins = new HashSet<>(relatedNodes);
                 for (Node n : connections.keySet()) {
                     cousins.remove(n);
-                    RelationModel newmodel = new RelationModel(connections.get(n));
-                    RelationTypeModel newtm = returnRelationType(tradId, newmodel.getType());
+                    RelationModel newmodel = new RelationModel(connections.get(n), tx);
+                    RelationTypeModel newtm = returnRelationType(tradNode, newmodel.getType(), tx);
                     for (Node c : cousins) {
                         ArrayList<Relationship> priorLinks = DatabaseService.getRelationshipTo(n, c, ERelations.RELATED);
                         if (priorLinks.size() == 0) {
@@ -446,7 +454,7 @@ public class Relation {
                         return Response.status(Status.NOT_FOUND).entity(jsonerror("Relation not found")).build();
                     } else {
                         Relationship theRel = findRel.get(0);
-                        RelationModel relInfo = new RelationModel(theRel);
+                        RelationModel relInfo = new RelationModel(theRel, tx);
                         theRel.delete();
                         deleted.add(relInfo);
                     }
@@ -467,7 +475,7 @@ public class Relation {
                                     || rel.getEndNode().getProperty("text").equals(ra.getProperty("text")))
                                     && (rel.getStartNode().getProperty("text").equals(rb.getProperty("text"))
                                     || rel.getEndNode().getProperty("text").equals(rb.getProperty("text")))) {
-                                RelationModel relInfo = new RelationModel(rel);
+                                RelationModel relInfo = new RelationModel(rel, tx);
                                 rel.delete();
                                 deleted.add(relInfo);
                             }
@@ -503,7 +511,7 @@ public class Relation {
         try (Transaction tx = db.beginTx()) {
             Relationship relationship = tx.getRelationshipByElementId(relationId);
             if(relationship.getType().name().equals("RELATED")) {
-                relationModel = new RelationModel(relationship);
+                relationModel = new RelationModel(relationship, tx);
                 relationship.delete();
             } else {
                 return Response.status(Status.FORBIDDEN).entity(jsonerror("This is not a relation link")).build();

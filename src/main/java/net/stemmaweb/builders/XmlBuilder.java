@@ -1,5 +1,6 @@
 package net.stemmaweb.builders;
 
+import net.stemmaweb.Config;
 import net.stemmaweb.Util;
 import net.stemmaweb.documents.XmlDocument;
 import net.stemmaweb.model.ReadingModel;
@@ -30,6 +31,52 @@ public class XmlBuilder implements DocumentBuilder{
     public XmlBuilder() throws XMLStreamException {
         this.document = new XmlDocument();
         this.util = new Util();
+    }
+    public void addHeaderToWriter(String tradition_id, XMLStreamWriter writer, Transaction tx, Config config) throws XMLStreamException {
+        Node tradition_node = tx.findNode(Nodes.TRADITION, "id", tradition_id);
+
+        TraditionModel tradition = new TraditionModel(tradition_node);
+        ArrayList<String> witnesses = tradition.getWitnesses();
+
+        //title description
+        writer.writeStartElement("fileDesc");
+
+            writer.writeStartElement("titleStmt");
+            writer.writeStartElement("title");
+            writer.writeCharacters(tradition.getName());
+            writer.writeEndElement();
+            writer.writeEndElement();
+
+            // publication description
+            writer.writeStartElement("publicationStmt");
+
+            writer.writeStartElement("publisher");
+            writer.writeCharacters(config.getTraditionPublisher());
+            writer.writeEndElement();
+            writer.writeStartElement("pubPlace");
+            writer.writeCharacters(config.getTraditionPubPlace());
+            writer.writeEndElement();
+            writer.writeStartElement("date");
+            writer.writeCharacters(config.getTraditionPudDate());
+            writer.writeEndElement();
+
+            writer.writeEndElement();
+
+            // witnesses description
+            writer.writeStartElement("sourceDesc");
+
+            writer.writeStartElement("listWit");
+            for (String witness : witnesses) {
+                writer.writeStartElement("witness");
+                writer.writeAttribute("xml:id", witness);
+                writer.writeEndElement();
+            }
+            writer.writeEndElement();
+
+            writer.writeEndElement();
+
+        writer.writeEndElement();
+
     }
     public void addSectionToWriter(String tradition_id, String section_id, XMLStreamWriter writer, Transaction tx) {
 
@@ -84,7 +131,7 @@ public class XmlBuilder implements DocumentBuilder{
                         util.populateHypernodes(top_hn_object, hn_table, hn_stats, variant_table, writer, tx);
                         writer.writeEndElement();
                     }
-                    ReadingModel rdg = new ReadingModel(node);
+                    ReadingModel rdg = new ReadingModel(node, tx);
                     TraditionModel tradition = new TraditionModel(tradition_node);
                     int trad_w_count = tradition.getWitnesses().size();
                     int rdg_w_count = rdg.getWitnesses().size();

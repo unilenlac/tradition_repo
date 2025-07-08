@@ -99,7 +99,7 @@ public class VariantLocationModel {
                         }
                     }
             }
-            List<RelationModel> rml = relations.stream().map(RelationModel::new).collect(Collectors.toList());
+            List<RelationModel> rml = relations.stream().map(n -> new RelationModel(n, tx)).collect(Collectors.toList());
             this.setRelations(rml);
             this.isEmpty = false;
             tx.commit();

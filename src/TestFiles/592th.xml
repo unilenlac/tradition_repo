@@ -1,8 +1,9 @@
 <?xml version='1.0'?>
+<!-- excluded: no READING nodes, not well formed -->
 <graphml xmlns="http://graphml.graphdrawing.org/xmlns" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://graphml.graphdrawing.org/xmlns http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd">
   <key attr.name="sigil" attr.type="string" for="node" id="dn10"/>
   <key attr.name="is_start" attr.type="boolean" for="node" id="dn8"/>
-  <key attr.name="section_id" attr.type="long" for="node" id="dn6"/>
+  <key attr.name="section_label" attr.type="long" for="node" id="dn6"/>
   <key attr.name="hypothetical" attr.type="boolean" for="node" id="dn11"/>
   <key attr.name="name" attr.type="string" for="node" id="dn2"/>
   <key attr.name="is_end" attr.type="boolean" for="node" id="dn5"/>
@@ -14,7 +15,7 @@
   <key attr.name="direction" attr.type="string" for="node" id="dn3"/>
   <key attr.name="neolabel" attr.type="string" for="edge" id="de0"/>
   <key attr.name="witnesses" attr.type="stringarray" for="edge" id="de1"/>
-  <graph id="592th" edgedefault="directed" parse.edgeids="canonical" parse.edges="7074" parse.nodeids="canonical" parse.nodes="7075" parse.order="nodesfirst">
+  <graph id="592th" edgedefault="directed" parse.edgeids="canonical" parse.edges="1" parse.nodeids="canonical" parse.nodes="2" parse.order="nodesfirst">
     <node id="1010688">
       <data key="dn0">[TRADITION]</data>
       <data key="dn1">50b36cef-43ef-4634-87ed-c8e8366325e7</data>

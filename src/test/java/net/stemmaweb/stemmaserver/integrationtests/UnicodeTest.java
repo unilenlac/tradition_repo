@@ -4,6 +4,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
+import net.stemmaweb.services.GraphDatabaseServiceProvider;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -16,6 +17,7 @@ import org.neo4j.graphdb.Transaction;
 
 import net.stemmaweb.rest.ERelations;
 
+import java.io.IOException;
 import java.nio.file.Path;
 
 /**
@@ -27,20 +29,23 @@ import java.nio.file.Path;
  */
 public class UnicodeTest {
 
-    private GraphDatabaseService graphDb;
-	private DatabaseManagementService dbbuilder;
+    private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
+    private final GraphDatabaseService db = dbServiceProvider.getDatabase();
+
+    public UnicodeTest() throws IOException {
+    }
 
     @Before
     public void prepareTestDatabase() {
-        dbbuilder = new DatabaseManagementServiceBuilder(Path.of("")).build();    	dbbuilder.createDatabase("stemmatest");
-    	graphDb = dbbuilder.database("stemmatest");
+        // dbbuilder = new DatabaseManagementServiceBuilder(Path.of("")).build();    	dbbuilder.createDatabase("stemmatest");
+    	// graphDb = dbbuilder.database("stemmatest");
         // create a new Graph Database
     }
 
     @Test
     public void testUnicodeCapability() {
         Node n;
-        try (Transaction tx = graphDb.beginTx()) {
+        try (Transaction tx = db.beginTx()) {
             n = tx.createNode();
             n.setProperty("name", "Ã¤Ã¶Ã¼×“×’×›Î±Î²Î³");
             tx.commit();
@@ -51,7 +56,7 @@ public class UnicodeTest {
 
         // Retrieve a node by using the id of the created node. The id's and
         // property should match.
-        try (Transaction tx = graphDb.beginTx()) {
+        try (Transaction tx = db.beginTx()) {
             Node foundNode = tx.getNodeByElementId(n.getElementId());
             assertEquals(foundNode.getElementId(), n.getElementId());
             assertEquals("Ã¤Ã¶Ã¼×“×’×›Î±Î²Î³", foundNode.getProperty("name"));
@@ -64,7 +69,7 @@ public class UnicodeTest {
         Node node1;
         Node node2;
         Relationship relationship;
-        try (Transaction tx = graphDb.beginTx()) {
+        try (Transaction tx = db.beginTx()) {
             node1 = tx.createNode();
             node1.setProperty("name", "בדיקה");
             node2 = tx.createNode();
@@ -82,7 +87,7 @@ public class UnicodeTest {
 
         // Retrieve nodes and relationship by using the id of the created node. The id's and
         // property should match.
-        try (Transaction tx = graphDb.beginTx()) {
+        try (Transaction tx = db.beginTx()) {
             Node foundNode1 = tx.getNodeByElementId(node1.getElementId());
             Node foundNode2 = tx.getNodeByElementId(node2.getElementId());
             Relationship foundRelationship = tx.getRelationshipByElementId(relationship.getElementId());
@@ -98,7 +103,7 @@ public class UnicodeTest {
     @Test
     public void testHebrewCapabilityNoMatch() {
         Node n;
-        try (Transaction tx = graphDb.beginTx()) {
+        try (Transaction tx = db.beginTx()) {
             n = tx.createNode();
             n.setProperty("name", "בדיקה");
             tx.commit();
@@ -109,7 +114,7 @@ public class UnicodeTest {
 
         // Retrieve a node by using the id of the created node. The id's and
         // property should match.
-        try (Transaction tx = graphDb.beginTx()) {
+        try (Transaction tx = db.beginTx()) {
             Node foundNode = tx.getNodeByElementId(n.getElementId());
             assertEquals(foundNode.getElementId(), n.getElementId());
             assertNotEquals("בליקה", foundNode.getProperty("name"));
@@ -120,7 +125,7 @@ public class UnicodeTest {
     @Test
     public void testGreekCapabilityMatch() {
         Node n;
-        try (Transaction tx = graphDb.beginTx()) {
+        try (Transaction tx = db.beginTx()) {
             n = tx.createNode();
             n.setProperty("name", "ειπον");
             tx.commit();
@@ -131,7 +136,7 @@ public class UnicodeTest {
 
         // Retrieve a node by using the id of the created node. The id's and
         // property should match.
-        try (Transaction tx = graphDb.beginTx()) {
+        try (Transaction tx = db.beginTx()) {
             Node foundNode = tx.getNodeByElementId(n.getElementId());
             assertEquals(foundNode.getElementId(), n.getElementId());
             assertEquals("ειπον", foundNode.getProperty("name"));
@@ -142,7 +147,7 @@ public class UnicodeTest {
     @Test
     public void testGreekCapabilityNoMatch() {
         Node n;
-        try (Transaction tx = graphDb.beginTx()) {
+        try (Transaction tx = db.beginTx()) {
             n = tx.createNode();
             n.setProperty("name", "ειπον");
             tx.commit();
@@ -153,7 +158,7 @@ public class UnicodeTest {
 
         // Retrieve a node by using the id of the created node. The id's and
         // property should match.
-        try (Transaction tx = graphDb.beginTx()) {
+        try (Transaction tx = db.beginTx()) {
             Node foundNode = tx.getNodeByElementId(n.getElementId());
             assertEquals(foundNode.getElementId(), n.getElementId());
             assertNotEquals("ειπων", foundNode.getProperty("name"));
@@ -164,7 +169,7 @@ public class UnicodeTest {
     @Test
     public void testArabicCapabilityMatch() {
         Node n;
-        try (Transaction tx = graphDb.beginTx()) {
+        try (Transaction tx = db.beginTx()) {
             n = tx.createNode();
             n.setProperty("name", "المطلق");
             tx.commit();
@@ -175,7 +180,7 @@ public class UnicodeTest {
 
         // Retrieve a node by using the id of the created node. The id's and
         // property should match.
-        try (Transaction tx = graphDb.beginTx()) {
+        try (Transaction tx = db.beginTx()) {
             Node foundNode = tx.getNodeByElementId(n.getElementId());
             assertEquals(foundNode.getElementId(), n.getElementId());
             assertEquals("المطلق", foundNode.getProperty("name"));
@@ -186,7 +191,7 @@ public class UnicodeTest {
     @Test
     public void testArabicCapabilityNoMatch() {
         Node n;
-        try (Transaction tx = graphDb.beginTx()) {
+        try (Transaction tx = db.beginTx()) {
             n = tx.createNode();
             n.setProperty("name", "المطلق");
             tx.commit();
@@ -197,7 +202,7 @@ public class UnicodeTest {
 
         // Retrieve a node by using the id of the created node. The id's and
         // property should match.
-        try (Transaction tx = graphDb.beginTx()) {
+        try (Transaction tx = db.beginTx()) {
             Node foundNode = tx.getNodeByElementId(n.getElementId());
             assertEquals(foundNode.getElementId(), n.getElementId());
             assertNotEquals("المطلو", foundNode.getProperty("name"));
@@ -207,9 +212,11 @@ public class UnicodeTest {
 
     @After
     public void destroyTestDatabase() {
-//        graphDb.shutdown();    // destroy the test database
-    	if (dbbuilder != null) {
-    		dbbuilder.shutdownDatabase(graphDb.databaseName());
-    	}
+        DatabaseManagementService service = dbServiceProvider.getManagementService();
+
+        if (service != null) {
+            service.shutdownDatabase(db.databaseName());
+        }
+
     }
 }

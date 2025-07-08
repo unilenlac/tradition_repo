@@ -225,8 +225,11 @@ public class Witness {
 
         long startRank = Long.parseLong(start);
         long endRank;
-
-        ArrayList<Node> iterationList = sectionsRequested();
+        ArrayList<Node> iterationList;
+        try (Transaction tx = db.beginTx()){
+            iterationList = sectionsRequested(tx);
+            tx.commit();
+        }
         if (iterationList == null)
             return Response.status(errorMessage.contains("not found") ? Status.NOT_FOUND : Status.INTERNAL_SERVER_ERROR)
                     .entity(jsonerror(errorMessage)).build();
@@ -246,7 +249,6 @@ public class Witness {
                 try (Transaction tx = db.beginTx()) {
                     Node endNode = DatabaseService.getRelated(currentSection, ERelations.HAS_END, tx).get(0);
                     endRank = Long.parseLong(endNode.getProperty("rank").toString());
-                    tx.close();
                 } catch (Exception e) {
                     e.printStackTrace();
                     return Response.serverError().entity(jsonerror(e.getMessage())).build();
@@ -288,10 +290,13 @@ public class Witness {
             return Response.status(Status.NOT_FOUND)
                     .entity(jsonerror("No witness path found for this sigil")).build();
         // Construct the text from the node reading models
-        String witnessText = ReadingService.textOfReadings(
-                witnessReadings.stream().map(ReadingModel::new).collect(Collectors.toList()), false, false);
-        TextSequenceModel wtm = new TextSequenceModel(witnessText);
-        return Response.ok(wtm).build();
+        try(Transaction tx = db.beginTx()){
+            String witnessText = ReadingService.textOfReadings(
+                    witnessReadings.stream().map(n -> new ReadingModel(n, tx)).collect(Collectors.toList()), false, false);
+            TextSequenceModel wtm = new TextSequenceModel(witnessText);
+            tx.commit();
+            return Response.ok(wtm).build();
+        }
 
     }
 
@@ -314,16 +319,19 @@ public class Witness {
         ArrayList<ReadingModel> readingModels = new ArrayList<>();
         if (witnessClass.size() == 1 && witnessClass.get(0).equals(""))
             witnessClass.remove(0);
+        ArrayList<Node> iterationList;
+        try (Transaction tx = db.beginTx()) {
+            iterationList = sectionsRequested(tx);
+            if (iterationList == null)
+                return Response.status(errorMessage.contains("not found") ? Status.NOT_FOUND : Status.INTERNAL_SERVER_ERROR)
+                        .entity(jsonerror(errorMessage)).build();
+            tx.commit();
+        }
 
-        ArrayList<Node> iterationList = sectionsRequested();
-        if (iterationList == null)
-            return Response.status(errorMessage.contains("not found") ? Status.NOT_FOUND : Status.INTERNAL_SERVER_ERROR)
-                    .entity(jsonerror(errorMessage)).build();
-
-        for (Node currentSection: iterationList) {
+        for (Node currentSection : iterationList) {
             try (Transaction tx = db.beginTx()) {
                 Node startNode = VariantGraphService.getStartNode(currentSection.getElementId(), tx);
-                readingModels.addAll(traverseReadings(startNode, witnessClass).stream().map(ReadingModel::new).collect(Collectors.toList()));
+                readingModels.addAll(traverseReadings(startNode, witnessClass).stream().map(n -> new ReadingModel(n, tx)).collect(Collectors.toList()));
                 // Remove the meta node from the list
                 if (readingModels.size() > 0 && readingModels.get(readingModels.size() - 1).getIs_end())
                     readingModels.remove(readingModels.size() - 1);
@@ -372,8 +380,8 @@ public class Witness {
         return result;
     }
 
-    private ArrayList<Node> sectionsRequested() {
-        Node traditionNode = VariantGraphService.getTraditionNode(tradId, db.beginTx());
+    private ArrayList<Node> sectionsRequested(Transaction tx) {
+        Node traditionNode = VariantGraphService.getTraditionNode(tradId, tx);
         if (traditionNode == null) {
             errorMessage = "Requested tradition does not exist";
             return null;
@@ -381,16 +389,16 @@ public class Witness {
 
         ArrayList<Node> iterationList = new ArrayList<>();
         if (this.sectId == null) {
-            iterationList = VariantGraphService.getSectionNodes(tradId, db);
+            iterationList = VariantGraphService.getSectionNodes(traditionNode, tx);
         } else {
             if (!VariantGraphService.sectionInTradition(tradId, sectId, db)) {
                 errorMessage = "Requested section does not exist in this tradition";
                 return null;
             }
-            try (Transaction tx = db.beginTx()) {
+            try {
                 Node sectionNode = tx.getNodeByElementId(sectId);
                 iterationList.add(sectionNode);
-                tx.close();
+
             } catch (Exception e) {
                 e.printStackTrace();
                 errorMessage = e.getMessage();

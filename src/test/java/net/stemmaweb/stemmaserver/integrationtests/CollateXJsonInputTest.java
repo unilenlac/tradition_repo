@@ -1,6 +1,7 @@
 package net.stemmaweb.stemmaserver.integrationtests;
 
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -13,6 +14,7 @@ import javax.ws.rs.core.GenericType;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 
+import net.stemmaweb.services.GraphDatabaseServiceProvider;
 import org.glassfish.jersey.media.multipart.FormDataMultiPart;
 import org.glassfish.jersey.test.JerseyTest;
 import org.json.JSONObject;
@@ -34,21 +36,22 @@ import net.stemmaweb.stemmaserver.Util;
 
 public class CollateXJsonInputTest extends TestCase {
 
-    private GraphDatabaseService db;
+    private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
+    private final GraphDatabaseService db = dbServiceProvider.getDatabase();
     private DatabaseManagementService dbbuilder;
     private JerseyTest jerseyTest;
 
     private String tradId;
     private String sectId;
 
+    public CollateXJsonInputTest() throws IOException {
+    }
+
 
     public void setUp() throws Exception {
         super.setUp();
-//        db = new GraphDatabaseServiceProvider(new TestGraphDatabaseFactory().newImpermanentDatabase()).getDatabase();
-        dbbuilder = new DatabaseManagementServiceBuilder(Path.of("")).build();
-        dbbuilder.createDatabase("stemmatest");
-        db = dbbuilder.database("stemmatest");
-        Util.setupTestDB(db, "1");
+
+        Util.setupTestDB(db);
 
         // Create a JerseyTestServer for the necessary REST API calls
         jerseyTest = Util.setupJersey();
@@ -192,7 +195,7 @@ public class CollateXJsonInputTest extends TestCase {
     public void testAddSection() {
         // Add another section
         String newSectId = Util.getValueFromJson(Util.addSectionToTradition(jerseyTest, tradId,
-                "src/TestFiles/Matthew-401.json", "cxjson", "AM 401"), "sectionId");
+                "src/TestFiles/Matthew-401.json", "cxjson", "AM 401", true), "sectionId");
         Response response = jerseyTest
                 .target("/tradition/" + tradId + "/section/" + sectId + "/orderAfter/" + newSectId)
                 .request()
@@ -232,7 +235,7 @@ public class CollateXJsonInputTest extends TestCase {
 
         // Add the first section and check number of witnesses
         String firstSect = Util.getValueFromJson(Util.addSectionToTradition(jerseyTest, newTradId,
-                "src/TestFiles/Matthew-401.json", "cxjson", "AM 401"), "sectionId");
+                "src/TestFiles/Matthew-401.json", "cxjson", "AM 401", true), "sectionId");
         allwits = jerseyTest
                 .target("/tradition/" + newTradId + "/witnesses")
                 .request()
@@ -241,7 +244,7 @@ public class CollateXJsonInputTest extends TestCase {
 
         // Add the second section and do the same
         String secondSect = Util.getValueFromJson(Util.addSectionToTradition(jerseyTest, newTradId,
-                "src/TestFiles/Matthew-407.json", "cxjson", "AM 407"), "sectionId");
+                "src/TestFiles/Matthew-407.json", "cxjson", "AM 407", true), "sectionId");
         allwits = jerseyTest
                 .target("/tradition/" + newTradId + "/witnesses")
                 .request()
@@ -279,11 +282,12 @@ public class CollateXJsonInputTest extends TestCase {
     } **/
 
     public void tearDown() throws Exception {
-//        db.shutdown();
-    	if (dbbuilder != null) {
-    		dbbuilder.shutdownDatabase(db.databaseName());
-    	}
+        DatabaseManagementService service = dbServiceProvider.getManagementService();
+
+        if (service != null) {
+            service.shutdownDatabase(db.databaseName());
+        }
+
         jerseyTest.tearDown();
-        super.tearDown();
     }
 }

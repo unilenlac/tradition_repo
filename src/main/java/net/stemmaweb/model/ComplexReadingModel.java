@@ -141,7 +141,7 @@ public class ComplexReadingModel {
                     compReadings.add(new ComplexReadingModel(otherNode));
                   } else {
                     // if simple nodes: initialize with Reading
-                    compReadings.add(new ComplexReadingModel(new ReadingModel(otherNode)));
+                    compReadings.add(new ComplexReadingModel(new ReadingModel(otherNode, tx)));
                   }
               }
             this.setComponents(compReadings);

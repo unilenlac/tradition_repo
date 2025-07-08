@@ -17,6 +17,8 @@ import net.stemmaweb.exporter.DotExporter;
 import net.stemmaweb.rest.ERelations;
 import net.stemmaweb.services.GraphDatabaseServiceProvider;
 
+import java.io.IOException;
+
 /**
  * A model for the stemma object and its representation.
  */

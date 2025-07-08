@@ -4,6 +4,7 @@ package net.stemmaweb.stemmaserver.integrationtests;
 
 import static org.junit.Assert.assertEquals;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.HashMap;
 
@@ -11,6 +12,7 @@ import javax.ws.rs.client.Entity;
 import javax.ws.rs.core.GenericType;
 import javax.ws.rs.core.Response;
 
+import net.stemmaweb.services.GraphDatabaseServiceProvider;
 import org.glassfish.jersey.test.JerseyTest;
 import org.junit.After;
 import org.junit.Before;
@@ -40,9 +42,8 @@ public class TranspositionTest {
     private String roodId;
     private String theId;
     private String tehId;
-
-    private GraphDatabaseService db;
-    private DatabaseManagementService dbbuilder;
+    private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
+    private final GraphDatabaseService db = dbServiceProvider.getDatabase();
 
     /*
      * JerseyTest is the test environment to Test api calls it provides a
@@ -50,12 +51,14 @@ public class TranspositionTest {
      */
     private JerseyTest jerseyTest;
 
+    public TranspositionTest() throws IOException {
+    }
+
 
     @Before
     public void setUp() throws Exception {
-        dbbuilder = new DatabaseManagementServiceBuilder(Path.of("")).build();    	dbbuilder.createDatabase("stemmatest");
-    	db = dbbuilder.database("stemmatest");
-        Util.setupTestDB(db, "1");
+
+        Util.setupTestDB(db);
 
         // Create a JerseyTestServer for the necessary REST API calls
         jerseyTest = JerseyTestServerFactory.newJerseyTestServer()
@@ -194,10 +197,12 @@ public class TranspositionTest {
      */
     @After
     public void tearDown() throws Exception {
-//        db.shutdown();
-    	if (dbbuilder != null) {
-    		dbbuilder.shutdownDatabase(db.databaseName());
-    	}
+        DatabaseManagementService service = dbServiceProvider.getManagementService();
+
+        if (service != null) {
+            service.shutdownDatabase(db.databaseName());
+        }
+
         jerseyTest.tearDown();
     }
 }

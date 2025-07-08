@@ -2,8 +2,11 @@ package net.stemmaweb.rest;
 
 import static net.stemmaweb.Util.jsonerror;
 
+import java.io.IOException;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.Callable;
 import java.util.stream.StreamSupport;
 
 import javax.ws.rs.Consumes;
@@ -14,10 +17,11 @@ import javax.ws.rs.Produces;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 
-import org.neo4j.graphdb.Direction;
-import org.neo4j.graphdb.GraphDatabaseService;
-import org.neo4j.graphdb.Node;
-import org.neo4j.graphdb.Transaction;
+import net.stemmaweb.Util;
+import net.stemmaweb.services.RelationService;
+import org.neo4j.codegen.api.Throw;
+import org.neo4j.exceptions.KernelException;
+import org.neo4j.graphdb.*;
 
 import com.qmino.miredot.annotations.ReturnType;
 
@@ -40,6 +44,17 @@ public class RelationType {
     private final String traditionId;
     private final String typeName;
 
+    public RelationType(String tradId, String requestedType, Boolean test, GraphDatabaseService db) throws KernelException {
+        if(test) {
+            // This is a test, so we don't want to connect to the database.
+            this.db = db;
+        }else{
+            GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
+            this.db = dbServiceProvider.getDatabase();
+        }
+        traditionId = tradId;
+        typeName = requestedType;
+    }
     public RelationType(String tradId, String requestedType) {
         GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
         db = dbServiceProvider.getDatabase();
@@ -61,12 +76,22 @@ public class RelationType {
     @ReturnType("net.stemmaweb.model.RelationTypeModel")
     public Response getRelationType() {
         RelationTypeModel rtModel = new RelationTypeModel(typeName);
-        Node foundRelType = rtModel.lookup(VariantGraphService.getTraditionNode(traditionId, db.beginTx()), db.beginTx());
+        Node foundRelType = rtModel.lookup(VariantGraphService.getTraditionNode(traditionId, db.beginTx()));
         if (foundRelType == null) {
             return Response.noContent().build();
         }
 
         return Response.ok(new RelationTypeModel(foundRelType)).build();
+    }
+
+    static public RelationTypeModel getRelationTypeMethod(String typeName, Node tradNode){
+        RelationTypeModel rtModel = new RelationTypeModel(typeName);
+        Node foundRelType = rtModel.lookup(tradNode);
+        if (foundRelType == null) {
+            return null;
+        }
+
+        return new RelationTypeModel(foundRelType);
     }
 
     /**
@@ -86,28 +111,175 @@ public class RelationType {
     @ReturnType(clazz = RelationTypeModel.class)
     public Response create(RelationTypeModel rtModel) {
         // Find any existing relation type on this tradition
-        Node traditionNode = VariantGraphService.getTraditionNode(traditionId, db.beginTx());
-        Node extantRelType = rtModel.lookup(traditionNode, db.beginTx());
+        try (Transaction ctx = this.db.beginTx()) {
+            Callable<Node> getTraditionNode = Util.getTraditionNodeCallable(traditionId, ctx);
+            Node traditionNode = getTraditionNode.call();
+            Node extantRelType = rtModel.lookup(traditionNode);
+            // Node extantRelType = ctx.findNode(Nodes.RELATION_TYPE, "name", rtModel.getName());
+            /*
+
+            if (rtModel.getDefaultsettings() != null) {
+                // This won't work if we also have an extant type of this name.
+                if (extantRelType != null)
+                    return Response.status(Response.Status.CONFLICT)
+                            .entity(jsonerror("Cannot instantiate a default for a type that already exists")).build();
+                Result result = ctx.execute("SHOW TRANSACTIONS");
+
+                System.out.println("Active transactions:");
+                while (result.hasNext()) {
+                    Map<String, Object> row = result.next();
+                    System.out.println("Transaction: " + row);
+                }
+                res = this.makeDefaultType(ctx);
+                Result afterRes = ctx.execute("SHOW TRANSACTIONS");
+
+                System.out.println("Active transactions:");
+                while (afterRes.hasNext()) {
+                    Map<String, Object> row = afterRes.next();
+                    System.out.println("Transaction: " + row);
+                }
+                if (res.getStatus() == Response.Status.CREATED.getStatusCode()) {
+                    // RelationService.linkRelationToTradition(traditionNode, rtModel.getName(), db);
+                    // tx.commit();
+                    System.out.println("Second transaction started");
+
+                    Node relNode = ctx.findNode(Nodes.RELATION_TYPE, "name", rtModel.getName());
+                    Node tradNode = ctx.findNode(Nodes.TRADITION, "id", traditionId);
+
+                    System.out.println("Found nodes - relNode: " + (relNode != null) + ", tradNode: " + (tradNode != null));
+
+                    if (relNode == null || tradNode == null) {
+                        System.out.println("One or both nodes not found, skipping relationship creation");
+                        return Response.serverError().entity(jsonerror("Required nodes not found")).build();
+                    }
+
+                    // Check if relationship already exists
+                    boolean relationshipExists = false;
+                    for (Relationship rel : tradNode.getRelationships(Direction.OUTGOING, ERelations.HAS_RELATION_TYPE)) {
+                        if (rel.getEndNode().equals(relNode)) {
+                            relationshipExists = true;
+                            System.out.println("Relationship already exists");
+                            break;
+                        }
+                    }
+
+                    if (!relationshipExists) {
+                        System.out.println("Creating relationship between tradition and relation type");
+
+                        // Use direct relationship creation instead of Cypher
+                        Relationship rel = tradNode.createRelationshipTo(relNode, ERelations.HAS_RELATION_TYPE);
+                        // System.out.println("Relationship created: " + rel.getType());
+
+                        System.out.println("About to commit second transaction...");
+                        // Check for any locks or constraints
+                        try {
+                            Result trResult = ctx.execute("SHOW TRANSACTIONS");
+
+                            System.out.println("Active transactions:");
+                            while (trResult.hasNext()) {
+                                Map<String, Object> row = trResult.next();
+                                System.out.println("Transaction: " + row);
+                            }
+                        } catch (Exception e) {
+                            System.out.println("Could not retrieve constraints: " + e.getMessage());
+                        }
+                        ctx.commit();
+                        System.out.println("Second transaction committed successfully");
+                    } else {
+                        System.out.println("Relationship already exists, no commit needed");
+                    }
+
+                    return res;
+                }
+            }
+            */
+            if (extantRelType != null) {
+                extantRelType = rtModel.update(traditionNode, ctx);
+                if (extantRelType != null)
+                    return Response.ok().entity(rtModel).build();
+            } else {
+                extantRelType = rtModel.instantiate(traditionNode, ctx);
+                traditionNode.createRelationshipTo(extantRelType, ERelations.HAS_RELATION_TYPE);
+                ctx.commit();
+                if (extantRelType != null)
+                    return Response.status(Response.Status.CREATED).entity(rtModel).build();
+            }
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        return Response.serverError()
+                .entity(jsonerror("Could not create or update relation type")).build();
+    }
+
+    static public RelationTypeModel create_relation_type(Node tradNode, String relType, Boolean defaultSetting, Transaction tx){
+        // Find any existing relation type on this tradition
+        // Response res = Response.ok().build();
+        RelationTypeModel rtModel = new RelationTypeModel();
+        rtModel.setName(relType);
+        rtModel.setDefaultsettings(defaultSetting);
+        try {
+            // Node traditionNode = VariantGraphService.getTraditionNode(traditionId, tx);
+            // Node traditionNode = tx.getNodeByElementId(traditionId);
+            Node extantRelType = rtModel.lookup(tradNode);
+            // Node extantRelType = tx.findNode(Nodes.RELATION_TYPE, "name", rtModel.getName());
+            if (extantRelType != null) {
+                extantRelType = rtModel.update(tradNode, tx);
+                if (extantRelType != null)
+                    return rtModel;
+            } else {
+                extantRelType = rtModel.instantiate(tradNode, tx);
+                tradNode.createRelationshipTo(extantRelType, ERelations.HAS_RELATION_TYPE);
+                // ctx.commit();
+                if (extantRelType != null)
+                    return rtModel;
+            }
+        }catch (Throwable t){
+            t.printStackTrace();
+        }
+        return rtModel;
+    }
+    static public Boolean create_type(RelationTypeModel rtModel, Transaction tx, String traditionId){
+        Boolean res = false;
+        Node traditionNode = tx.findNode(Nodes.TRADITION, "id", traditionId);
+        Node extantRelType = rtModel.lookup(traditionNode);
 
         // Were we asked for the secret Stemmaweb defaults?
         if (rtModel.getDefaultsettings() != null) {
             // This won't work if we also have an extant type of this name.
             if (extantRelType != null)
-                return Response.status(Response.Status.CONFLICT)
-                        .entity(jsonerror("Cannot instantiate a default for a type that already exists")).build();
-            return this.makeDefaultType();
-        }
+                return false;
+            // Result result = tx.execute("SHOW TRANSACTIONS");
+            // System.out.println("Active transactions:");
+            // while (result.hasNext()) {
+            //     Map<String, Object> row = result.next();
+            //     System.out.println("Transaction: " + row);
+            // }
+            Node createdDefaultType = makeDefaultType(tx, traditionId, rtModel.getName());
 
-        if (extantRelType != null) {
-            extantRelType = rtModel.update(traditionNode);
-            if (extantRelType != null)
-                return Response.ok().entity(rtModel).build();
-        } else {
-            extantRelType = rtModel.instantiate(traditionNode);
-            if (extantRelType != null)
-                return Response.status(Response.Status.CREATED).entity(rtModel).build();
+            // RelationService.linkRelationToTradition(traditionNode, rtModel.getName(), db);
+
+            // Check if relationship already exists
+            boolean relationshipExists = false;
+            for (Relationship rel : traditionNode.getRelationships(Direction.OUTGOING, ERelations.HAS_RELATION_TYPE)) {
+                if (rel.getEndNode().equals(createdDefaultType)) {
+                    relationshipExists = true;
+                    System.out.println("Relationship already exists");
+                    break;
+                }
+            }
+
+            if (!relationshipExists) {
+                // Use direct relationship creation instead of Cypher
+                traditionNode.createRelationshipTo(createdDefaultType, ERelations.HAS_RELATION_TYPE);
+
+            } else {
+                System.out.println("Relationship already exists, no commit needed");
+            }
+
+            return true;
+
         }
-        return Response.serverError().entity(jsonerror("Could neither instantiate nor update relation type")).build();
+        return res;
     }
 
     /**
@@ -126,7 +298,7 @@ public class RelationType {
     public Response delete() {
         RelationTypeModel rtModel = new RelationTypeModel(typeName);
         Node tradition = VariantGraphService.getTraditionNode(traditionId, db.beginTx());
-        Node foundRelType = rtModel.lookup(tradition, db.beginTx());
+        Node foundRelType = rtModel.lookup(tradition);
         if (foundRelType == null) {
             return Response.status(Response.Status.NOT_FOUND).build();
         }
@@ -161,7 +333,7 @@ public class RelationType {
      * @statuscode 201 on success, if a new type was created
      * @statuscode 500 on failure, with an error report in JSON format
      */
-    private Response makeDefaultType() {
+    static Node makeDefaultType(Transaction tx, String traditionId, String typeName) {
         Map<String, String> defaultRelations = new HashMap<>() {{
             put("collated", "Internal use only");
             put("orthographic", "These are the same reading, neither unusually spelled.");
@@ -174,49 +346,53 @@ public class RelationType {
             put("transposition", "This is the same (or nearly the same) reading in a different location.");
             put("repetition", "This is a reading that was repeated in one or more witnesses.");
         }};
+        // try (Transaction tx = db.beginTx()){
 
-        Node tradNode = VariantGraphService.getTraditionNode(traditionId, db.beginTx());
-        RelationTypeModel relType = new RelationTypeModel(typeName);
-        // Does this already exist?
-        Node extantRelType = relType.lookup(tradNode, db.beginTx());
-        if (extantRelType != null)
-            return Response.notModified().build();
+            Node tradNode = VariantGraphService.getTraditionNode(traditionId, tx);
+            RelationTypeModel relType = new RelationTypeModel(typeName);
+            // Does this already exist?
+            Node extantRelType = relType.lookup(tradNode);
+            if (extantRelType != null)
+                throw new RuntimeException("Relation type " + typeName + " already exists in tradition " + traditionId);
 
-        // If we don't have any settings for the requested name, use the settings for "other"
-        String useType = typeName;
-        if (!defaultRelations.containsKey(typeName)) useType = "other";
+            // If we don't have any settings for the requested name, use the settings for "other"
+            String useType = typeName;
+            if (!defaultRelations.containsKey(typeName)) useType = "other";
 
-        relType.setDescription(defaultRelations.get(useType));
-        // Set the bindlevel
-        int bindlevel = 0; // orthographic, punctuation, uncertain, other
-        switch (useType) {
-            case "spelling":
-                bindlevel = 1;
-                break;
-            case "grammatical":
-            case "lexical":
-                bindlevel = 2;
-                break;
-            case "collated":
-            case "transposition":
-            case "repetition":
-                bindlevel = 50;
-                break;
-        }
-        relType.setBindlevel(bindlevel);
-        // Set the booleans
-        relType.setIs_colocation(!(useType.equals("transposition") || useType.equals("repetition")));
-        relType.setIs_weak(useType.equals("collated"));
-        relType.setIs_transitive(!(useType.equals("uncertain") || useType.equals("other")
-                || useType.equals("repetition") || useType.equals("transposition")));
-        relType.setIs_generalizable(!(useType.equals("collated")|| useType.equals("uncertain")
-                || useType.equals("other")));
-        relType.setUse_regular(!useType.equals("orthographic"));
-        // Create the node
-        Node result = relType.instantiate(tradNode);
-        if (result == null)
-            return Response.serverError().entity(jsonerror("Could not instantiate default relation type")).build();
-        else
-            return Response.status(Response.Status.CREATED).entity(relType).build();
+            relType.setDescription(defaultRelations.get(useType));
+            // Set the bindlevel
+            int bindlevel = 0; // orthographic, punctuation, uncertain, other
+            switch (useType) {
+                case "spelling":
+                    bindlevel = 1;
+                    break;
+                case "grammatical":
+                case "lexical":
+                    bindlevel = 2;
+                    break;
+                case "collated":
+                case "transposition":
+                case "repetition":
+                    bindlevel = 50;
+                    break;
+            }
+            relType.setBindlevel(bindlevel);
+            // Set the booleans
+            relType.setIs_colocation(!(useType.equals("transposition") || useType.equals("repetition")));
+            relType.setIs_weak(useType.equals("collated"));
+            relType.setIs_transitive(!(useType.equals("uncertain") || useType.equals("other")
+                    || useType.equals("repetition") || useType.equals("transposition")));
+            relType.setIs_generalizable(!(useType.equals("collated")|| useType.equals("uncertain")
+                    || useType.equals("other")));
+            relType.setUse_regular(!useType.equals("orthographic"));
+            // Create the node
+            Node result = relType.instantiate(tradNode, tx);
+            if (result == null){
+                throw new RuntimeException("Could not create relation type: " + typeName);
+            } else {
+                // tx.commit();
+                return result;
+            }
+        // }
     }
 }

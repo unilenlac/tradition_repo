@@ -5,6 +5,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -14,6 +15,8 @@ import java.util.stream.Collectors;
 
 import javax.ws.rs.core.Response;
 
+import net.stemmaweb.rest.Tradition;
+import net.stemmaweb.services.GraphDatabaseServiceProvider;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -34,18 +37,20 @@ import net.stemmaweb.services.VariantGraphService;
 import net.stemmaweb.stemmaserver.Util;
 
 public class VariantGraphServiceTest {
-    private GraphDatabaseService db;
+    private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
+    private final GraphDatabaseService db = dbServiceProvider.getDatabase();
     private String traditionId;
     private String userId;
-	private DatabaseManagementService dbbuilder;
+
+    public VariantGraphServiceTest() throws IOException {
+    }
 
     @Before
     public void setUp() throws Exception {
 
-        dbbuilder = new DatabaseManagementServiceBuilder(Path.of("")).build();    	dbbuilder.createDatabase("stemmatest");
-    	db = dbbuilder.database("stemmatest");
-        userId = "simon";
-        Util.setupTestDB(db, userId);
+        userId = "admin@example.org";
+
+        Util.setupTestDB(db);
 
         /*
          * load a tradition to the test DB, without Jersey
@@ -84,23 +89,25 @@ public class VariantGraphServiceTest {
     }
 
     @Test
-    public void getSectionNodesTest() {
-        ArrayList<Node> sectionNodes = VariantGraphService.getSectionNodes(traditionId, db);
+    public void getSectionNodesTest(Transaction tx) {
+        Node tradNode = tx.getNodeByElementId(traditionId);
+        ArrayList<Node> sectionNodes = VariantGraphService.getSectionNodes(tradNode, tx);
         assertEquals(1, sectionNodes.size());
-        try (Transaction tx = db.beginTx()) {
+        try {
             assertTrue(sectionNodes.get(0).hasLabel(Label.label("SECTION")));
-            tx.close();
+        }catch (Exception e){
+            e.printStackTrace();
         }
     }
 
     @Test
-    public void getTraditionNodeTest() {
-        Node foundTradition = VariantGraphService.getTraditionNode(traditionId, db.beginTx());
+    public void getTraditionNodeTest(Transaction tx) {
+        Node foundTradition = VariantGraphService.getTraditionNode(traditionId, tx);
         assertNotNull(foundTradition);
         // Now by section node
-        ArrayList<Node> sectionNodes = VariantGraphService.getSectionNodes(traditionId, db);
+        ArrayList<Node> sectionNodes = VariantGraphService.getSectionNodes(foundTradition, tx);
         assertEquals(1, sectionNodes.size());
-        assertEquals(foundTradition, VariantGraphService.getTraditionNode(sectionNodes.get(0), db.beginTx()));
+        assertEquals(foundTradition, VariantGraphService.getTraditionNode(sectionNodes.get(0), tx));
     }
 
     @Test
@@ -110,8 +117,10 @@ public class VariantGraphServiceTest {
                         "src/TestFiles/globalrel_test.xml", "stemmaweb"),
                 "tradId"
         );
-        ArrayList<Node> sections = VariantGraphService.getSectionNodes(newTradId, db);
+        ArrayList<Node> sections = null;
         try (Transaction tx = db.beginTx()) {
+            Node tradNode = tx.getNodeByElementId(traditionId);
+            sections = VariantGraphService.getSectionNodes(tradNode, tx);
             HashMap<Node,Node> representatives = VariantGraphService.normalizeGraph(sections.get(0), List.of("collated"), tx);
             for (Node n : representatives.keySet()) {
                 // If it is represented by itself, it should have an NSEQUENCE both in and out; if not, not.
@@ -128,7 +137,7 @@ public class VariantGraphServiceTest {
                     assertTrue(n.hasRelationship(d, ERelations.REPRESENTS));
                 }
             }
-            tx.close();
+            tx.commit();
         } catch (Exception e) {
             fail();
         }
@@ -152,16 +161,19 @@ public class VariantGraphServiceTest {
                         "src/TestFiles/globalrel_test.xml", "stemmaweb"),
                 "tradId"
         );
-        ArrayList<Node> sections = VariantGraphService.getSectionNodes(newTradId, db);
-        String expectedMajority = "sanoi herra Heinärickus Erjkillen weljellensä Läckämme Hämehen maallen";
+        String expectedMajority;
+        ArrayList<Node> sections = null;
         try (Transaction tx = db.beginTx()) {
+            Node tradNode = tx.getNodeByElementId(newTradId);
+            sections = VariantGraphService.getSectionNodes(tradNode, tx);
+            expectedMajority = "sanoi herra Heinärickus Erjkillen weljellensä Läckämme Hämehen maallen";
             List<Node> majorityReadings = VariantGraphService.calculateMajorityText(sections.get(0), tx);
             List<String> words = majorityReadings.stream()
                     .filter(x -> !x.hasProperty("is_start") && !x.hasProperty("is_end"))
                     .map(x -> x.getProperty("text").toString())
                     .collect(Collectors.toList());
             assertEquals(expectedMajority, String.join(" ", words));
-            tx.close();
+            tx.commit();
         } catch (Exception e) {
             fail();
         }
@@ -191,7 +203,7 @@ public class VariantGraphServiceTest {
                     .map(x -> x.getProperty("text").toString())
                     .collect(Collectors.toList());
             assertEquals(expectedMajority, String.join(" ", words));
-            tx.close();
+            tx.commit();
         } catch (Exception e) {
             fail();
         }
@@ -210,10 +222,11 @@ public class VariantGraphServiceTest {
      */
     @After
     public void tearDown() {
-//        db.shutdown();
-    	if (dbbuilder != null) {
-    		dbbuilder.shutdownDatabase(db.databaseName());
-    	}
+        DatabaseManagementService service = dbServiceProvider.getManagementService();
+
+        if (service != null) {
+            service.shutdownDatabase(db.databaseName());
+        }
     }
 
 }

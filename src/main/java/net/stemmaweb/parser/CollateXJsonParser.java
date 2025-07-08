@@ -34,7 +34,7 @@ public class CollateXJsonParser {
      * @param parentNode - The section node that will carry the parsed data
      * @return a Response to indicate the result
      */
-    public Response parseCollateXJson(InputStream filestream, Node parentNode) {
+    public Response parseCollateXJson(InputStream filestream, Node parentNode, Transaction tx) {
         // parse the JSON
         ArrayList<String> collationWitnesses = new ArrayList<>();
         ArrayList<ArrayList<ReadingModel>> collationTable = new ArrayList<>();
@@ -121,7 +121,7 @@ public class CollateXJsonParser {
         }
 
         // Now we have the data in our own model classes; proceed.
-        try (Transaction tx = db.beginTx()) {
+        try {
             Node traditionNode = VariantGraphService.getTraditionNode(parentNode, tx);
             // Check that we have all the witnesses
             for (String witString : collationWitnesses) {
@@ -199,14 +199,14 @@ public class CollateXJsonParser {
                 }
             }
 
-            Node endNode = Util.createEndNode(parentNode, rank);
+            Node endNode = Util.createEndNode(parentNode, rank, tx);
 
             for (String witString : collationWitnesses) {
                 List<String> witParts = parseWitnessSigil(witString);
                 Node lastReading = lastWitnessReading.get(witString);
                 ReadingService.addWitnessLink(lastReading, endNode, witParts.get(0), witParts.get(1), tx);
             }
-            tx.commit();
+            // tx.commit();
             return Response.status(Response.Status.CREATED).entity(jsonresp("parentId", parentNode.getElementId())).build();
         } catch (IllegalArgumentException e) {
             return Response.status(Response.Status.BAD_REQUEST).entity(jsonerror(e.getMessage())).build();

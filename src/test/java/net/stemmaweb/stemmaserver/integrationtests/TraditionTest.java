@@ -24,6 +24,7 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 
+import net.stemmaweb.services.GraphDatabaseServiceProvider;
 import org.glassfish.jersey.test.JerseyTest;
 import org.junit.After;
 import org.junit.Before;
@@ -58,8 +59,8 @@ import net.stemmaweb.stemmaserver.Util;
 public class TraditionTest {
     private String tradId;
 
-    private GraphDatabaseService db;
-    private DatabaseManagementService dbbuilder;
+    private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
+    private final GraphDatabaseService db = dbServiceProvider.getDatabase();
 
     /*
      * JerseyTest is the test environment to Test api calls it provides a
@@ -67,12 +68,13 @@ public class TraditionTest {
      */
     private JerseyTest jerseyTest;
 
+    public TraditionTest() throws IOException {
+    }
+
     @Before
     public void setUp() throws Exception {
 
-        dbbuilder = new DatabaseManagementServiceBuilder(Path.of("")).build();    	dbbuilder.createDatabase("stemmatest");
-    	db = dbbuilder.database("stemmatest");
-        Util.setupTestDB(db, "1");
+        Util.setupTestDB(db);
 
         // Create a JerseyTestServer for the necessary REST API calls
 
@@ -183,7 +185,7 @@ public class TraditionTest {
     public void getWitnessesMultiSectionTest () {
         Set<String> expectedWitnesses = new HashSet<>(Arrays.asList("A", "B", "C"));
         // Add the same data as a second section
-        Util.addSectionToTradition(jerseyTest, tradId, "src/TestFiles/testTradition.xml", "stemmaweb", "section 2");
+        Util.addSectionToTradition(jerseyTest, tradId, "src/TestFiles/testTradition.xml", "stemmaweb", "section 2", true);
         List<WitnessModel> witnesses = jerseyTest.target("/tradition/" + tradId + "/witnesses")
                 .request()
                 .get(new GenericType<>() {});
@@ -502,8 +504,8 @@ public class TraditionTest {
             for (int r : alignRanks) {
                 ResourceIterator<Node> atRank = tx.findNodes(Nodes.READING, "rank", r);
                 assertTrue(atRank.hasNext());
-                ReadingModel rdg1 = new ReadingModel(atRank.next());
-                ReadingModel rdg2 = new ReadingModel(atRank.next());
+                ReadingModel rdg1 = new ReadingModel(atRank.next(), tx);
+                ReadingModel rdg2 = new ReadingModel(atRank.next(), tx);
                 RelationModel rel = new RelationModel();
                 rel.setType("grammatical");
                 rel.setScope("local");
@@ -593,10 +595,12 @@ public class TraditionTest {
      */
     @After
     public void tearDown() throws Exception {
+        DatabaseManagementService service = dbServiceProvider.getManagementService();
+
+        if (service != null) {
+            service.shutdownDatabase(db.databaseName());
+        }
+
         jerseyTest.tearDown();
-//        db.shutdown();
-    	if (dbbuilder != null) {
-    		dbbuilder.shutdownDatabase(db.databaseName());
-    	}
     }
 }

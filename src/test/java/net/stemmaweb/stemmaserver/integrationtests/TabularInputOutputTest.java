@@ -2,6 +2,7 @@ package net.stemmaweb.stemmaserver.integrationtests;
 
 import static org.junit.Assert.assertNotEquals;
 
+import java.io.IOException;
 import java.io.StringReader;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -20,6 +21,7 @@ import javax.ws.rs.core.GenericType;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 
+import net.stemmaweb.services.GraphDatabaseServiceProvider;
 import org.glassfish.jersey.test.JerseyTest;
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -59,15 +61,17 @@ import net.stemmaweb.stemmaserver.Util;
 @SuppressWarnings("unchecked")
 public class TabularInputOutputTest extends TestCase {
 
-    private GraphDatabaseService db;
+    private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
+    private final GraphDatabaseService db = dbServiceProvider.getDatabase();
     private JerseyTest jerseyTest;
-	private DatabaseManagementService dbbuilder;
+
+    public TabularInputOutputTest() throws IOException {
+    }
 
     public void setUp() throws Exception {
         super.setUp();
-        dbbuilder = new DatabaseManagementServiceBuilder(Path.of("")).build();    	dbbuilder.createDatabase("stemmatest");
-    	db = dbbuilder.database("stemmatest");
-        Util.setupTestDB(db, "1");
+
+        Util.setupTestDB(db);
 
         // Create a JerseyTestServer for the necessary REST API calls
 
@@ -283,7 +287,7 @@ public class TabularInputOutputTest extends TestCase {
         while (i < 3) {
             String fileName = String.format("src/TestFiles/florilegium_%c.csv", 120 + i++);
             String sectId = Util.getValueFromJson(
-                    Util.addSectionToTradition(jerseyTest, tradId, fileName, "csv", String.format("part %d", i)),
+                    Util.addSectionToTradition(jerseyTest, tradId, fileName, "csv", String.format("part %d", i), true),
                     "sectionId");
             tradSections.add(sectId);
         }
@@ -529,7 +533,7 @@ public class TabularInputOutputTest extends TestCase {
 
         // Add the second section
         Util.addSectionToTradition(jerseyTest, traditionId, "src/TestFiles/legendfrag.xml",
-                "stemmaweb", "section 2");
+                "stemmaweb", "section 2", true);
 
         // Export the whole thing to JSON and check the readings
         response = jerseyTest.target("/tradition/" + traditionId + "/json")
@@ -569,7 +573,7 @@ public class TabularInputOutputTest extends TestCase {
 
         // Now add the section with corrections
         Util.addSectionToTradition(jerseyTest, traditionId, "src/TestFiles/Matthew-407.json",
-                "cxjson", "AM 407");
+                "cxjson", "AM 407", true);
 
         // Export it to JSON
         response = jerseyTest.target("/tradition/" + traditionId + "/json")
@@ -938,11 +942,13 @@ public class TabularInputOutputTest extends TestCase {
     }
 
     public void tearDown() throws Exception {
-//        db.shutdown();
-    	if (dbbuilder != null) {
-    		dbbuilder.shutdownDatabase(db.databaseName());
-    	}
-       jerseyTest.tearDown();
+        DatabaseManagementService service = dbServiceProvider.getManagementService();
+
+        if (service != null) {
+            service.shutdownDatabase(db.databaseName());
+        }
+
+        jerseyTest.tearDown();
         super.tearDown();
     }
 }

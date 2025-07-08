@@ -6,7 +6,7 @@
   <key attr.name="is_end" attr.type="boolean" for="node" id="dn2"/>
   <key attr.name="is_nonsense" attr.type="boolean" for="node" id="dn13"/>
   <key attr.name="join_prior" attr.type="boolean" for="node" id="dn9"/>
-  <key attr.name="section_id" attr.type="long" for="node" id="dn4"/>
+  <key attr.name="section_label" attr.type="long" for="node" id="dn4"/>
   <key attr.name="normal_form" attr.type="string" for="node" id="dn6"/>
   <key attr.name="is_lemma" attr.type="boolean" for="node" id="dn10"/>
   <key attr.name="extra" attr.type="string" for="node" id="dn8"/>

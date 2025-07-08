@@ -42,35 +42,36 @@ public class AnnotationLabelModel {
      * Initialize from a Neo4J node
      * @param alNode - the node to init from
      */
-    public AnnotationLabelModel(Node alNode) {
-        initFromNode(alNode);
+    public AnnotationLabelModel(Node alNode, Transaction tx) {
+        initFromNode(alNode, tx);
     }
 
     /**
      * Look up by tradition ID and name. Returns an empty AnnotationLabelModel if no relevant node is found.
      *
-     * @param tradId - the tradition ID
+     * @param tradNode - the tradition ID
      * @param name   - the label name to look for
      */
-    public AnnotationLabelModel(String tradId, String name) {
-        GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+    public AnnotationLabelModel(Node tradNode, String name, Transaction tx) {
+        // GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
         Node alNode = null;
-        try (Transaction tx = db.beginTx()) {
-            Node tradNode = tx.findNode(Nodes.TRADITION, "id", tradId);
+        try {
+            // Node tradNode = tx.findNode(Nodes.TRADITION, "id", tradId);
             for (Relationship r : tradNode.getRelationships(Direction.OUTGOING, ERelations.HAS_ANNOTATION_TYPE))
                 if (r.getEndNode().getProperty("name", "").equals(name)) {
                     alNode = r.getEndNode();
                 }
-            tx.close();
+        }catch (Exception e){
+            e.printStackTrace();
         }
         if (alNode != null)
-            initFromNode(alNode);
+            initFromNode(alNode, tx);
     }
 
-    private void initFromNode(Node annNode) {
-//        GraphDatabaseService db = annNode.getGraphDatabase();
-        GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
-        try (Transaction tx = db.beginTx()) {
+    private void initFromNode(Node annNode, Transaction tx) {
+        // GraphDatabaseService db = annNode.getGraphDatabase();
+        // GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+        try {
             // Look up the name
             this.setName(annNode.getProperty("name").toString());
 
@@ -93,7 +94,8 @@ public class AnnotationLabelModel {
                     links.put(key, lnode.getProperty(key).toString());
                 }
             }
-            tx.close();
+        }catch(Exception e){
+            e.printStackTrace();
         }
     }
 

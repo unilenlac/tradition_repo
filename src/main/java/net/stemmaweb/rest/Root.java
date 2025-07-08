@@ -157,12 +157,12 @@ public class Root {
 
 
         if(db == null){
-            this.db = new GraphDatabaseServiceProvider("test").getDatabase();
+            this.db = new GraphDatabaseServiceProvider().getDatabase();
         }
         if (!DatabaseService.userExists(userId, db)) {
             return Response.status(Response.Status.CONFLICT)
-                    .entity(jsonerror("No user with this id exists"))
-                    .build();
+                .entity(jsonerror("No user with this id exists"))
+                .build();
         }
 
         if (fileDetail == null && uploadedInputStream == null && empty == null) {
@@ -181,18 +181,25 @@ public class Root {
         try {
             this.linkUserToTradition(userId, tradId);
         } catch (Exception e) {
-            new Tradition(tradId).deleteTraditionById();
+            try (Transaction tx = db.beginTx()) {
+                Tradition.delete_tradition(tradId, tx);
+                tx.commit();
+            } catch (Exception e2) {
+                System.out.println("Error deleting tradition: " + e2.getMessage());
+            }
             return Response.serverError().entity(jsonerror(e.getMessage())).build();
         }
 
         // If we got file contents, we should send them off for parsing.
         if (empty == null) {
+
             try(Transaction tx = db.beginTx()){
+                // Node trad_node = tx.findNode(Nodes.TRADITION, "id", tradId);
                 Response dataResult = Tradition.parseDispatcher(VariantGraphService.getTraditionNode(tradId, tx),
-                        filetype, uploadedInputStream, false);
+                        filetype, uploadedInputStream, false, tx);
                 if (dataResult.getStatus() != Response.Status.CREATED.getStatusCode()) {
                     // If something went wrong, delete the new tradition immediately and return the error.
-                    new Tradition(tradId).deleteTraditionById();
+                    Tradition.delete_tradition(tradId, tx);
                     return dataResult;
                 }
                 // If we just parsed GraphML (the only format that can preserve prior tradition IDs),
@@ -206,6 +213,10 @@ public class Root {
                         return Response.serverError().entity(jsonerror("Bad file parse response")).build();
                     }
                 }
+            tx.commit();
+            }catch (Throwable t){
+                System.out.println("Error parsing file: " + t.getMessage());
+                t.printStackTrace();
             }
         }
 

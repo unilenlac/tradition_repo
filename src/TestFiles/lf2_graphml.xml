@@ -1,7 +1,8 @@
 <?xml version='1.0' encoding='UTF-8'?>
+<!-- excluded : unwell formed XML file -->
 <graphml xmlns="http://graphml.graphdrawing.org/xmlns" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://graphml.graphdrawing.org/xmlns http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd">
   <key attr.name="is_start" attr.type="boolean" for="node" id="dn8"/>
-  <key attr.name="section_id" attr.type="long" for="node" id="dn5"/>
+  <key attr.name="section_label" attr.type="long" for="node" id="dn5"/>
   <key attr.name="is_lacuna" attr.type="boolean" for="node" id="dn9"/>
   <key attr.name="is_common" attr.type="boolean" for="node" id="dn7"/>
   <key attr.name="name" attr.type="string" for="node" id="dn1"/>
@@ -16,7 +17,7 @@
   <key attr.name="neolabel" attr.type="string" for="edge" id="de0"/>
   <key attr.name="type" attr.type="string" for="edge" id="de4"/>
   <key attr.name="witnesses" attr.type="stringarray" for="edge" id="de1"/>
-  <graph id="Legend" edgedefault="directed" parse.edgeids="canonical" parse.edges="87" parse.nodeids="canonical" parse.nodes="88" parse.order="nodesfirst">
+  <graph id="Legend" edgedefault="directed" parse.edgeids="canonical" parse.edges="76" parse.nodeids="canonical" parse.nodes="47" parse.order="nodesfirst">
     <node id="120">
       <data key="dn0">[SECTION]</data>
       <data key="dn1">section 2</data>

@@ -3,11 +3,13 @@ package net.stemmaweb.stemmaserver.integrationtests;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 
 import javax.ws.rs.core.Response;
 
+import net.stemmaweb.services.GraphDatabaseServiceProvider;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -29,20 +31,26 @@ import net.stemmaweb.stemmaserver.Util;
  */
 public class DatabaseServiceTest {
 
-    private GraphDatabaseService db;
     private String traditionId;
     private String userId;
 	private DatabaseManagementService dbbuilder;
+
+    private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
+
+    private final GraphDatabaseService db = dbServiceProvider.getDatabase();
+
+    public DatabaseServiceTest() throws IOException {
+    }
 
     @Before
     public void setUp() throws Exception {
 
 //      db = new GraphDatabaseServiceProvider(new TestGraphDatabaseFactory().newImpermanentDatabase()).getDatabase();
-    	dbbuilder = new DatabaseManagementServiceBuilder(Path.of("")).build();
-    	dbbuilder.createDatabase("stemmatest");
-    	db = dbbuilder.database("stemmatest");
+    	// dbbuilder = new DatabaseManagementServiceBuilder(Path.of("")).build();
+    	// dbbuilder.createDatabase("stemmatest");
+    	// db = dbbuilder.database("stemmatest");
         userId = "simon";
-        Util.setupTestDB(db, userId);
+        Util.setupTestDB(db);
 
         /*
          * load a tradition to the test DB, without Jersey
@@ -73,9 +81,10 @@ public class DatabaseServiceTest {
      */
     @After
     public void tearDown() {
-//        db.shutdown();
-    	if (dbbuilder != null) {
-    		dbbuilder.shutdownDatabase(db.databaseName());
-    	}
+        DatabaseManagementService service = dbServiceProvider.getManagementService();
+
+        if (service != null) {
+            service.shutdownDatabase(db.databaseName());
+        }
     }
 }

@@ -4,6 +4,7 @@ import static org.junit.Assert.assertNotEquals;
 
 import java.io.File;
 import java.io.FileReader;
+import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.util.ArrayList;
@@ -52,17 +53,21 @@ import net.stemmaweb.stemmaserver.Util;
  */
 public class GraphMLInputOutputTest extends TestCase {
 
-    private GraphDatabaseService db;
+    private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
+    private final GraphDatabaseService db = dbServiceProvider.getDatabase();
     private JerseyTest jerseyTest;
     private String tradId;
     private String multiTradId;
 	private DatabaseManagementService dbService;
 
+    public GraphMLInputOutputTest() throws IOException {
+    }
+
     public void setUp() throws Exception {
         super.setUp();
-//        db = new GraphDatabaseServiceProvider(new TestGraphDatabaseFactory().newImpermanentDatabase()).getDatabase();
-    	db = new GraphDatabaseServiceProvider((String) null).getDatabase();
-        Util.setupTestDB(db, "me@example.org");
+        // db = new GraphDatabaseServiceProvider(new TestGraphDatabaseFactory().newImpermanentDatabase()).getDatabase();
+    	// db = new GraphDatabaseServiceProvider((String) null).getDatabase();
+        Util.setupTestDB(db);
 
         // Create a JerseyTestServer for the necessary REST API calls
         jerseyTest = Util.setupJersey();
@@ -77,7 +82,7 @@ public class GraphMLInputOutputTest extends TestCase {
                 "LR", "me@example.org", "src/TestFiles/legendfrag.xml", "stemmaweb");
         multiTradId = Util.getValueFromJson(r, "tradId");
         Util.addSectionToTradition(jerseyTest, multiTradId, "src/TestFiles/lf2.xml",
-                "stemmaweb", "section 2");
+                "stemmaweb", "section 2", true);
 
     }
 
@@ -299,7 +304,7 @@ public class GraphMLInputOutputTest extends TestCase {
 
         // Add a second section so we can export it
         String florSect2 = Util.getValueFromJson(Util.addSectionToTradition(jerseyTest, florId,
-                "src/TestFiles/florilegium_y.csv", "csv", "Chrysostom"), "sectionId");
+                "src/TestFiles/florilegium_y.csv", "csv", "Chrysostom", true), "sectionId");
         r = jerseyTest.target("/tradition/" + florId + "/section/" + florSect2 + "/graphml")
                 .request()
                 .get();
@@ -324,7 +329,7 @@ public class GraphMLInputOutputTest extends TestCase {
                 .get(new GenericType<>() {});
         assertEquals(5, wits.size());
         // Add the second section
-        r = Util.addSectionToTradition(jerseyTest, flor2Id, womenfile, "graphml", "Appearance of women");
+        r = Util.addSectionToTradition(jerseyTest, flor2Id, womenfile, "graphml", "Appearance of women", true);
         assertEquals(Response.Status.CREATED.getStatusCode(), r.getStatus());
         // Count the witnesses
         wits = jerseyTest.target("/tradition/" + flor2Id + "/witnesses")
@@ -408,7 +413,7 @@ public class GraphMLInputOutputTest extends TestCase {
 
         // Add a second section to this tradition
         r = Util.addSectionToTradition(jerseyTest, mattId, "src/TestFiles/milestone-591.zip",
-                "graphml", "section 591");
+                "graphml", "section 591", true);
         assertEquals(Response.Status.CREATED.getStatusCode(), r.getStatus());
         String s591 = Util.getValueFromJson(r, "sectionId");
         assertNotNull(s591);
@@ -533,7 +538,7 @@ public class GraphMLInputOutputTest extends TestCase {
 
         // Try to add a file that has been unzipped and rezipped by the user. It should fail
         r = Util.addSectionToTradition(jerseyTest, mattId, "src/TestFiles/milestone-591-BAD.zip",
-                "graphml", "591");
+                "graphml", "591", true);
         // This should really be BAD REQUEST, but let's see if we can reproduce the problem
         assertEquals(Response.Status.BAD_REQUEST.getStatusCode(), r.getStatus());
 

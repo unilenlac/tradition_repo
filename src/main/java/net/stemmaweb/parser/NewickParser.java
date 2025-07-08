@@ -72,7 +72,7 @@ public class NewickParser {
                     wit = findOrCreateExtant(traditionNode, n.getName(), tx);
                 } else {
                     // It's a hypothetical node, so make it from scratch.
-                    wit = Util.createWitness(traditionNode, String.valueOf(n.getKey()), true);
+                    wit = Util.createWitness(traditionNode, String.valueOf(n.getKey()), true, tx);
                 }
                 stemmaNode.createRelationshipTo(wit, ERelations.HAS_WITNESS);
                 stemmaWits.put(n.getKey(), wit);

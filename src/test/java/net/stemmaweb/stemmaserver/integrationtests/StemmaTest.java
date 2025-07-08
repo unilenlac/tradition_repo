@@ -6,6 +6,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -21,6 +22,7 @@ import javax.ws.rs.core.GenericType;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 
+import net.stemmaweb.services.GraphDatabaseServiceProvider;
 import org.glassfish.jersey.test.JerseyTest;
 import org.junit.After;
 import org.junit.Before;
@@ -51,9 +53,8 @@ import net.stemmaweb.stemmaserver.Util;
  */
 public class StemmaTest {
     private String tradId;
-
-    private GraphDatabaseService db;
-	private DatabaseManagementService dbbuilder;
+    private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
+    private final GraphDatabaseService db = dbServiceProvider.getDatabase();
 
     /*
      * JerseyTest is the test environment to Test api calls it provides a
@@ -61,12 +62,13 @@ public class StemmaTest {
      */
     private JerseyTest jerseyTest;
 
+    public StemmaTest() throws IOException {
+    }
+
     @Before
     public void setUp() throws Exception {
 
-        dbbuilder = new DatabaseManagementServiceBuilder(Path.of("")).build();    	dbbuilder.createDatabase("stemmatest");
-    	db = dbbuilder.database("stemmatest");
-        Util.setupTestDB(db, "1");
+        Util.setupTestDB(db);
 
         /*
          * Create a JerseyTestServer serving the Resource under test
@@ -492,11 +494,11 @@ public class StemmaTest {
         } catch (Exception e) {
             fail();
         }
-        Response parseResponse = parser.importStemmaFromDot(tradId, stemmaCM);
+        Response parseResponse = parser.importStemmaFromDot(tradId, stemmaCM, db.beginTx());
         assertEquals(Response.Status.CREATED.getStatusCode(), parseResponse.getStatus());
         assertEquals(originalNodeCount + 9, countGraphNodes());
 
-        parseResponse = parser.importStemmaFromDot(tradId, stemmaTF);
+        parseResponse = parser.importStemmaFromDot(tradId, stemmaTF, db.beginTx());
         assertEquals(Response.Status.CREATED.getStatusCode(), parseResponse.getStatus());
         assertEquals(originalNodeCount + 19, countGraphNodes());
 
@@ -700,10 +702,12 @@ public class StemmaTest {
      */
     @After
     public void tearDown() throws Exception {
-//        db.shutdown();
-    	if (dbbuilder != null) {
-    		dbbuilder.shutdownDatabase(db.databaseName());
-    	}
+        DatabaseManagementService service = dbServiceProvider.getManagementService();
+
+        if (service != null) {
+            service.shutdownDatabase(db.databaseName());
+        }
+
         jerseyTest.tearDown();
     }
 }

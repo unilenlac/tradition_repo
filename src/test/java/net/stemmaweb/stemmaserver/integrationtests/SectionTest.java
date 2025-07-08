@@ -2,6 +2,7 @@ package net.stemmaweb.stemmaserver.integrationtests;
 
 import static org.junit.Assert.assertNotEquals;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -19,6 +20,7 @@ import javax.ws.rs.core.MultivaluedHashMap;
 import javax.ws.rs.core.MultivaluedMap;
 import javax.ws.rs.core.Response;
 
+import net.stemmaweb.services.GraphDatabaseServiceProvider;
 import org.glassfish.jersey.test.JerseyTest;
 import org.junit.After;
 import org.junit.Before;
@@ -57,18 +59,20 @@ import net.stemmaweb.stemmaserver.Util;
  */
 public class SectionTest extends TestCase {
 
-    private GraphDatabaseService db;
+    private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
+    private final GraphDatabaseService db = dbServiceProvider.getDatabase();
     private JerseyTest jerseyTest;
     private String tradId;
     private String firstSectId;
-	private DatabaseManagementService dbbuilder;
+
+    public SectionTest() throws IOException {
+    }
 
     @Before
     public void setUp() throws Exception {
         super.setUp();
-        dbbuilder = new DatabaseManagementServiceBuilder(Path.of("")).build();    	dbbuilder.createDatabase("stemmatest");
-    	db = dbbuilder.database("stemmatest");
-        Util.setupTestDB(db, "user@example.com");
+
+        Util.setupTestDB(db);
 
         // Create a JerseyTestServer for the necessary REST API calls
         jerseyTest = JerseyTestServerFactory.newJerseyTestServer()
@@ -113,7 +117,7 @@ public class SectionTest extends TestCase {
         Node endNode = VariantGraphService.getEndNode(tradId, db.beginTx());
 
         String newSectId = Util.getValueFromJson(Util.addSectionToTradition(jerseyTest, tradId, "src/TestFiles/lf2.xml",
-                "stemmaweb", "section 2"), "sectionId");
+                "stemmaweb", "section 2", true), "sectionId");
 
         List<SectionModel> tSections = jerseyTest.target("/tradition/" + tradId + "/sections")
                 .request()
@@ -143,7 +147,7 @@ public class SectionTest extends TestCase {
 
     public void testSectionRelationships() {
         String newSectId = Util.getValueFromJson(Util.addSectionToTradition(jerseyTest, tradId, "src/TestFiles/lf2.xml",
-                "stemmaweb", "section 2"), "sectionId");
+                "stemmaweb", "section 2", true), "sectionId");
         List<RelationModel> sectRels = jerseyTest.target("/tradition/" + tradId + "/section/" + newSectId + "/relations")
                 .request()
                 .get(new GenericType<>() {});
@@ -156,7 +160,7 @@ public class SectionTest extends TestCase {
 
     public void testSectionReadings() {
         String newSectId = Util.getValueFromJson(Util.addSectionToTradition(jerseyTest, tradId, "src/TestFiles/lf2.xml",
-                "stemmaweb", "section 2"), "sectionId");
+                "stemmaweb", "section 2", true), "sectionId");
         List<ReadingModel> sectRdgs = jerseyTest.target("/tradition/" + tradId + "/section/" + newSectId + "/readings")
                 .request()
                 .get(new GenericType<>() {});
@@ -169,7 +173,7 @@ public class SectionTest extends TestCase {
 
     public void testSectionRequestReading() {
         String newSectId = Util.getValueFromJson(Util.addSectionToTradition(jerseyTest, tradId, "src/TestFiles/lf2.xml",
-                "stemmaweb", "section 2"), "sectionId");
+                "stemmaweb", "section 2", true), "sectionId");
         List<ReadingModel> sectRdgs = jerseyTest.target("/tradition/" + tradId + "/section/" + newSectId + "/readings")
                 .request()
                 .get(new GenericType<>() {});
@@ -208,7 +212,7 @@ public class SectionTest extends TestCase {
 
     public void testAddGraphmlSectionWithWitnesses() {
         String newSectId = Util.getValueFromJson(Util.addSectionToTradition(jerseyTest, tradId, "src/TestFiles/lf2_graphml.xml",
-                "graphmlsingle", "section 2"), "sectionId");
+                "graphmlsingle", "section 2", true), "sectionId");
 
         List<SectionModel> tSections = jerseyTest.target("/tradition/" + tradId + "/sections")
                 .request()
@@ -242,7 +246,7 @@ public class SectionTest extends TestCase {
                 .get(new GenericType<>() {});
         assertEquals(30, tReadings.size());
 
-        Util.addSectionToTradition(jerseyTest, tradId, "src/TestFiles/lf2.xml", "stemmaweb", "section 2");
+        Util.addSectionToTradition(jerseyTest, tradId, "src/TestFiles/lf2.xml", "stemmaweb", "section 2", true);
         tReadings = jerseyTest.target("/tradition/" + tradId + "/readings")
                 .request()
                 .get(new GenericType<>() {});
@@ -373,7 +377,7 @@ public class SectionTest extends TestCase {
         List<String> florIds = Util.importFlorilegium(jerseyTest);
         String florId = florIds.remove(0);
         String newSectId = Util.getValueFromJson(Util.addSectionToTradition(jerseyTest, tradId,
-                "src/TestFiles/lf2.xml", "stemmaweb", "section 2"), "parentId");
+                "src/TestFiles/lf2.xml", "stemmaweb", "section 2", true), "parentId");
         Response jerseyResult = jerseyTest
                 .target("/tradition/" + florId + "/section/" + newSectId + "/witness/A")
                 .request()
@@ -1080,7 +1084,7 @@ public class SectionTest extends TestCase {
 
     public void testLemmaText() {
         String newSectId = Util.getValueFromJson(Util.addSectionToTradition(jerseyTest, tradId, "src/TestFiles/lf2.xml",
-                "stemmaweb", "section 2"), "sectionId");
+                "stemmaweb", "section 2", true), "sectionId");
 
         // First check before any lemma readings are set
         Response jerseyResult = jerseyTest
@@ -1372,7 +1376,7 @@ public class SectionTest extends TestCase {
         HashMap<String, String> data = new HashMap<>();
         // Add the second section
         Util.addSectionToTradition(jerseyTest, tradId, "src/TestFiles/lf2.xml",
-                "stemmaweb", "section 2");
+                "stemmaweb", "section 2", true);
         // Get both section IDs
         List<SectionModel> ourSections = jerseyTest
                 .target("/tradition/" + tradId + "/sections")
@@ -1487,10 +1491,12 @@ public class SectionTest extends TestCase {
 
     @After
     public void tearDown() throws Exception {
-//        db.shutdown();
-    	if (dbbuilder != null) {
-    		dbbuilder.shutdownDatabase(db.databaseName());
-    	}
+        DatabaseManagementService service = dbServiceProvider.getManagementService();
+
+        if (service != null) {
+            service.shutdownDatabase(db.databaseName());
+        }
+
         jerseyTest.tearDown();
         super.tearDown();
     }

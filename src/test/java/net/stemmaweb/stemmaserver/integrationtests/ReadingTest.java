@@ -9,6 +9,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -31,6 +32,7 @@ import javax.ws.rs.core.MultivaluedMap;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 
+import net.stemmaweb.services.GraphDatabaseServiceProvider;
 import org.glassfish.jersey.test.JerseyTest;
 import org.junit.After;
 import org.junit.Before;
@@ -88,8 +90,8 @@ public class ReadingTest {
     private String expectedWitnessB = "when april his showers sweet with fruit the march of drought has pierced to the root";
     private String expectedWitnessC = "when showers sweet with fruit to drought of march has pierced teh rood-of-the-world";
 
-    private GraphDatabaseService db;
-    private DatabaseManagementService dbbuilder;
+    private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
+    private final GraphDatabaseService db = dbServiceProvider.getDatabase();
     private HashMap<String, String> readingLookup = new HashMap<>();
 
     /*
@@ -98,18 +100,16 @@ public class ReadingTest {
      */
     private JerseyTest jerseyTest;
 
+    public ReadingTest() throws IOException {
+    }
+
     @Before
     public void setUp() throws Exception {
-
-//        db = new GraphDatabaseServiceProvider(new TestGraphDatabaseFactory().newImpermanentDatabase()).getDatabase();
-        dbbuilder = new DatabaseManagementServiceBuilder(Path.of("")).build();    	dbbuilder.createDatabase("stemmatest");
-    	db = dbbuilder.database("stemmatest");
 
         /*
          * Populate the test database with the root node and a user with id 1
          */
-        DatabaseService.createRootNode(db);
-        Util.setupTestDB(db, "1");
+        Util.setupTestDB(db);
 
         // Create a JerseyTestServer for the necessary REST API calls
 
@@ -206,7 +206,7 @@ public class ReadingTest {
         assertEquals(Status.NOT_FOUND.getStatusCode(), r.getStatus());
 
         // Add a second section to the first text
-        r = Util.addSectionToTradition(jerseyTest, tradId, "src/TestFiles/testTradition.xml", "stemmaweb", "1");
+        r = Util.addSectionToTradition(jerseyTest, tradId, "src/TestFiles/testTradition.xml", "stemmaweb", "1", true);
         assertEquals(Status.CREATED.getStatusCode(), r.getStatus());
         String newSectId = Util.getValueFromJson(r, "sectionId");
 
@@ -342,8 +342,8 @@ public class ReadingTest {
         ReadingModel expectedReadingModel;
         try (Transaction tx = db.beginTx()) {
             Node node = tx.getNodeByElementId(nodeId);
-            expectedReadingModel = new ReadingModel(node);
-            tx.close();
+            expectedReadingModel = new ReadingModel(node, tx);
+            tx.commit();
         }
 
             ReadingModel readingModel = jerseyTest
@@ -664,7 +664,7 @@ public class ReadingTest {
         ReadingModel umin;
         try (Transaction tx = db.beginTx()) {
             List<ReadingModel> rank1 = tx.findNodes(Nodes.READING, "rank", 1L).stream()
-                    .map(ReadingModel::new).collect(Collectors.toList());
+                    .map(n -> new ReadingModel(n, tx)).collect(Collectors.toList());
             for (ReadingModel r : rank1) {
                 if (r.getText().equals("ν̣ηθια")) nithia = r.getId();
                 if (r.getText().equals("Λεγει")) Legei = r.getId();
@@ -672,7 +672,7 @@ public class ReadingTest {
 
             Node uminRdg = tx.findNode(Nodes.READING, "rank", 32L);
             assertNotNull(uminRdg);
-            umin = new ReadingModel(uminRdg);
+            umin = new ReadingModel(uminRdg, tx);
             tx.close();
         }
         assertNotNull(nithia);
@@ -1342,7 +1342,7 @@ public class ReadingTest {
             assertFalse(nodes.hasNext());
 
             // Save the model of the reading we'll lose
-            ReadingModel drm = new ReadingModel(secondNode);
+            ReadingModel drm = new ReadingModel(secondNode, tx);
 
             // merge readings
             Response response = jerseyTest
@@ -1360,11 +1360,11 @@ public class ReadingTest {
             for (SequenceModel seq : ourResult.getSequences()) {
                 assertEquals("SEQUENCE", seq.getType());
                 if (seq.getTarget().equals(firstNode.getElementId())) {
-                    ReadingModel before = new ReadingModel(tx.getNodeByElementId(seq.getSource()));
+                    ReadingModel before = new ReadingModel(tx.getNodeByElementId(seq.getSource()), tx);
                     assertEquals("with", before.getText());
                     assertEquals(Long.valueOf(7), before.getRank());
                 } else if (seq.getSource().equals(firstNode.getElementId())) {
-                    ReadingModel after = new ReadingModel(tx.getNodeByElementId(seq.getTarget()));
+                    ReadingModel after = new ReadingModel(tx.getNodeByElementId(seq.getTarget()), tx);
                     assertEquals(Long.valueOf(9), after.getRank());
                     assertEquals("the", after.getText());
                     assertTrue(after.getWitnesses().containsAll(Arrays.asList("A", "B")));
@@ -1479,14 +1479,14 @@ public class ReadingTest {
         try (Transaction tx = db.beginTx()) {
             Optional<Node> the = tx.findNodes(Nodes.READING, "text", "the").stream().filter(x -> x.getProperty("rank").equals(16L)).findFirst();
             assertTrue(the.isPresent());
-            rmThe = new ReadingModel(the.get());
+            rmThe = new ReadingModel(the.get(), tx);
             Node teh = tx.findNode(Nodes.READING, "text", "teh");
             assertNotNull(teh);
             teh.setProperty("text", "the");
-            rmTeh = new ReadingModel(teh);
+            rmTeh = new ReadingModel(teh, tx);
             Optional<Node> to = tx.findNodes(Nodes.READING, "text", "to").stream().filter(x -> x.getProperty("rank").equals(15L)).findFirst();
             assertTrue(to.isPresent());
-            rmTo = new ReadingModel(to.get());
+            rmTo = new ReadingModel(to.get(), tx);
             tx.close();
         }
         link.setSource(rmTeh.getId());
@@ -2613,10 +2613,13 @@ public class ReadingTest {
      */
     @After
     public void tearDown() throws Exception {
-//        db.shutdown();
-    	if (dbbuilder != null) {
-    		dbbuilder.shutdownDatabase(db.databaseName());
+
+        DatabaseManagementService service = dbServiceProvider.getManagementService();
+
+    	if (service != null) {
+    		service.shutdownDatabase(db.databaseName());
     	}
+
         jerseyTest.tearDown();
     }
 

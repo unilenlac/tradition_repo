@@ -1,5 +1,6 @@
 package net.stemmaweb.rest;
 
+import java.io.IOException;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -106,7 +107,7 @@ public class Stemma {
                 replaceResult = parser.importStemmaFromNewick(tradId, stemmaSpec);
             } else {
                 DotParser parser = new DotParser(db);
-                replaceResult = parser.importStemmaFromDot(tradId, stemmaSpec);
+                replaceResult = parser.importStemmaFromDot(tradId, stemmaSpec, tx);
             }
             if (replaceResult.getStatus() != 201)
                 return replaceResult;

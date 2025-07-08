@@ -6,6 +6,7 @@ import net.stemmaweb.model.AnnotationLinkModel;
 import net.stemmaweb.model.AnnotationModel;
 import net.stemmaweb.services.DatabaseService;
 import net.stemmaweb.services.GraphDatabaseServiceProvider;
+import net.stemmaweb.services.RelationService;
 import net.stemmaweb.services.VariantGraphService;
 import org.neo4j.graphdb.*;
 import org.neo4j.graphdb.NotFoundException;
@@ -18,10 +19,7 @@ import javax.ws.rs.Path;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import java.lang.reflect.Method;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
@@ -58,12 +56,12 @@ public class Annotation {
     @Produces("application/json; charset=utf-8")
     @ReturnType(clazz = AnnotationModel.class)
     public Response getAnnotation() {
-        if (annotationNotFound()) return Response.status(Response.Status.NOT_FOUND).build();
         AnnotationModel result;
         try (Transaction tx = db.beginTx()) {
+            if (annotationNotFound(tx)) return Response.status(Response.Status.NOT_FOUND).build();
             Node a = tx.getNodeByElementId(annoId);
-            result = new AnnotationModel(a);
-            tx.close();
+            result = new AnnotationModel(a, tx);
+            tx.commit();
         } catch (Exception e) {
             e.printStackTrace();
             return Response.serverError().entity(jsonerror(e.getMessage())).build();
@@ -87,9 +85,11 @@ public class Annotation {
     @Produces("application/json; charset=utf-8")
     @ReturnType(clazz = AnnotationModel.class)
     public Response updateAnnotation(AnnotationModel newAnno) {
-        if (annotationNotFound()) return Response.status(Response.Status.NOT_FOUND).build();
-        AnnotationModel result = null;
+        AnnotationModel result;
+        Node aNode;
+        AnnotationLabelModel alm;
         try (Transaction tx = db.beginTx()) {
+            if (annotationNotFound(tx)) return Response.status(Response.Status.NOT_FOUND).build();
             Node tradNode = VariantGraphService.getTraditionNode(tradId, tx);
             // Find the relevant annotation label
             Optional<Node> al = DatabaseService.getRelated(tradNode, ERelations.HAS_ANNOTATION_TYPE, tx)
@@ -98,10 +98,10 @@ public class Annotation {
                 return Response.status(Response.Status.BAD_REQUEST)
                         .entity(jsonerror("No annotation label " + newAnno.getLabel() + " defined for this tradition"))
                         .build();
-            AnnotationLabelModel alm = new AnnotationLabelModel(al.get());
+            alm = new AnnotationLabelModel(al.get(), tx);
 
             // Get our annotation node
-            Node aNode = tx.getNodeByElementId(annoId);
+            aNode = tx.getNodeByElementId(annoId);
             // Set the label if it has changed, removing any old label if necessary
             if (aNode.getLabels().iterator().hasNext()) {
                 Label aLabel = aNode.getLabels().iterator().next();
@@ -115,6 +115,10 @@ public class Annotation {
 
             // Now check and replace its properties
             aNode.getPropertyKeys().forEach(aNode::removeProperty);
+            tx.commit();
+        }
+        try (Transaction subtx = db.beginTx()){
+            aNode = subtx.getNodeByElementId(aNode.getElementId());
             for (String pkey : newAnno.getProperties().keySet()) {
                 if (!alm.getProperties().containsKey(pkey))
                     return Response.status(Response.Status.BAD_REQUEST)
@@ -148,16 +152,15 @@ public class Annotation {
             // With that done, set the "primary" property
             aNode.setProperty("__primary", newAnno.getPrimary());
 
-            // If this is a new annotation, set any given links. Otherwise leave it alone.
+            // If this is a new annotation, set any given links. Otherwise, leave it alone.
             if (!aNode.hasRelationship(Direction.OUTGOING)) {
                 for (AnnotationLinkModel linkModel : newAnno.getLinks()) {
                     Response linkAdded = addAnnotationLink(linkModel);
-                    if (linkAdded.getStatus() != Response.Status.OK.getStatusCode())
+                    if (linkAdded.getStatus() != Response.Status.OK.getStatusCode()){
                         return linkAdded;
+                    }
                 }
             }
-            result = new AnnotationModel(aNode);
-            tx.close();
         } catch (ClassNotFoundException e) {
             Response.status(Response.Status.BAD_REQUEST)
                     .entity(jsonerror("Specified property class not found: " + e.getMessage()))
@@ -166,7 +169,95 @@ public class Annotation {
             e.printStackTrace();
             return Response.serverError().entity(jsonerror(e.getMessage())).build();
         }
-        return Response.ok(result).build();
+        try(Transaction last_tx = db.beginTx()){
+            aNode = last_tx.getNodeByElementId(aNode.getElementId());
+            result = new AnnotationModel(aNode, last_tx);
+            return Response.ok(result).build();
+        }
+    }
+
+    static AnnotationModel updateAnnotationMethod(AnnotationModel newAnno, String annoId, Node tradNode, Transaction tx){
+        AnnotationModel result = null;
+        Node aNode;
+        AnnotationLabelModel alm;
+        try {
+            if (newAnno == null) return null;
+            // Find the relevant annotation label
+            Optional<Node> al = DatabaseService.getRelated(tradNode, ERelations.HAS_ANNOTATION_TYPE, tx)
+                    .stream().filter(x -> x.getProperty("name").equals(newAnno.getLabel())).findFirst();
+            if (al.isEmpty())
+                return null;
+            alm = new AnnotationLabelModel(al.get(), tx);
+
+            // Get our annotation node
+            aNode = tx.getNodeByElementId(annoId);
+            // Set the label if it has changed, removing any old label if necessary
+            if (aNode.getLabels().iterator().hasNext()) {
+                Label aLabel = aNode.getLabels().iterator().next();
+                if (!aLabel.name().equals(newAnno.getLabel())) {
+                    aNode.removeLabel(aLabel);
+                    aNode.addLabel(Label.label(newAnno.getLabel()));
+                }
+            } else {
+                aNode.addLabel(Label.label(newAnno.getLabel()));
+            }
+
+            // Now check and replace its properties
+            aNode.getPropertyKeys().forEach(aNode::removeProperty);
+
+            aNode = tx.getNodeByElementId(aNode.getElementId());
+            for (String pkey : newAnno.getProperties().keySet()) {
+                if (!alm.getProperties().containsKey(pkey))
+                    return null;
+                // Okay? Then set the property
+                String ptype = alm.getProperties().get(pkey);
+                Object pval;
+                try {
+                    // Is it a time-based thing?
+                    Method parse = Class.forName("java.time." + ptype).getMethod("parse", CharSequence.class);
+                    pval = parse.invoke(null, newAnno.getProperties().get(pkey).toString());
+                } catch (ClassNotFoundException e) {
+                    // It isn't a time-based thing.
+                    if (ptype.equals("Character")) {
+                        String pstr = newAnno.getProperties().get(pkey).toString();
+                        if (pstr.length() > 1)
+                            throw new Exception("Cannot set multi-character string value as Character");
+                        pval = pstr.charAt(0);
+                    } else {
+                        Class<?> pclass = Class.forName("java.lang." + ptype);
+                        if (ptype.equals("String"))
+                            pval = pclass.cast(newAnno.getProperties().get(pkey));
+                        else
+                            pval = pclass.getMethod("valueOf", String.class)
+                                    .invoke(null, newAnno.getProperties().get(pkey).toString());
+                    }
+                }
+                aNode.setProperty(pkey, pval);
+            }
+            // With that done, set the "primary" property
+            aNode.setProperty("__primary", newAnno.getPrimary());
+
+            // If this is a new annotation, set any given links. Otherwise, leave it alone.
+            if (!aNode.hasRelationship(Direction.OUTGOING)) {
+                for (AnnotationLinkModel linkModel : newAnno.getLinks()) {
+                    Boolean linkAdded = Annotation.addAnnotationLinkMethode(linkModel, annoId, tradNode, tx);
+                    if (linkAdded){
+                        return new AnnotationModel(aNode, tx);
+                    }
+                }
+            }
+
+            // aNode = tx.getNodeByElementId(aNode.getElementId());
+            result = new AnnotationModel(aNode, tx);
+
+        } catch (ClassNotFoundException e) {
+            Response.status(Response.Status.BAD_REQUEST)
+                    .entity(jsonerror("Specified property class not found: " + e.getMessage()))
+                    .build();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return result;
     }
 
     /**
@@ -182,17 +273,17 @@ public class Annotation {
     @Produces("application/json; charset=utf-8")
     @ReturnType("java.util.List<net.stemmaweb.model.AnnotationModel>")
     public Response deleteAnnotation() {
-        if (annotationNotFound()) return Response.status(Response.Status.NOT_FOUND).build();
         List<AnnotationModel> deleted;
         try (Transaction tx = db.beginTx()) {
+            if (annotationNotFound(tx)) return Response.status(Response.Status.NOT_FOUND).build();
             Node a = tx.getNodeByElementId(annoId);
             // Delete all outgoing relationships, which makes this a dangling annotation
             a.getRelationships(Direction.OUTGOING).forEach(Relationship::delete);
             // Make this node no longer a primary, since we are deleting it explicitly
             a.removeProperty("__primary");
             // Delete the annotation and any other non-primary annotations that it leaves dangling
-            deleted = deleteIfDangling(a);
-            tx.close();
+            deleted = deleteIfDangling(a, tx);
+            tx.commit();
         } catch (Exception e) {
             e.printStackTrace();
             return Response.serverError().entity(jsonerror(e.getMessage())).build();
@@ -201,18 +292,18 @@ public class Annotation {
     }
 
     // Used inside a transaction
-    private List<AnnotationModel> deleteIfDangling(Node a) {
+    private List<AnnotationModel> deleteIfDangling(Node a, Transaction tx) {
         List<AnnotationModel> result = new ArrayList<>();
         // Don't delete the TRADITION node
         if (a.hasLabel(Nodes.TRADITION)) return result;
 
         // Delete the node if it has no remaining outgoing relations
         if (!a.hasRelationship(Direction.OUTGOING) && a.getProperty("__primary", false).equals(false)) {
-            result.add(new AnnotationModel(a));
+            result.add(new AnnotationModel(a, tx));
             ArrayList<Node> parents = new ArrayList<>();
             a.getRelationships(Direction.INCOMING).forEach(x -> {parents.add(x.getStartNode()); x.delete();});
             for (Node p : parents)
-                result.addAll(deleteIfDangling(p));
+                result.addAll(deleteIfDangling(p, tx));
             a.delete();
         }
         return result;
@@ -238,18 +329,18 @@ public class Annotation {
     @Produces("application/json; charset=utf-8")
     @ReturnType(clazz = AnnotationModel.class)
     public Response addAnnotationLink(AnnotationLinkModel alm) {
-        if (annotationNotFound()) return Response.status(Response.Status.NOT_FOUND).build();
         AnnotationModel updated;
-        try (Transaction tx = db.beginTx()) {
+        try(Transaction tx = db.beginTx()) {
+            if (annotationNotFound(tx)) return Response.status(Response.Status.NOT_FOUND).build();
             Node aNode = tx.getNodeByElementId(annoId);
             // See if the link already exists
-            if (findExistingLink(alm) != null) {
-                tx.close();
+            if (findExistingLink(alm, annoId, tx) != null) {
                 return Response.notModified().build();
             }
 
+            Node tradNode = VariantGraphService.getTraditionNode(tradId, tx);
             String aLabel = aNode.getLabels().iterator().next().name();
-            AnnotationLabelModel labelModel = new AnnotationLabelModel(tradId, aLabel);
+            AnnotationLabelModel labelModel = new AnnotationLabelModel(tradNode, aLabel, tx);
             // See if the proposed link is valid
             Node target = tx.getNodeByElementId(alm.getTarget());
             ArrayList<String> allowedLinks = new ArrayList<>();
@@ -265,8 +356,8 @@ public class Annotation {
             Relationship link = aNode.createRelationshipTo(target, RelationshipType.withName(alm.getType()));
             if (alm.getFollow() != null)
                 link.setProperty("follow", alm.getFollow());
-            updated = new AnnotationModel(aNode);
-            tx.close();
+            updated = new AnnotationModel(aNode, tx);
+            tx.commit();
         } catch (NotFoundException e) {
             return Response.status(Response.Status.NOT_FOUND)
                     .entity(jsonerror("Target node " + alm.getTarget() + " not found")).build();
@@ -275,6 +366,42 @@ public class Annotation {
             return Response.serverError().entity(jsonerror(e.getMessage())).build();
         }
         return Response.ok(updated).build();
+    }
+
+    static public Boolean addAnnotationLinkMethode(AnnotationLinkModel alm, String annoId, Node tradNode, Transaction tx){
+        AnnotationModel updated;
+        try {
+            if (alm == null) return false;
+            Node aNode = tx.getNodeByElementId(annoId);
+            // See if the link already exists
+            if (findExistingLink(alm, annoId, tx) != null) {
+                return false;
+            }
+
+            String aLabel = aNode.getLabels().iterator().next().name();
+            AnnotationLabelModel labelModel = new AnnotationLabelModel(tradNode, aLabel, tx);
+            // See if the proposed link is valid
+            Node target = tx.getNodeByElementId(alm.getTarget());
+            ArrayList<String> allowedLinks = new ArrayList<>();
+            for (Label l : target.getLabels()) {
+                if (labelModel.getLinks().containsKey(l.name()))
+                    allowedLinks.addAll(Arrays.asList(labelModel.getLinks().get(l.name()).split(",")));
+            }
+            if (!allowedLinks.contains(alm.getType()))
+                return false;
+
+            // Set the proposed link
+            Relationship link = aNode.createRelationshipTo(target, RelationshipType.withName(alm.getType()));
+            if (alm.getFollow() != null)
+                link.setProperty("follow", alm.getFollow());
+            updated = new AnnotationModel(aNode, tx);
+        } catch (NotFoundException e) {
+            return false;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
+        }
+        return updated.getPrimary();
     }
 
     /**
@@ -296,16 +423,16 @@ public class Annotation {
     @Produces("application/json; charset=utf-8")
     @ReturnType(clazz = AnnotationModel.class)
     public Response deleteAnnotationLink(AnnotationLinkModel alm) {
-        if (annotationNotFound()) return Response.status(Response.Status.NOT_FOUND).build();
         AnnotationModel updated;
         try (Transaction tx = db.beginTx()) {
-            Relationship r = findExistingLink(alm);
+            if (annotationNotFound(tx)) return Response.status(Response.Status.NOT_FOUND).build();
+            Relationship r = findExistingLink(alm, annoId, tx);
             if (r == null)
                 return Response.status(Response.Status.NOT_FOUND).entity(jsonerror("Specified link not found")).build();
             Node aNode = r.getStartNode();
             r.delete();
-            updated = new AnnotationModel(aNode);
-            tx.close();
+            updated = new AnnotationModel(aNode, tx);
+            tx.commit();
         } catch (Exception e) {
             e.printStackTrace();
             return Response.serverError().entity(jsonerror(e.getMessage())).build();
@@ -331,16 +458,18 @@ public class Annotation {
     @Produces("application/json; charset=utf-8")
     @ReturnType("java.util.List<net.stemmaweb.model.AnnotationModel")
     public Response getReferents(@QueryParam("recursive") @DefaultValue("false") String recurse) {
-        if (annotationNotFound()) return Response.status(Response.Status.NOT_FOUND).build();
         List<AnnotationModel> result;
-        try {
-            result = collectReferents(recurse.equals("true")).stream()
-                    .map(AnnotationModel::new).collect(Collectors.toList());
-        } catch (Exception e) {
-            e.printStackTrace();
-            return Response.serverError().entity(jsonerror(e.getMessage())).build();
+        try(Transaction tx = db.beginTx()){
+            if (annotationNotFound(tx)) return Response.status(Response.Status.NOT_FOUND).build();
+            try {
+                result = collectReferents(recurse.equals("true")).stream()
+                        .map(n -> new AnnotationModel(n, tx)).collect(Collectors.toList());
+            } catch (Exception e) {
+                e.printStackTrace();
+                return Response.serverError().entity(jsonerror(e.getMessage())).build();
+            }
+            tx.commit();
         }
-
         return Response.ok(result).build();
     }
 
@@ -365,17 +494,18 @@ public class Annotation {
     }
 
     // Used inside a transaction
-    private Relationship findExistingLink(AnnotationLinkModel alm) {
-        try(Transaction tx = db.beginTx()){
+    static Relationship findExistingLink(AnnotationLinkModel alm, String annoId, Transaction tx) {
+        try{
             Node aNode = tx.getNodeByElementId(annoId);
             for (Relationship r : aNode.getRelationships(Direction.OUTGOING)) {
-                if (r.getType().name().equals(alm.getType()) && r.getEndNode().getElementId() == alm.getTarget()) {
+                if (Objects.equals(r.getEndNode().getElementId(), alm.getTarget())) {
                     return r;
                 }
             }
-            tx.close();
-            return null;
+        } catch (Exception e){
+            e.printStackTrace();
         }
+        return null;
     }
 
     // Evaluator to walk the annotation structure
@@ -392,14 +522,13 @@ public class Annotation {
     };
 
     // Check here whether we need to return a 404
-    private boolean annotationNotFound() {
+    private boolean annotationNotFound(Transaction tx) {
         boolean found;
-        try (Transaction tx = db.beginTx()) {
+        try {
             Node a = tx.getNodeByElementId(annoId);
             Relationship r = a.getSingleRelationship(ERelations.HAS_ANNOTATION, Direction.INCOMING);
             Node t = r.getStartNode();
             found = t.hasLabel(Nodes.TRADITION) && t.getProperty("id", "NONE").equals(tradId);
-            tx.close();
         } catch (NotFoundException e) {
             return true;
         }

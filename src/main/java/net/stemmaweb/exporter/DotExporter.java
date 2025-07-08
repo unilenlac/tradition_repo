@@ -83,8 +83,8 @@ public class DotExporter
     		}
 
     		// Get the list of section nodes
-        	sections = VariantGraphService.getSectionNodes(tradId, tx);
-        	traditionNode = VariantGraphService.getTraditionNode(tradId, tx);
+        	sections = VariantGraphService.getSectionNodes(traditionNode, tx);
+        	// traditionNode = VariantGraphService.getTraditionNode(tradId, tx);
         	startNode = VariantGraphService.getStartNode(tradId, tx);
         	endNode = VariantGraphService.getEndNode(tradId, tx);
             output = File.createTempFile("graph_", ".dot");
@@ -276,7 +276,11 @@ public class DotExporter
                         }
                         // Get the label
                         String label = sequenceLabel(convertProps(rel), numWits, dm);
-                        Long rankDiff = (Long) node.getProperty("rank") - (Long) relStartNode.getProperty("rank");
+                        Long startRank = 0L;
+                        if (relStartNode.hasProperty("rank")) {
+                            startRank = (Long) relStartNode.getProperty("rank");
+                        }
+                        Long rankDiff = (Long) node.getProperty("rank") - startRank;
                         seqSpecs.add(relshipText(relStartNodeId, node.getElementId(), label, rel.getElementId(),
                                 calcPenWidth(convertProps(rel)), rankDiff, edge_is_lemma));
 

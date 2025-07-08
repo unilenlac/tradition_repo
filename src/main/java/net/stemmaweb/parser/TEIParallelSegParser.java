@@ -97,7 +97,7 @@ public class TEIParallelSegParser {
 
                             case "text":
                                 // End of the text; add the end node.
-                                endNode = Util.createEndNode(parentNode, 0L);
+                                endNode = Util.createEndNode(parentNode, 0L, tx);
                                 // endNode.setProperty("rank", 0L);
                                 Relationship endLink = documentPrior.createRelationshipTo(endNode, ERelations.SEQUENCE);
                                 setAllWitnesses(endLink);
@@ -187,9 +187,9 @@ public class TEIParallelSegParser {
             } // end parseloop
 
             // Now try re-ranking the nodes.
-            recalculateRank(startNode);
+            recalculateRank(traditionNode, startNode, false, tx);
             // Calculate which nodes are common
-            VariantGraphService.calculateCommon(parentNode);
+            VariantGraphService.calculateCommon(parentNode, tx);
             tx.close();
         } catch (IllegalArgumentException e) {
             return Response.status(Response.Status.BAD_REQUEST).entity(jsonerror(e.getMessage())).build();

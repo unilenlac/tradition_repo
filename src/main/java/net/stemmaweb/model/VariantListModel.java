@@ -163,8 +163,8 @@ public class VariantListModel {
 
             // Filter readings by regex / nonsense flag as needed. Pass the base text in case
             // any before/after reading settings need to be altered.
-            this.baseChain = baseText.stream().map(x -> new ReadingModel(x.getEndNode())).collect(Collectors.toList());
-            this.baseChain.add(0, new ReadingModel(baseText.get(0).getStartNode()));
+            this.baseChain = baseText.stream().map(x -> new ReadingModel(x.getEndNode(), tx)).collect(Collectors.toList());
+            this.baseChain.add(0, new ReadingModel(baseText.get(0).getStartNode(), tx));
             this.filterReadings(this.baseChain);
 
             // Filter for type1 variants
@@ -208,12 +208,12 @@ public class VariantListModel {
             // We have to run the traverser from each node in the base chain, to get any variants that start there.
             for (Node n : baseChain) {
                 for (org.neo4j.graphdb.Path v : traverser.traverse(n)) {
-                    VariantModel vm = new VariantModel(v, crawler.getWitnessesForPath(v));
+                    VariantModel vm = new VariantModel(v, crawler.getWitnessesForPath(v), tx);
                     // Sanity check
                     // if (!baseChain.contains(v.startNode()) || !baseChain.contains(v.endNode()))
                     //     throw new Exception("Variant chain disconnected from base chain");
                     if (!vm.isEmpty()) {
-                        VariantLocationModel vloc = this.getVLM(baseChain, v.startNode(), v.endNode());
+                        VariantLocationModel vloc = this.getVLM(baseChain, v.startNode(), v.endNode(), tx);
                         vloc.addVariant(vm);
                     }
                 }
@@ -231,7 +231,7 @@ public class VariantListModel {
 
     private VariantLocationModel getVLM(List<Node> baseChain,
                                         Node vStart,
-                                        Node vEnd) {
+                                        Node vEnd, Transaction tx) {
         // Retrieve any existing VariantLocationModel, or create a new one
         VariantLocationModel vlm = new VariantLocationModel();
         String key = String.format("%s -- %s", vStart.getElementId(), vEnd.getElementId());
@@ -245,7 +245,7 @@ public class VariantListModel {
             // Turn our sub-chain into reading models
             List<ReadingModel> baseReadings = baseChain
                     .subList(baseChain.indexOf(vStart), baseChain.indexOf(vEnd)+1)
-                    .stream().map(ReadingModel::new).collect(Collectors.toList());
+                    .stream().map(n -> new ReadingModel(n, tx)).collect(Collectors.toList());
             // Set the reading models in place in the VLM
             vlm.setBefore(baseReadings.remove(0));
             vlm.setAfter(baseReadings.remove(baseReadings.size() - 1));
