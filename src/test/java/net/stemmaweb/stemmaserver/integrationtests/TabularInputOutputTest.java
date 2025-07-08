@@ -22,6 +22,8 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 
 import net.stemmaweb.services.GraphDatabaseServiceProvider;
+import net.stemmaweb.Util.*;
+import net.stemmaweb.Util.GetTraditionFunction;
 import org.glassfish.jersey.test.JerseyTest;
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -86,7 +88,8 @@ public class TabularInputOutputTest extends TestCase {
                 "src/TestFiles/florilegium_simple.csv", "csv");
         assertEquals(Response.Status.CREATED.getStatusCode(), response.getStatus());
         String tradId = Util.getValueFromJson(response, "tradId");
-        Tradition tradition = new Tradition(tradId);
+        GetTraditionFunction<Transaction, Node> getTraditionFunction = net.stemmaweb.Util.getTraditionNode(tradId);
+        Tradition tradition = new Tradition(tradId, getTraditionFunction);
 
         Response result = tradition.getAllWitnesses();
         ArrayList<WitnessModel> allWitnesses = (ArrayList<WitnessModel>) result.getEntity();
@@ -132,7 +135,8 @@ public class TabularInputOutputTest extends TestCase {
                 "src/TestFiles/florilegium.csv", "csv");
         assertEquals(Response.Status.CREATED.getStatusCode(), response.getStatus());
         String tradId = Util.getValueFromJson(response, "tradId");
-        Tradition tradition = new Tradition(tradId);
+        GetTraditionFunction<Transaction, Node> getTraditionFunction = net.stemmaweb.Util.getTraditionNode(tradId);
+        Tradition tradition = new Tradition(tradId, getTraditionFunction);
 
         Response result = tradition.getAllWitnesses();
         ArrayList<WitnessModel> allWitnesses = (ArrayList<WitnessModel>) result.getEntity();
@@ -159,7 +163,8 @@ public class TabularInputOutputTest extends TestCase {
         Response response = Util.createTraditionFromFileOrString(jerseyTest, "Florilegium", "LR", "1",
                 "src/TestFiles/florilegium.csv", "csv");
         String tradId = Util.getValueFromJson(response, "tradId");
-        Tradition tradition = new Tradition(tradId);
+        GetTraditionFunction<Transaction, Node> getTraditionFunction = net.stemmaweb.Util.getTraditionNode(tradId);
+        Tradition tradition = new Tradition(tradId, getTraditionFunction);
         // Get the readings and look for our ἔχει(ν)
         Response result = tradition.getAllReadings();
         ArrayList<ReadingModel> readings = (ArrayList<ReadingModel>) result.getEntity();
@@ -207,7 +212,8 @@ public class TabularInputOutputTest extends TestCase {
         String tradId = Util.getValueFromJson(response, "tradId");
 
         // Now retrieve the tradition and test what it has.
-        Tradition tradition = new Tradition(tradId);
+        GetTraditionFunction<Transaction, Node> getTraditionFunction = net.stemmaweb.Util.getTraditionNode(tradId);
+        Tradition tradition = new Tradition(tradId, getTraditionFunction);
 
         Response result = tradition.getAllWitnesses();
         ArrayList<WitnessModel> allWitnesses = (ArrayList<WitnessModel>) result.getEntity();
@@ -225,7 +231,7 @@ public class TabularInputOutputTest extends TestCase {
 
         // Now retrieve the tradition and test what it has.
         tradId = Util.getValueFromJson(response, "tradId");
-        tradition = new Tradition(tradId);
+        tradition = new Tradition(tradId, getTraditionFunction);
 
         result = tradition.getAllWitnesses();
         allWitnesses = (ArrayList<WitnessModel>) result.getEntity();

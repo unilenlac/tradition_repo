@@ -411,7 +411,8 @@ public class GraphMLParser {
                 annotationsToAdd.put(((Element) xn).getAttribute("id"), am);
             }
             while (annotationsToAdd.size() > 0) {
-                Tradition tradService = new Tradition(tradId);
+                // net.stemmaweb.Util.GetTraditionFunction<String, Transaction, Node> getTraditionFunction = net.stemmaweb.Util.getTraditionNode(tradId);
+                // Tradition tradService = new Tradition(tradId, getTraditionFunction);
                 List<String> toRemove = new ArrayList<>();
                 for (String amid : annotationsToAdd.keySet()) {
                     AnnotationModel am = annotationsToAdd.get(amid);

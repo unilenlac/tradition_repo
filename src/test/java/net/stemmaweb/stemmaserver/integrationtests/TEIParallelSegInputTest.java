@@ -28,6 +28,8 @@ import net.stemmaweb.rest.Tradition;
 import net.stemmaweb.rest.Witness;
 import net.stemmaweb.stemmaserver.JerseyTestServerFactory;
 import net.stemmaweb.stemmaserver.Util;
+import org.neo4j.graphdb.Node;
+import org.neo4j.graphdb.Transaction;
 
 /**
  * Test TEI parallel segmentation input.
@@ -104,7 +106,8 @@ public class TEIParallelSegInputTest {
         assertEquals(Response.Status.CREATED.getStatusCode(), cResult.getStatus());
 
         String tradId = Util.getValueFromJson(cResult, "tradId");
-        Tradition tradition = new Tradition(tradId);
+        net.stemmaweb.Util.GetTraditionFunction<Transaction, Node> getTraditionFunction = net.stemmaweb.Util.getTraditionNode(tradId);
+        Tradition tradition = new Tradition(tradId, getTraditionFunction);
 
         // Basic statistics
         Response result = tradition.getAllWitnesses();

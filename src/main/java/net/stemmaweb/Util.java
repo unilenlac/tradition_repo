@@ -394,22 +394,37 @@ public class Util {
         return tx.execute(query);
     }
 
+    /**
+     * Checks if the input string matches the given regex pattern.
+     *
+     * @param input The input string to check.
+     * @param regex The regex pattern to match against.
+     * @return true if the input matches the regex, false otherwise.
+     */
     public static Boolean isElementId(String input, String regex){
         Pattern pattern = Pattern.compile(regex);
         Matcher matcher = pattern.matcher(input);
         return matcher.matches();
     }
     @FunctionalInterface
-    interface TwoArgFunction<T, U, R> {
-        R apply(T arg1, U arg2) throws Exception;
+    public interface GetTraditionFunction<T, R> {
+        R apply(T arg1) throws Exception;
     }
-    public static Callable<Node> getTraditionNodeCallable(String tradId, Transaction tx) {
+    /**
+     * Returns a function that retrieves a tradition node by its ID.
+     * If the ID matches the regex for element IDs, it uses the transaction's getNodeByElementId method.
+     * Otherwise, it uses the VariantGraphService to get the tradition node.
+     *
+     * @param tradId The tradition ID to retrieve.
+     * @return A function that retrieves the tradition node.
+     */
+    public static GetTraditionFunction<Transaction, Node> getTraditionNode(String tradId){
         String re = "\\d+:.*:\\d+";
         boolean res = isElementId(tradId, re);
         if (res){
-            return () -> tx.getNodeByElementId(tradId);
+            return (tx) -> tx.getNodeByElementId(tradId);
         }else{
-            return () -> VariantGraphService.getTraditionNode(tradId, tx);
+            return (tx) -> VariantGraphService.getTraditionNode(tradId, tx);
         }
     }
 }

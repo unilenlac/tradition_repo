@@ -27,6 +27,8 @@ import net.stemmaweb.rest.Tradition;
 import net.stemmaweb.rest.Witness;
 import net.stemmaweb.services.GraphDatabaseServiceProvider;
 import net.stemmaweb.stemmaserver.Util;
+import org.neo4j.graphdb.Node;
+import org.neo4j.graphdb.Transaction;
 
 /**
  * Test the CollateX parser
@@ -110,7 +112,8 @@ public class CollateXInputTest extends TestCase {
         assertEquals(Response.Status.CREATED.getStatusCode(), cResult.getStatus());
 
         String tradId = Util.getValueFromJson(cResult, "tradId");
-        Tradition tradition = new Tradition(tradId);
+        net.stemmaweb.Util.GetTraditionFunction<Transaction, Node> getTraditionFunction = net.stemmaweb.Util.getTraditionNode(tradId);
+        Tradition tradition = new Tradition(tradId, getTraditionFunction);
 
         // Get the relevant reading IDs
         Response result = tradition.getAllReadings();

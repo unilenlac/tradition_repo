@@ -3,6 +3,7 @@ package net.stemmaweb.rest;
 import com.qmino.miredot.annotations.MireDotIgnore;
 import com.qmino.miredot.annotations.ReturnType;
 import com.sun.xml.txw2.output.IndentingXMLStreamWriter;
+import net.stemmaweb.Util;
 import net.stemmaweb.exporter.TeiExporter;
 import net.stemmaweb.model.TraditionModel;
 import net.stemmaweb.model.UserModel;
@@ -84,7 +85,14 @@ public class Root {
      */
     @Path("/tradition/{tradId}")
     public Tradition getTradition(@PathParam("tradId") String tradId) {
-        return new Tradition(tradId);
+        GetTraditionFunction<Transaction, Node> getTraditionFunction = Util.getTraditionNode(tradId);
+        return new Tradition(tradId, getTraditionFunction);
+    }
+    @Path("/novus/{tradId}")
+    public Novus getNovusTradition(@PathParam("tradId") String tradId) throws Exception {
+        GetTraditionFunction<Transaction, Node> getTraditionFunction = Util.getTraditionNode(tradId);
+        return new Novus(tradId, getTraditionFunction, db);
+
     }
     /**
      * @param userId - The ID of a stemmarest user; this is usually either an email address or a Google ID token.
@@ -181,12 +189,12 @@ public class Root {
         try {
             this.linkUserToTradition(userId, tradId);
         } catch (Exception e) {
-            try (Transaction tx = db.beginTx()) {
-                Tradition.delete_tradition(tradId, tx);
-                tx.commit();
-            } catch (Exception e2) {
-                System.out.println("Error deleting tradition: " + e2.getMessage());
-            }
+            // try (Transaction tx = db.beginTx()) {
+            //     Tradition.delete_tradition(tradId, tx);
+            //     tx.commit();
+            // } catch (Exception e2) {
+            // }
+            System.out.println("Error deleting tradition: " + e.getMessage());
             return Response.serverError().entity(jsonerror(e.getMessage())).build();
         }
 
@@ -195,11 +203,13 @@ public class Root {
 
             try(Transaction tx = db.beginTx()){
                 // Node trad_node = tx.findNode(Nodes.TRADITION, "id", tradId);
-                Response dataResult = Tradition.parseDispatcher(VariantGraphService.getTraditionNode(tradId, tx),
+                GetTraditionFunction<Transaction, Node> getTraditionFunction = Util.getTraditionNode(tradId);
+                Node tradNode = getTraditionFunction.apply(tx);
+                Response dataResult = Tradition.parseDispatcher(tradNode,
                         filetype, uploadedInputStream, false, tx);
                 if (dataResult.getStatus() != Response.Status.CREATED.getStatusCode()) {
                     // If something went wrong, delete the new tradition immediately and return the error.
-                    Tradition.delete_tradition(tradId, tx);
+                    Tradition.delete_tradition(tradNode, tx);
                     return dataResult;
                 }
                 // If we just parsed GraphML (the only format that can preserve prior tradition IDs),

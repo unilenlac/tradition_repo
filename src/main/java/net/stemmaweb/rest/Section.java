@@ -2,6 +2,7 @@ package net.stemmaweb.rest;
 
 import static net.stemmaweb.Util.jsonerror;
 import static net.stemmaweb.Util.jsonresp;
+import static net.stemmaweb.Util.GetTraditionFunction;
 import static net.stemmaweb.services.ReadingService.addWitnessLink;
 import static net.stemmaweb.services.ReadingService.recalculateRank;
 import static net.stemmaweb.services.ReadingService.removePlaceholder;
@@ -35,6 +36,7 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.xml.stream.XMLStreamException;
 
+import net.stemmaweb.Util;
 import net.stemmaweb.builders.XmlBuilder;
 import net.stemmaweb.directors.DocumentDesigner;
 import net.stemmaweb.model.*;
@@ -200,7 +202,8 @@ public class Section {
                 removableRelations.forEach(Relationship::delete);
                 removableNodes.forEach(Node::delete);
                 // Clean up any annotations that need it.
-                Tradition tService = new Tradition(tradId);
+                GetTraditionFunction<Transaction, Node> getTraditionFunction = Util.getTraditionNode(tradId);
+                Tradition tService = new Tradition(tradId, getTraditionFunction);
                 Response pruned = tService.pruneAnnotations();
                 if (pruned.getStatus() > 299) {
                     return pruned;
