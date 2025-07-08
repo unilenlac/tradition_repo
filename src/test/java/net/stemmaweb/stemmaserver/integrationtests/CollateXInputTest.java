@@ -100,7 +100,7 @@ public class CollateXInputTest extends TestCase {
         assertEquals(Response.Status.CREATED.getStatusCode(), cResult.getStatus());
 
         String tradId = Util.getValueFromJson(cResult, "tradId");
-        Witness witness = new Witness(tradId, "w1");
+        Witness witness = new Witness(tradId, "w1", net.stemmaweb.Util.getTraditionNode(tradId));
         TextSequenceModel response = (TextSequenceModel) witness.getWitnessAsText().getEntity();
         assertEquals("the quick brown fox jumped over the lazy dogs .", response.getText());
     }

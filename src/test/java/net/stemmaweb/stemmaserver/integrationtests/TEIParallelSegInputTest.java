@@ -127,10 +127,10 @@ public class TEIParallelSegInputTest {
 
 
         // Get a witness text
-        TextSequenceModel tm = (TextSequenceModel) new Witness(tradId, "T").getWitnessAsText().getEntity();
+        TextSequenceModel tm = (TextSequenceModel) new Witness(tradId, "T", net.stemmaweb.Util.getTraditionNode(tradId)).getWitnessAsText().getEntity();
         assertEquals(tText, tm.getText());
         // Get a layered witness text
-        Witness q = new Witness(tradId, "Q");
+        Witness q = new Witness(tradId, "Q", net.stemmaweb.Util.getTraditionNode(tradId));
         List<String> layers = new ArrayList<>();
         layers.add("a.c.");
         TextSequenceModel ltm = (TextSequenceModel) q.getWitnessAsTextWithLayer(layers, "0", "E").getEntity();

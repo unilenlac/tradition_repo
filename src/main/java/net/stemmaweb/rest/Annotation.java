@@ -1,6 +1,7 @@
 package net.stemmaweb.rest;
 
 import com.qmino.miredot.annotations.ReturnType;
+import net.stemmaweb.Util;
 import net.stemmaweb.model.AnnotationLabelModel;
 import net.stemmaweb.model.AnnotationLinkModel;
 import net.stemmaweb.model.AnnotationModel;
@@ -37,11 +38,14 @@ public class Annotation {
     private final String tradId;
     private final String annoId;
 
-    Annotation(String tradId, String aid) {
+    private final Util.GetTraditionFunction<Transaction, Node> getTraditionNode;
+
+    Annotation(String tradId, String aid, Util.GetTraditionFunction<Transaction, Node> getTraditionFunction) {
         GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
         this.db = dbServiceProvider.getDatabase();
         this.tradId = tradId;
         this.annoId = aid;
+        this.getTraditionNode = getTraditionFunction;
     }
 
     /**
@@ -90,7 +94,7 @@ public class Annotation {
         AnnotationLabelModel alm;
         try (Transaction tx = db.beginTx()) {
             if (annotationNotFound(tx)) return Response.status(Response.Status.NOT_FOUND).build();
-            Node tradNode = VariantGraphService.getTraditionNode(tradId, tx);
+            Node tradNode = getTraditionNode.apply(tx);
             // Find the relevant annotation label
             Optional<Node> al = DatabaseService.getRelated(tradNode, ERelations.HAS_ANNOTATION_TYPE, tx)
                     .stream().filter(x -> x.getProperty("name").equals(newAnno.getLabel())).findFirst();
@@ -116,6 +120,8 @@ public class Annotation {
             // Now check and replace its properties
             aNode.getPropertyKeys().forEach(aNode::removeProperty);
             tx.commit();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
         try (Transaction subtx = db.beginTx()){
             aNode = subtx.getNodeByElementId(aNode.getElementId());
@@ -338,7 +344,7 @@ public class Annotation {
                 return Response.notModified().build();
             }
 
-            Node tradNode = VariantGraphService.getTraditionNode(tradId, tx);
+            Node tradNode = getTraditionNode.apply(tx);
             String aLabel = aNode.getLabels().iterator().next().name();
             AnnotationLabelModel labelModel = new AnnotationLabelModel(tradNode, aLabel, tx);
             // See if the proposed link is valid

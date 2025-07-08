@@ -1,5 +1,6 @@
 package net.stemmaweb.rest;
 
+import static net.stemmaweb.Util.getTraditionNode;
 import static net.stemmaweb.Util.jsonerror;
 
 import java.io.IOException;
@@ -28,6 +29,7 @@ import com.qmino.miredot.annotations.ReturnType;
 import net.stemmaweb.model.RelationTypeModel;
 import net.stemmaweb.services.GraphDatabaseServiceProvider;
 import net.stemmaweb.services.VariantGraphService;
+import org.neo4j.router.transaction.TransactionLookup;
 
 /**
  * Module to handle the specification and definition of relation types that may exist on
@@ -112,8 +114,8 @@ public class RelationType {
     public Response create(RelationTypeModel rtModel) {
         // Find any existing relation type on this tradition
         try (Transaction ctx = this.db.beginTx()) {
-            Callable<Node> getTraditionNode = Util.getTraditionNodeCallable(traditionId, ctx);
-            Node traditionNode = getTraditionNode.call();
+            Util.GetTraditionFunction<Transaction, Node> getTraditionNode = getTraditionNode(traditionId);
+            Node traditionNode = getTraditionNode.apply(ctx);
             Node extantRelType = rtModel.lookup(traditionNode);
             // Node extantRelType = ctx.findNode(Nodes.RELATION_TYPE, "name", rtModel.getName());
             /*

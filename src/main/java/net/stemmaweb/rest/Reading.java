@@ -23,6 +23,7 @@ import org.neo4j.graphdb.NotFoundException;
 import org.neo4j.graphdb.traversal.Uniqueness;
 import org.neo4j.internal.batchimport.stats.Stat;
 
+import static net.stemmaweb.Util.getTraditionNode;
 import static net.stemmaweb.Util.jsonerror;
 
 /**
@@ -578,7 +579,7 @@ public class Reading {
 
         // Now outside our main transaction block, try to put back the deleted relations.
         ArrayList<RelationModel> deletedRelations = new ArrayList<>();
-        Relation relationRest = new Relation(getTraditionId());
+        Relation relationRest = new Relation(getTraditionId(), getTraditionNode(getTraditionId()));
         for (RelationModel rm : tempDeleted) {
             Response result = relationRest.create(rm);
             if (Status.CREATED.getStatusCode() != result.getStatus())
@@ -668,7 +669,7 @@ public class Reading {
         ArrayList<RelationModel> tempDeleted = new ArrayList<>();
         String sectId = originalReading.getProperty("section_id").toString();
         String tradId = getTraditionId();
-        Section sectionRest = new Section(tradId, sectId);
+        Section sectionRest = new Section(tradId, sectId, getTraditionNode(tradId));
         Long ourRank = (Long) originalReading.getProperty("rank");
         // Transaction tx = db.beginTx();
         for (RelationModel rm : sectionRest.sectionRelations()) {
@@ -750,7 +751,7 @@ public class Reading {
             // TEMPORARY: Check that all affected witnesses still have paths to the end node
             for (String sig : drm.getWitnesses()) {
                 HashMap<String, String> parts = parseSigil(sig);
-                Witness w = new Witness(getTraditionId(), stayingReading.getProperty("section_id").toString(), parts.get("sigil"));
+                Witness w = new Witness(getTraditionId(), stayingReading.getProperty("section_id").toString(), parts.get("sigil"), getTraditionNode(getTraditionId()));
                 Response r;
                 if (parts.get("layer").equals("witnesses"))
                     r = w.getWitnessAsText();
@@ -917,7 +918,7 @@ public class Reading {
     private Set<RelationModel> addRelationsToStayingReading(Node stayingReading, Node deletingReading, Transaction tx)
             throws IllegalStateException, IOException {
         Set<RelationModel> addedRels = new HashSet<>();
-        Relation relService = new Relation(getTraditionId());
+        Relation relService = new Relation(getTraditionId(), getTraditionNode(getTraditionId()));
         // copy any relevant and nonexistent relationships from deletingReading to stayingReading
         for (Relationship oldRel : deletingReading.getRelationships(
         		Direction.BOTH, ERelations.RELATED)) {

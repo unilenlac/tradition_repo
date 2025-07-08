@@ -152,13 +152,13 @@ public class ReadingTest {
                 assertTrue(rm.getRank() > 0);
 
         TextSequenceModel resp;
-        resp = (TextSequenceModel) new Witness(tradId, "A").getWitnessAsText().getEntity();
+        resp = (TextSequenceModel) new Witness(tradId, "A", net.stemmaweb.Util.getTraditionNode(tradId)).getWitnessAsText().getEntity();
         assertEquals(expectedWitnessA, resp.getText());
 
-        resp = (TextSequenceModel) new Witness(tradId, "B").getWitnessAsText().getEntity();
+        resp = (TextSequenceModel) new Witness(tradId, "B", net.stemmaweb.Util.getTraditionNode(tradId)).getWitnessAsText().getEntity();
         assertEquals(expectedWitnessB, resp.getText());
 
-        resp = (TextSequenceModel) new Witness(tradId, "C").getWitnessAsText().getEntity();
+        resp = (TextSequenceModel) new Witness(tradId, "C", net.stemmaweb.Util.getTraditionNode(tradId)).getWitnessAsText().getEntity();
         assertEquals(expectedWitnessC, resp.getText());
 
         return listOfReadings;
@@ -241,7 +241,7 @@ public class ReadingTest {
         assertEquals("snow", response.readEntity(ReadingModel.class).getText());
 
         String expectedWitnessA = "when april with his snow sweet with fruit the drought of march has pierced unto me the root";
-        TextSequenceModel resp = (TextSequenceModel) new Witness(tradId, "A").getWitnessAsText().getEntity();
+        TextSequenceModel resp = (TextSequenceModel) new Witness(tradId, "A", net.stemmaweb.Util.getTraditionNode(tradId)).getWitnessAsText().getEntity();
         assertEquals(expectedWitnessA, resp.getText());
     }
 
@@ -295,7 +295,7 @@ public class ReadingTest {
         assertEquals("hebrew", result.getLanguage());
         assertTrue(result.getIs_nonsense());
         String expectedWitnessA = "when april with his snow sweet with fruit the drought of march has pierced unto me the root";
-        Response resp = new Witness(tradId, "A").getWitnessAsText();
+        Response resp = new Witness(tradId, "A", net.stemmaweb.Util.getTraditionNode(tradId)).getWitnessAsText();
         assertEquals(expectedWitnessA, ((TextSequenceModel) resp.getEntity()).getText());
     }
 
@@ -2061,7 +2061,7 @@ public class ReadingTest {
             assertNotNull(nof);
             assertEquals(true, nof.getProperty("join_prior"));
 
-            Response witText = new Witness(tradId, "C").getWitnessAsText();
+            Response witText = new Witness(tradId, "C", net.stemmaweb.Util.getTraditionNode(tradId)).getWitnessAsText();
             assertEquals(expectedWitnessC, ((TextSequenceModel) witText.getEntity()).getText());
 
             tx.close();
@@ -2228,7 +2228,7 @@ public class ReadingTest {
                 assertEquals(Long.valueOf(6), rm.getRank());
         }
         expectedWitnessA = "when april with his showerstestsweet with fruit the drought of march has pierced unto me the root";
-        Response resp = new Witness(tradId, "A").getWitnessAsText();
+        Response resp = new Witness(tradId, "A", net.stemmaweb.Util.getTraditionNode(tradId)).getWitnessAsText();
         assertEquals(expectedWitnessA, ((TextSequenceModel) resp.getEntity()).getText());
     }
 
@@ -2253,7 +2253,7 @@ public class ReadingTest {
         assertEquals("showers\"sweet", ourCompressed.getText());
 
         expectedWitnessA = "when april with his showers\"sweet with fruit the drought of march has pierced unto me the root";
-        Response resp = new Witness(tradId, "A").getWitnessAsText();
+        Response resp = new Witness(tradId, "A", net.stemmaweb.Util.getTraditionNode(tradId)).getWitnessAsText();
         assertEquals(expectedWitnessA, ((TextSequenceModel) resp.getEntity()).getText());
     }
 
@@ -2273,7 +2273,7 @@ public class ReadingTest {
         assertEquals(Response.Status.OK.getStatusCode(), res.getStatus());
 
         expectedWitnessB = "when april his showers/sweet with fruit the march of drought has pierced to the root";
-        Response resp = new Witness(tradId, "B").getWitnessAsText();
+        Response resp = new Witness(tradId, "B", net.stemmaweb.Util.getTraditionNode(tradId)).getWitnessAsText();
         assertEquals(expectedWitnessB, ((TextSequenceModel) resp.getEntity()).getText());
     }
 
@@ -2335,10 +2335,9 @@ public class ReadingTest {
             assertEquals(Status.OK.getStatusCode(), response.getStatus());
 
             // Check the reading of C
-            TextSequenceModel resp = (TextSequenceModel) new Witness(tradId, "C").getWitnessAsText().getEntity();
+            TextSequenceModel resp = (TextSequenceModel) new Witness(tradId, "C", net.stemmaweb.Util.getTraditionNode(tradId)).getWitnessAsText().getEntity();
             String expC = "when showers sweet with fruit to drought of march has pierced teh roodoftheworld";
             assertEquals(expC, resp.getText());
-            tx.close();
         }
     }
 

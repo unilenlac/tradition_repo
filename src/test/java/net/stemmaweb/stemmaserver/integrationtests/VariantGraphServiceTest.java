@@ -193,7 +193,7 @@ public class VariantGraphServiceTest {
             rm.setTarget(n2.getElementId());
             rm.setType("collated");
             rm.setScope("local");
-            Relation relRest = new Relation(newTradId);
+            Relation relRest = new Relation(newTradId, net.stemmaweb.Util.getTraditionNode(traditionId));
             Response r = relRest.create(rm);
             assertEquals(Response.Status.CREATED.getStatusCode(), r.getStatus());
             VariantGraphService.normalizeGraph(sections.get(0), List.of("collated"), tx); // TODO not sure this has an effect??

@@ -12,6 +12,7 @@ import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 
 import com.qmino.miredot.annotations.ReturnType;
+import net.stemmaweb.Util.GetTraditionFunction;
 import net.stemmaweb.model.StemmaModel;
 import net.stemmaweb.parser.DotParser;
 import net.stemmaweb.parser.NewickParser;

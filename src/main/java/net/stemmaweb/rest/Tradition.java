@@ -5,10 +5,8 @@ import static net.stemmaweb.Util.jsonerror;
 import static net.stemmaweb.Util.jsonresp;
 import static net.stemmaweb.Util.GetTraditionFunction;
 
-import java.io.IOException;
 import java.io.InputStream;
 import java.util.*;
-import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
 
 import javax.ws.rs.Consumes;
@@ -26,7 +24,6 @@ import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 import javax.xml.stream.XMLStreamException;
 
-import net.stemmaweb.Util;
 import net.stemmaweb.builders.XmlBuilder;
 import net.stemmaweb.directors.DocumentDesigner;
 import net.stemmaweb.exporter.*;
@@ -63,8 +60,6 @@ import net.stemmaweb.services.GraphDatabaseServiceProvider;
 import net.stemmaweb.services.ReadingService;
 import net.stemmaweb.services.RelationService;
 import net.stemmaweb.services.VariantGraphService;
-import scala.util.control.TailCalls;
-//import org.neo4j.helpers.collection.IteratorUtil; // Neo4j 2.x
 
 
 /**
@@ -100,11 +95,12 @@ public class Tradition {
     @Path("/section/{sectionId}")
     public Section getSection(@PathParam("sectionId") String sectionId) throws Exception {
         try(Transaction tx = db.beginTx()){
-            ArrayList<SectionModel> tradSections = produceSectionList(getTraditionNode.apply(tx), tx);
-            if (tradSections != null)
-                for (SectionModel s : tradSections)
-                    if (s.getId().equals(sectionId))
-                        return new Section(traditionId, sectionId);
+            Node tradNode = getTraditionNode.apply(tx);
+            ArrayList<SectionModel> tradSections = produceSectionList(tradNode, tx);
+            for (SectionModel s : tradSections)
+                if (s.getId().equals(sectionId) || s.getName().equals(sectionId)) {
+                    return new Section(traditionId, s.getId(), getTraditionNode);
+                }
             return null;
         }
     }
@@ -115,7 +111,7 @@ public class Tradition {
      */
     @Path("/witness/{sigil}")
     public Witness getWitness(@PathParam("sigil") String sigil) {
-        return new Witness(traditionId, sigil);
+        return new Witness(traditionId, sigil, getTraditionNode);
     }
 
     /**
@@ -132,7 +128,7 @@ public class Tradition {
      */
     @Path("/relation")
     public Relation getRelation() {
-        return new Relation(traditionId);
+        return new Relation(traditionId, getTraditionNode);
     }
 
     /**
@@ -160,7 +156,7 @@ public class Tradition {
      */
     @Path("/annotationlabel/{name}")
     public AnnotationLabel getAnnotationType(@PathParam("name") String name) {
-        return new AnnotationLabel(traditionId, name);
+        return new AnnotationLabel(traditionId, name, getTraditionNode);
     }
 
     /**
@@ -169,7 +165,7 @@ public class Tradition {
      */
     @Path("/annotation/{annoid}")
     public Annotation getAnnotationOnTradition(@PathParam("annoid") String annoid) {
-        return new Annotation(traditionId, annoid);
+        return new Annotation(traditionId, annoid, getTraditionNode);
     }
 
     /*
@@ -290,7 +286,7 @@ public class Tradition {
             // Handle the result
             if (result.getStatus() > 201) {
                 // If the result wasn't a success, delete the section node before returning the result.
-                Section restSect = new Section(traditionId, sectionNode.getElementId());
+                Section restSect = new Section(traditionId, sectionNode.getElementId(), getTraditionNode);
                 restSect.deleteSection();
                 return result;
             } else {
@@ -587,7 +583,7 @@ public class Tradition {
             if (ourSections == null)
                 return Response.serverError().entity(jsonerror("section lookup failed")).build();
             for (SectionModel s : ourSections) {
-                Section sectRest = new Section(traditionId, s.getId());
+                Section sectRest = new Section(traditionId, s.getId(), getTraditionNode);
                 ArrayList<RelationModel> sectRels = sectRest.sectionRelations(includeReadings.equals("true"));
                 if (sectRels == null)
                     return Response.serverError().entity(jsonerror("something went wrong in section relations")).build();
@@ -655,7 +651,7 @@ public class Tradition {
 
             ArrayList<ReadingModel> readingModels = new ArrayList<>();
             for (SectionModel sm : allSections) {
-                Section sectRest = new Section(traditionId, sm.getId());
+                Section sectRest = new Section(traditionId, sm.getId(), getTraditionNode);
                 List<ReadingModel> sectionReadings = sectRest.sectionReadings();
                 if (sectionReadings == null)
                     return Response.serverError().entity(jsonerror("section lookup failed")).build();

@@ -26,8 +26,7 @@ import java.io.InputStreamReader;
 import java.util.*;
 import java.util.stream.Collectors;
 
-import static net.stemmaweb.Util.jsonerror;
-import static net.stemmaweb.Util.jsonresp;
+import static net.stemmaweb.Util.*;
 
 /**
  * Reads a variety of tabular formats (TSV, CSV, XLS, XLSX) and parses the data
@@ -231,7 +230,7 @@ public class TabularParser {
                 List<ReadingModel> collatedReadings = createdReadings.values().stream().map(n -> new ReadingModel(n, tx))
                         .filter(x -> !x.isMeta()).collect(Collectors.toList());
                 int i = collatedReadings.size();
-                Relation relRest = new Relation(traditionNode.getProperty("id").toString());
+                Relation relRest = new Relation(traditionNode.getProperty("id").toString(), getTraditionNode(traditionNode.getProperty("id").toString()));
                 RelationModel rm = new RelationModel();
                 rm.setType("collated");
                 rm.setAnnotation("Aligned in tabular input");

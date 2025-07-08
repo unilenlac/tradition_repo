@@ -247,12 +247,12 @@ public class RelationTest {
             assertFalse(rels.iterator().hasNext());
             String expectedText = "when april with his showers sweet with " +
                     "fruit the drought of march has pierced unto the root";
-            TextSequenceModel resp = (TextSequenceModel) new Witness(tradId, "A").getWitnessAsText().getEntity();
+            TextSequenceModel resp = (TextSequenceModel) new Witness(tradId, "A", net.stemmaweb.Util.getTraditionNode(tradId)).getWitnessAsText().getEntity();
             assertEquals(expectedText, resp.getText());
 
             expectedText = "when showers sweet with april fruit the march " +
                     "of drought has pierced to the root";
-            resp = (TextSequenceModel) new Witness(tradId, "B").getWitnessAsText().getEntity();
+            resp = (TextSequenceModel) new Witness(tradId, "B", net.stemmaweb.Util.getTraditionNode(tradId)).getWitnessAsText().getEntity();
             assertEquals(expectedText, resp.getText());
 
             tx.close();

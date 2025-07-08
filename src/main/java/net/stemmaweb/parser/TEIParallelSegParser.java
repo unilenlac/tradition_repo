@@ -15,8 +15,7 @@ import java.io.InputStream;
 import java.util.*;
 import java.util.stream.Collectors;
 
-import static net.stemmaweb.Util.jsonerror;
-import static net.stemmaweb.Util.jsonresp;
+import static net.stemmaweb.Util.*;
 import static net.stemmaweb.services.ReadingService.addWitnessLink;
 import static net.stemmaweb.services.ReadingService.recalculateRank;
 import static net.stemmaweb.services.ReadingService.removePlaceholder;
@@ -206,12 +205,11 @@ public class TEIParallelSegParser {
         try (Transaction tx = db.beginTx()) {
             assert(endNode != null);
             endRank = Long.parseLong(endNode.getProperty("rank").toString());
-            tx.close();
         } catch (Exception e) {
             e.printStackTrace();
             return Response.serverError().build();
         }
-        Section s = new Section(tradId, parentId);
+        Section s = new Section(tradId, parentId, getTraditionNode(tradId));
         for (List<ReadingModel> identSet : s.collectIdenticalReadings(0, endRank)) {
             ReadingModel first = identSet.remove(0);
             Reading rd = new Reading(first.getId());

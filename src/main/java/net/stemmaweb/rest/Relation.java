@@ -23,6 +23,7 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 
+import net.stemmaweb.Util.GetTraditionFunction;
 import org.neo4j.graphdb.Direction;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Node;
@@ -57,11 +58,13 @@ public class Relation {
     private static final String SCOPE_SECTION = "section";
     private static final String SCOPE_TRADITION = "tradition";
 
+    private final GetTraditionFunction<Transaction, Node> getTraditionNode;
 
-    public Relation(String traditionId) {
+    public Relation(String traditionId, GetTraditionFunction<Transaction, Node> getNodeFunction) {
         GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
         db = dbServiceProvider.getDatabase();
         tradId = traditionId;
+        getTraditionNode = getNodeFunction;
     }
 
     /**
@@ -104,7 +107,7 @@ public class Relation {
             String thisRelId = orm.get().getId();
             if (!scope.equals(SCOPE_LOCAL)) {
                 try (Transaction tx = db.beginTx()) {
-                    Node startingPoint = VariantGraphService.getTraditionNode(tradId, tx);
+                    Node startingPoint = getTraditionNode.apply(tx);
                     Boolean use_normal = returnRelationType(startingPoint, relationModel.getType(), tx).getUse_regular();
                     Node readingA = tx.getNodeByElementId(relationModel.getSource());
                     Node readingB = tx.getNodeByElementId(relationModel.getTarget());
@@ -192,7 +195,6 @@ public class Relation {
                     .entity(jsonerror("The specified readings do not belong to the specified tradition"))
                     .build();
 
-
             if (!readingA.getProperty("section_id").equals(readingB.getProperty("section_id")))
                 return Response.status(Status.CONFLICT)
                         .entity(jsonerror("Cannot create relation across tradition sections"))
@@ -204,7 +206,7 @@ public class Relation {
                     .build();
 
             // Get, or create implicitly, the relation type node for the given type.
-            Node tradNode = VariantGraphService.getTraditionNode(tradId, tx);
+            Node tradNode = getTraditionNode.apply(tx);
             RelationTypeModel rmodel = returnRelationType(tradNode, relationModel.getType(), tx);
 
             // Check that the relation type is compatible with the passed relation model
@@ -321,7 +323,7 @@ public class Relation {
                 Node lowerRanked = rankA < rankB ? readingA : readingB;
                 lowerRanked.setProperty("rank", higherRank);
                 changedReadings.add(new ReadingModel(lowerRanked, tx));
-                Node tradNode = VariantGraphService.getTraditionNode(tradId, tx);
+                Node tradNode = getTraditionNode.apply(tx);
                 Set<Node> changedRank = ReadingService.recalculateRank(tradNode, lowerRanked, false, tx);
                 for (Node cr : changedRank)
                     if (!cr.equals(lowerRanked))
@@ -362,7 +364,7 @@ public class Relation {
         // Now go through all the relations that have been created, and make sure that any
         // transitivity effects have been accounted for.
         Transaction tx = db.beginTx();
-        Node tradNode = VariantGraphService.getTraditionNode(tradId, tx);
+        Node tradNode = getTraditionNode.apply(tx);
         for (RelationModel rm : newRelationResult.getRelations()) {
             TransitiveRelationTraverser relTraverser = new TransitiveRelationTraverser(tradNode, rtm, tx);
             Node startNode = tx.getNodeByElementId(rm.getSource());

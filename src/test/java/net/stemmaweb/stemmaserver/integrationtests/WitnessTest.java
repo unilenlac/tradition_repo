@@ -96,7 +96,7 @@ public class WitnessTest {
     public void witnessAsTextTestA() {
         String expectedText = "when april with his showers sweet with "
                 + "fruit the drought of march has pierced unto the root";
-        Response resp = new Witness(tradId, "A").getWitnessAsText();
+        Response resp = new Witness(tradId, "A", net.stemmaweb.Util.getTraditionNode(tradId)).getWitnessAsText();
         assertEquals(expectedText, ((TextSequenceModel) resp.getEntity()).getText());
 
         String returnedText = jerseyTest
@@ -121,7 +121,7 @@ public class WitnessTest {
     public void witnessAsTextTestB() {
         String expectedText = "when showers sweet with april fruit the march "
                 + "of drought has pierced to the root";
-        Response resp = new Witness(tradId, "B").getWitnessAsText();
+        Response resp = new Witness(tradId, "B", net.stemmaweb.Util.getTraditionNode(tradId)).getWitnessAsText();
         assertEquals(expectedText, ((TextSequenceModel) resp.getEntity()).getText());
 
         String returnedText = jerseyTest
@@ -142,7 +142,7 @@ public class WitnessTest {
         } catch (Exception e) {
             fail();
         }
-        TextSequenceModel returnedText = (TextSequenceModel) new Witness(foxId, "w1").getWitnessAsText().getEntity();
+        TextSequenceModel returnedText = (TextSequenceModel) new Witness(foxId, "w1", net.stemmaweb.Util.getTraditionNode(tradId)).getWitnessAsText().getEntity();
         assertNotEquals(expectedText, returnedText.getText());
 
         // Find the reading that is the period
@@ -151,9 +151,8 @@ public class WitnessTest {
             period = tx.findNode(Nodes.READING, "text", ". ");
             assertNotNull(period);
             period.setProperty("join_prior", true);
-            tx.close();
         }
-        returnedText = (TextSequenceModel) new Witness(foxId, "w1").getWitnessAsText().getEntity();
+        returnedText = (TextSequenceModel) new Witness(foxId, "w1", net.stemmaweb.Util.getTraditionNode(tradId)).getWitnessAsText().getEntity();
         assertEquals(expectedText, returnedText.getText());
 
         // Now find its predecessors and mark them as join_next
@@ -162,16 +161,15 @@ public class WitnessTest {
                 Node n = r.getStartNode();
                 n.setProperty("join_next", true);
             }
-            tx.close();
         }
-        returnedText = (TextSequenceModel) new Witness(foxId, "w1").getWitnessAsText().getEntity();
+        returnedText = (TextSequenceModel) new Witness(foxId, "w1", net.stemmaweb.Util.getTraditionNode(tradId)).getWitnessAsText().getEntity();
         assertEquals(expectedText, returnedText.getText());
 
         try (Transaction tx = db.beginTx()) {
             period.removeProperty("join_prior");
             tx.commit();
         }
-        returnedText = (TextSequenceModel) new Witness(foxId, "w1").getWitnessAsText().getEntity();
+        returnedText = (TextSequenceModel) new Witness(foxId, "w1", net.stemmaweb.Util.getTraditionNode(tradId)).getWitnessAsText().getEntity();
         assertEquals(expectedText, returnedText.getText());
     }
 

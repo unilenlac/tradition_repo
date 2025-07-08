@@ -96,7 +96,7 @@ public class TabularInputOutputTest extends TestCase {
         assertEquals(13, allWitnesses.size());
 
         // Get a witness text
-        Witness witness = new Witness(tradId, "K");
+        Witness witness = new Witness(tradId, "K", net.stemmaweb.Util.getTraditionNode(tradId));
         TextSequenceModel resp = (TextSequenceModel) witness.getWitnessAsText().getEntity();
         System.out.println(resp.getText());
 
@@ -143,7 +143,7 @@ public class TabularInputOutputTest extends TestCase {
         assertEquals(13, allWitnesses.size());
 
         // Get a witness text
-        Witness witness = new Witness(tradId, "E");
+        Witness witness = new Witness(tradId, "E", net.stemmaweb.Util.getTraditionNode(tradId));
         TextSequenceModel tm = (TextSequenceModel) witness.getWitnessAsText().getEntity();
         List<String> layers = new ArrayList<>();
         layers.add("a.c.");

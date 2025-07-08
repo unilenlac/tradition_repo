@@ -12,6 +12,7 @@ import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 
 import com.qmino.miredot.annotations.ReturnType;
+import net.stemmaweb.Util;
 import net.stemmaweb.model.ReadingModel;
 import net.stemmaweb.model.WitnessModel;
 import net.stemmaweb.model.TextSequenceModel;
@@ -36,11 +37,13 @@ public class Witness {
     private String sigil;
     private String sectId;
     private String errorMessage;
+    private final Util.GetTraditionFunction<Transaction, Node> getTraditionNode;
 
-    public Witness (String traditionId, String requestedSigil) {
+    public Witness (String traditionId, String requestedSigil, Util.GetTraditionFunction<Transaction, Node> getNodeFunction) {
         GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
         db = dbServiceProvider.getDatabase();
         tradId = traditionId;
+        this.getTraditionNode = getNodeFunction;
         // The "sigil" might be a sigil, or it might be a node ID.
         try {
             String found = getWitnessById(requestedSigil);
@@ -53,8 +56,8 @@ public class Witness {
         sectId = null;
     }
 
-    public Witness (String traditionId, String sectionId, String requestedSigil) {
-        this(traditionId, requestedSigil);
+    public Witness (String traditionId, String sectionId, String requestedSigil, Util.GetTraditionFunction<Transaction, Node> getNodeFunction) {
+        this(traditionId, requestedSigil, getNodeFunction);
         sectId = sectionId;
     }
 
@@ -69,7 +72,6 @@ public class Witness {
             }
             if (found != null)
                 foundSigil = found.getProperty("sigil").toString();
-            //tx.close();
         }
         return foundSigil;
     }
@@ -85,7 +87,6 @@ public class Witness {
                     break;
                 }
             }
-            //tx.close();
         }
         return found;
     }
@@ -229,6 +230,8 @@ public class Witness {
         try (Transaction tx = db.beginTx()){
             iterationList = sectionsRequested(tx);
             tx.commit();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
         if (iterationList == null)
             return Response.status(errorMessage.contains("not found") ? Status.NOT_FOUND : Status.INTERNAL_SERVER_ERROR)
@@ -326,6 +329,8 @@ public class Witness {
                 return Response.status(errorMessage.contains("not found") ? Status.NOT_FOUND : Status.INTERNAL_SERVER_ERROR)
                         .entity(jsonerror(errorMessage)).build();
             tx.commit();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
 
         for (Node currentSection : iterationList) {
@@ -380,8 +385,8 @@ public class Witness {
         return result;
     }
 
-    private ArrayList<Node> sectionsRequested(Transaction tx) {
-        Node traditionNode = VariantGraphService.getTraditionNode(tradId, tx);
+    private ArrayList<Node> sectionsRequested(Transaction tx) throws Exception {
+        Node traditionNode = getTraditionNode.apply(tx);
         if (traditionNode == null) {
             errorMessage = "Requested tradition does not exist";
             return null;

@@ -1,5 +1,6 @@
 package net.stemmaweb.exporter;
 
+import static net.stemmaweb.Util.getTraditionNode;
 import static net.stemmaweb.Util.jsonerror;
 import static net.stemmaweb.parser.Util.getExpander;
 import static org.apache.commons.text.StringEscapeUtils.escapeHtml4;
@@ -128,7 +129,7 @@ public class DotExporter
 
             for (Node sectionNode: sections) {
                 // Get the number of witnesses we have
-                ArrayList<Node> sectionWits = new Section(tradId, sectionNode.getElementId())
+                ArrayList<Node> sectionWits = new Section(tradId, sectionNode.getElementId(), getTraditionNode(tradId))
                         .collectSectionWitnesses();
                 int numWits = sectionWits.size();
                 if (dm.getExcludeWitnesses().size() > 0) {
