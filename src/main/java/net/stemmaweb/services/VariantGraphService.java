@@ -204,7 +204,7 @@ public class VariantGraphService {
     // 	return getTraditionNode(section, tx);
     // }
 
-    public static Node getTraditionNode(Node n, Transaction tx) {
+    public static Node getSectionTraditionNode(Node n, Transaction tx) {
         Node tradition;
         Node section;
         if(Objects.equals(n.getLabels().iterator().next().toString(), "READING")){
@@ -223,33 +223,29 @@ public class VariantGraphService {
      * @param sectionNode - The section for which to perform the calculation
      */
     public static void calculateCommon(Node sectionNode, Transaction tx) {
-//        GraphDatabaseService db = sectionNode.getGraphDatabase();
-    	// GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+
         // Get an AlignmentModel for the given section, and go rank by rank to find
         // the common nodes.
-        if(sectionNode.hasProperty("rank")){
 
-            AlignmentModel am = new AlignmentModel(sectionNode, tx);
-            // try (Transaction tx = db.beginTx()) {
-            Node startNode = VariantGraphService.getStartNode(sectionNode.getElementId(), tx);
-            // See which kind of flag we are setting
-            String propName = startNode.hasRelationship(Direction.OUTGOING, ERelations.NSEQUENCE) ? "ncommon" : "is_common";
-            // Go through the table rank by rank - if a given rank has only a single reading
-            // apart from lacunae, and no gaps, it is common
-            for (AtomicInteger i = new AtomicInteger(0); i.get() < am.getLength(); i.getAndIncrement()) {
-                List<ReadingModel> readingsAtRank = am.getAlignment().stream()
-                        .map(x -> x.getTokens().get(i.get())).collect(Collectors.toList());
-                HashSet<String> distinct = new HashSet<>();
-                for (ReadingModel rm : readingsAtRank) {
-                    if (rm == null) distinct.add("");
-                    else if (!rm.getIs_lacuna()) distinct.add(rm.getId());
-                }
-                // Set the commonality property. It is true if the size of the 'distinct' set is 1.
-                distinct.stream().filter(x -> !x.isEmpty())
-                        .forEach(x -> tx.getNodeByElementId(x).setProperty(propName, distinct.size() == 1));
-                //}
-                // tx.commit();
+        AlignmentModel am = new AlignmentModel(sectionNode, tx);
+        // try (Transaction tx = db.beginTx()) {
+        Node startNode = VariantGraphService.getStartNode(sectionNode.getElementId(), tx);
+        // See which kind of flag we are setting
+        String propName = startNode.hasRelationship(Direction.OUTGOING, ERelations.NSEQUENCE) ? "ncommon" : "is_common";
+        // Go through the table rank by rank - if a given rank has only a single reading
+        // apart from lacunae, and no gaps, it is common
+        for (AtomicInteger i = new AtomicInteger(0); i.get() < am.getLength(); i.getAndIncrement()) {
+            List<ReadingModel> readingsAtRank = am.getAlignment().stream()
+                    .map(x -> x.getTokens().get(i.get())).collect(Collectors.toList());
+            HashSet<String> distinct = new HashSet<>();
+            for (ReadingModel rm : readingsAtRank) {
+                if (rm == null) distinct.add("");
+                else if (!rm.getIs_lacuna()) distinct.add(rm.getId());
             }
+            // Set the commonality property. It is true if the size of the 'distinct' set is 1.
+            distinct.stream().filter(x -> !x.isEmpty())
+                    .forEach(x -> tx.getNodeByElementId(x).setProperty(propName, distinct.size() == 1));
+
         }
     }
 
@@ -276,7 +272,7 @@ public class VariantGraphService {
     	GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
         // Make sure the relation type exists
         //*
-        Node tradition = getTraditionNode(sectionNode, tx);
+        Node tradition = getSectionTraditionNode(sectionNode, tx);
         Node relType;
         for (String normalizeType : normalizeTypeList) {
             relType = new RelationTypeModel(normalizeType).lookup(tradition);

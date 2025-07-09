@@ -27,6 +27,7 @@ import javax.xml.stream.XMLStreamException;
 import net.stemmaweb.builders.XmlBuilder;
 import net.stemmaweb.directors.DocumentDesigner;
 import net.stemmaweb.exporter.*;
+import net.stemmaweb.services.*;
 import org.glassfish.jersey.media.multipart.FormDataParam;
 import org.json.JSONObject;
 import org.neo4j.graphdb.*;
@@ -55,11 +56,6 @@ import net.stemmaweb.parser.GraphMLParser;
 import net.stemmaweb.parser.StemmawebParser;
 import net.stemmaweb.parser.TEIParallelSegParser;
 import net.stemmaweb.parser.TabularParser;
-import net.stemmaweb.services.DatabaseService;
-import net.stemmaweb.services.GraphDatabaseServiceProvider;
-import net.stemmaweb.services.ReadingService;
-import net.stemmaweb.services.RelationService;
-import net.stemmaweb.services.VariantGraphService;
 
 
 /**
@@ -78,8 +74,9 @@ public class Tradition {
     GetTraditionFunction<Transaction, Node> getTraditionNode;
 
     public Tradition(String requestedId, GetTraditionFunction<Transaction, Node> getNodeFunction) {
-        GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
-        db = dbServiceProvider.getDatabase();
+        // GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
+        // db = dbServiceProvider.getDatabase();
+        db = Database.getInstance().session;
         traditionId = requestedId;
         getTraditionNode = getNodeFunction;
     }
@@ -230,7 +227,7 @@ public class Tradition {
                             .uniqueness(Uniqueness.NODE_GLOBAL)
                             .traverse(n)
                             .nodes()
-                            .forEach(r -> sectionList.add(new SectionModel(r)));
+                            .forEach(r -> sectionList.add(new SectionModel(r, tx)));
                     break;
                 }
             }
@@ -359,7 +356,7 @@ public class Tradition {
         // TODO we need to parse TEI double-endpoint attachment from CTE
         if (filetype.equals("collatex"))
             // Pass it off to the CollateX parser
-            result = new CollateXParser().parseCollateX(uploadedInputStream, parentNode);
+            result = new CollateXParser().parseCollateX(uploadedInputStream, parentNode, tx);
         if (filetype.equals("cxjson"))
             // Pass it off to the CollateX JSON parser
             result = new CollateXJsonParser().parseCollateXJson(uploadedInputStream, parentNode, tx);
@@ -521,7 +518,7 @@ public class Tradition {
 
             ArrayList<WitnessModel> witnessList = new ArrayList<>();
                 DatabaseService.getRelated(traditionNode, ERelations.HAS_WITNESS, tx)
-                        .forEach(r -> witnessList.add(new WitnessModel(r)));
+                        .forEach(r -> witnessList.add(new WitnessModel(r, tx)));
 
             Collections.sort(witnessList);
             return Response.ok(witnessList).build();
@@ -838,7 +835,7 @@ public class Tradition {
                     traditionNode.setProperty("stemweb_jobid", tradition.getStemweb_jobid());
             }
             // Generate the updated model to return it
-            updatedTradition = new TraditionModel(traditionNode);
+            updatedTradition = new TraditionModel(traditionNode, tx);
             tx.commit();
         } catch (Exception e) {
             e.printStackTrace();
@@ -944,7 +941,7 @@ public class Tradition {
             if (traditionNode == null)
                 return Response.status(Status.NOT_FOUND).entity(jsonerror("No such tradition found")).build();
 
-            metadata = new TraditionModel(traditionNode);
+            metadata = new TraditionModel(traditionNode, tx);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }

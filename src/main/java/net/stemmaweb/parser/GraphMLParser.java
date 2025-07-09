@@ -146,7 +146,7 @@ public class GraphMLParser {
         try {
         	parentNode = tx.getNodeByElementId(parentNode.getElementId());
         	// Get the tradition node
-        	Node traditionNode = isSingleSection ? VariantGraphService.getTraditionNode(parentNode, tx) : parentNode;
+        	Node traditionNode = isSingleSection ? VariantGraphService.getSectionTraditionNode(parentNode, tx) : parentNode;
             // The UUID of the tradition node that was passed in to receive the parsed data
             String tradId = traditionNode.getElementId();
             // The Neo4J node that contains our section, if we are parsing a section

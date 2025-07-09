@@ -114,7 +114,7 @@ public class GraphDatabaseServiceProvider {
     }
 
 
-    private static void registerShutdownHook( final DatabaseManagementService managementService ) {
+    public static void registerShutdownHook( final DatabaseManagementService managementService ) {
     	Runtime.getRuntime().addShutdownHook( new Thread()
     	{
     		@Override

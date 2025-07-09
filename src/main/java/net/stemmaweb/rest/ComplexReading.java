@@ -38,10 +38,8 @@ public class ComplexReading {
     private final String readId;
 
     public ComplexReading(String requestedId) {
-        GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
-        db = dbServiceProvider.getDatabase();
-        // The requested ID might have an 'n' prepended, if it was taken from the SVG output.
-        // readId = Long.valueOf(requestedId.replaceAll("n", ""));
+
+        db = Database.getInstance().session;
         readId = requestedId;
     }
 
@@ -60,7 +58,7 @@ public class ComplexReading {
     public Response getComplexReading() {
         ComplexReadingModel reading;
         try (Transaction tx = db.beginTx()) {
-            reading = new ComplexReadingModel(tx.getNodeByElementId(String.valueOf(readId)));
+            reading = new ComplexReadingModel(tx.getNodeByElementId(String.valueOf(readId)), tx);
         } catch (NotFoundException e) {
             return Response.noContent().build();
         } catch (Exception e) {

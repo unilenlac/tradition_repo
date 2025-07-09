@@ -106,7 +106,7 @@ public class TeiExporter {
                         writer.writeEndElement();
                     }
                     ReadingModel rdg = new ReadingModel(node, tx);
-                    TraditionModel tradition = new TraditionModel(tradition_node);
+                    TraditionModel tradition = new TraditionModel(tradition_node, tx);
                     int trad_w_count = tradition.getWitnesses().size();
                     int rdg_w_count = rdg.getWitnesses().size();
                     boolean is_app = trad_w_count != rdg_w_count;

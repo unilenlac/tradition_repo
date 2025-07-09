@@ -5,6 +5,8 @@
  */
 package net.stemmaweb.services;
 
+import net.stemmaweb.services.Database;
+
 import javax.servlet.ServletContext;
 import javax.servlet.ServletContextEvent;
 import javax.servlet.ServletContextListener;
@@ -13,9 +15,6 @@ import javax.servlet.ServletContextListener;
 
 import org.neo4j.dbms.api.DatabaseManagementService;
 import org.neo4j.graphdb.GraphDatabaseService;
-import org.neo4j.graphdb.Result;
-
-import java.util.Objects;
 
 /**
  *
@@ -34,8 +33,8 @@ public class ApplicationContextListener implements ServletContextListener {
     public void contextDestroyed(ServletContextEvent event) {
         //Output a simple message to the server's console
         try {
-            GraphDatabaseServiceProvider serviceProvider = new GraphDatabaseServiceProvider();
-            DatabaseManagementService managementService = serviceProvider.getManagementService();
+            // GraphDatabaseServiceProvider serviceProvider = new GraphDatabaseServiceProvider();
+            DatabaseManagementService managementService = Database.getInstance().dbService;
             managementService.shutdown();
             System.out.println("SHUTDOWN PROCESS : neo4j database closed");
         } catch (Exception e) {
@@ -51,7 +50,8 @@ public class ApplicationContextListener implements ServletContextListener {
         //Output a simple message to the server's console
         // logger.debug("This is debug - Listener: context initialized");
         try {
-            GraphDatabaseService db = new GraphDatabaseServiceProvider(DB_PATH).getDatabase();
+            // GraphDatabaseService db = new GraphDatabaseServiceProvider(DB_PATH).getDatabase();
+            GraphDatabaseService db = Database.getInstance().session;
             DatabaseService.createRootNode(db);
         } catch (Exception e) {
             e.printStackTrace();

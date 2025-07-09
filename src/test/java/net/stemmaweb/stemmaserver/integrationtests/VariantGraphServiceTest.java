@@ -107,7 +107,7 @@ public class VariantGraphServiceTest {
         // Now by section node
         ArrayList<Node> sectionNodes = VariantGraphService.getSectionNodes(foundTradition, tx);
         assertEquals(1, sectionNodes.size());
-        assertEquals(foundTradition, VariantGraphService.getTraditionNode(sectionNodes.get(0), tx));
+        assertEquals(foundTradition, VariantGraphService.getSectionTraditionNode(sectionNodes.get(0), tx));
     }
 
     @Test

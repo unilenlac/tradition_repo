@@ -36,13 +36,15 @@ public class WitnessModel implements Comparable<WitnessModel> {
      * Generates a model from a Neo4j Node
      * @param node - the witness node to initialize from
      */
-    public WitnessModel(Node node) {
-        GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
-        try (Transaction tx = db.beginTx()) {
+    public WitnessModel(Node node, Transaction tx) {
+
+        try {
             Node requested_node = tx.getNodeByElementId(node.getElementId());
             id = requested_node.getElementId();
             if (requested_node.hasProperty("sigil"))
                 sigil = requested_node.getProperty("sigil").toString();
+        } catch (Exception e){
+            throw new RuntimeException("Error retrieving witness properties: " + e.getMessage());
         }
     }
 

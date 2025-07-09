@@ -47,8 +47,7 @@ public class DatabaseService {
      * @return a list of all nodes related to startNode by the given relationship
      */
     public static ArrayList<Node> getRelated (Node startNode, RelationshipType relType, Transaction tx) {
-        // GraphDatabaseService db = startNode.getGraphDatabase();
-    	// GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+
     	ArrayList<Node> result = null;
 
         result = getRelatedNode(startNode, relType, tx);
@@ -71,19 +70,19 @@ public class DatabaseService {
     public static ArrayList<Node> getRelatedNode (Node startNode, RelationshipType relType, Transaction tx) {
 
         ArrayList<Node> result = new ArrayList<>();
-        if (tx == null) {
-            GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
-            try (Transaction ntx = db.beginTx()) {
-                Node startNode2 = ntx.getNodeByElementId(startNode.getElementId());
-                Iterator<Relationship> allRels = startNode2.getRelationships(relType).iterator();
-                allRels.forEachRemaining(x -> result.add(x.getOtherNode(startNode2)));
-                ntx.close();
-            };
-        }else{
+        // if (tx == null) {
+        //     GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+        //     try (Transaction ntx = db.beginTx()) {
+        //         Node startNode2 = ntx.getNodeByElementId(startNode.getElementId());
+        //         Iterator<Relationship> allRels = startNode2.getRelationships(relType).iterator();
+        //         allRels.forEachRemaining(x -> result.add(x.getOtherNode(startNode2)));
+        //         ntx.close();
+        //     };
+        // }else{
             Node startNode2 = tx.getNodeByElementId(startNode.getElementId());
             Iterator<Relationship> allRels = startNode2.getRelationships(relType).iterator();
             allRels.forEachRemaining(x -> result.add(x.getOtherNode(startNode2)));
-        };
+        //};
         return result;
     }
 

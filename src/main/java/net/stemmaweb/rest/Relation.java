@@ -24,6 +24,7 @@ import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 
 import net.stemmaweb.Util.GetTraditionFunction;
+import net.stemmaweb.services.*;
 import org.neo4j.graphdb.Direction;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Node;
@@ -38,11 +39,7 @@ import net.stemmaweb.model.GraphModel;
 import net.stemmaweb.model.ReadingModel;
 import net.stemmaweb.model.RelationModel;
 import net.stemmaweb.model.RelationTypeModel;
-import net.stemmaweb.services.DatabaseService;
-import net.stemmaweb.services.GraphDatabaseServiceProvider;
-import net.stemmaweb.services.ReadingService;
 import net.stemmaweb.services.RelationService.TransitiveRelationTraverser;
-import net.stemmaweb.services.VariantGraphService;
 
 /**
  * Comprises all the api calls related to a relation.
@@ -61,8 +58,7 @@ public class Relation {
     private final GetTraditionFunction<Transaction, Node> getTraditionNode;
 
     public Relation(String traditionId, GetTraditionFunction<Transaction, Node> getNodeFunction) {
-        GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
-        db = dbServiceProvider.getDatabase();
+        db = Database.getInstance().session;
         tradId = traditionId;
         getTraditionNode = getNodeFunction;
     }
@@ -87,26 +83,27 @@ public class Relation {
     @ReturnType(clazz = GraphModel.class)
     public Response create(RelationModel relationModel) throws IOException {
         // Make sure a scope is set
-        if (relationModel.getScope() == null) relationModel.setScope(SCOPE_LOCAL);
-        String scope = relationModel.getScope();
-        if (scope.equals(SCOPE_TRADITION) || scope.equals(SCOPE_SECTION) || scope.equals(SCOPE_LOCAL)) {
-            GraphModel relationChanges = new GraphModel();
+        try (Transaction tx = db.beginTx()) {
+            if (relationModel.getScope() == null) relationModel.setScope(SCOPE_LOCAL);
+            String scope = relationModel.getScope();
+            GraphModel relationChanges = null;
+            if (scope.equals(SCOPE_TRADITION) || scope.equals(SCOPE_SECTION) || scope.equals(SCOPE_LOCAL)) {
+                relationChanges = new GraphModel();
 
-            Response response = this.create_local(relationModel);
-            if (Status.CREATED.getStatusCode() != response.getStatus()) {
-                return response;
-            }
-            GraphModel createResult = (GraphModel)response.getEntity();
-            relationChanges.addReadings(createResult.getReadings());
-            relationChanges.addRelations(createResult.getRelations());
-            // Fish out the ID of the relationship that we explicitly created
-            Optional<RelationModel> orm = createResult.getRelations().stream()
-                    .filter(x -> x.getTarget().equals(relationModel.getTarget())
-                            && x.getSource().equals(relationModel.getSource())).findFirst();
-            assert(orm.isPresent());
-            String thisRelId = orm.get().getId();
-            if (!scope.equals(SCOPE_LOCAL)) {
-                try (Transaction tx = db.beginTx()) {
+                Response response = this.create_local(relationModel, tx);
+                if (Status.CREATED.getStatusCode() != response.getStatus()) {
+                    return response;
+                }
+                GraphModel createResult = (GraphModel) response.getEntity();
+                relationChanges.addReadings(createResult.getReadings());
+                relationChanges.addRelations(createResult.getRelations());
+                // Fish out the ID of the relationship that we explicitly created
+                Optional<RelationModel> orm = createResult.getRelations().stream()
+                        .filter(x -> x.getTarget().equals(relationModel.getTarget())
+                                && x.getSource().equals(relationModel.getSource())).findFirst();
+                assert (orm.isPresent());
+                String thisRelId = orm.get().getId();
+                if (!scope.equals(SCOPE_LOCAL)) {
                     Node startingPoint = getTraditionNode.apply(tx);
                     Boolean use_normal = returnRelationType(startingPoint, relationModel.getType(), tx).getUse_regular();
                     Node readingA = tx.getNodeByElementId(relationModel.getSource());
@@ -119,9 +116,9 @@ public class Relation {
                     Iterable<Node> tradReadings = VariantGraphService.returnEntireTradition(startingPoint, tx).nodes();
                     // Pick out the ones that share the readingA text
                     Function<Node, Object> nodefilter = (n) -> use_normal && n.hasProperty("normal_form")
-                            ? n.getProperty("normal_form") : (n.hasProperty("text") ? n.getProperty("text"): "");
-//                    HashSet<Node> ourA = tradReadings.stream()
-            		HashSet<Node> ourA = StreamSupport.stream(tradReadings.spliterator(), false)
+                            ? n.getProperty("normal_form") : (n.hasProperty("text") ? n.getProperty("text") : "");
+                    //                    HashSet<Node> ourA = tradReadings.stream()
+                    HashSet<Node> ourA = StreamSupport.stream(tradReadings.spliterator(), false)
                             .filter(x -> nodefilter.apply(x).equals(nodefilter.apply(readingA)) && !x.equals(readingA))
                             .collect(Collectors.toCollection(HashSet::new));
                     HashMap<String, HashSet<Long>> ranks = new HashMap<>();
@@ -137,8 +134,8 @@ public class Relation {
 
                     // Pick out the ones that share the readingB text
                     // HashSet<Node> ourB = tradReadings.stream().filter(x -> x.hasProperty("text")
-            		HashSet<Node> ourB = StreamSupport.stream(tradReadings.spliterator(), false).filter(x -> x.hasProperty("text")
-                            && nodefilter.apply(x).equals(nodefilter.apply(readingB)) && !x.equals(readingB))
+                    HashSet<Node> ourB = StreamSupport.stream(tradReadings.spliterator(), false).filter(x -> x.hasProperty("text")
+                                    && nodefilter.apply(x).equals(nodefilter.apply(readingB)) && !x.equals(readingB))
                             .collect(Collectors.toCollection(HashSet::new));
                     RelationModel userel;
                     for (Node cur_node : ourB) {
@@ -153,7 +150,7 @@ public class Relation {
                                 userel = new RelationModel(thisRelation, tx);
                                 userel.setSource(Long.toString((Long) id));
                                 userel.setTarget(node_id);
-                                response = this.create_local(userel);
+                                response = this.create_local(userel, tx);
                                 if (Status.NOT_MODIFIED.getStatusCode() != response.getStatus()) {
                                     if (Status.CREATED.getStatusCode() == response.getStatus()) {
                                         createResult = (GraphModel) response.getEntity();
@@ -164,22 +161,21 @@ public class Relation {
                             }
                         }
                     }
-                    tx.commit();
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    return Response.serverError().build();
                 }
             }
+            // tx.commit();
             return Response.status(Status.CREATED).entity(relationChanges).build();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+            // return Response.status(Status.BAD_REQUEST).entity("Undefined Scope").build();
         }
-        return Response.status(Status.BAD_REQUEST).entity("Undefined Scope").build();
     }
 
     // Create a relation; return the relation created as well as any reading nodes whose
     // properties (e.g. rank) have changed.
-    private Response create_local(RelationModel relationModel) {
+    private Response create_local(RelationModel relationModel, Transaction tx) {
         GraphModel readingsAndRelationModel;
-        try (Transaction tx = db.beginTx()) {
+        try {
             /*
              * Currently search by id search, because is much faster by measurement. Because
              * the id search is O(n) just go through all ids without care. And the
@@ -208,6 +204,7 @@ public class Relation {
             // Get, or create implicitly, the relation type node for the given type.
             Node tradNode = getTraditionNode.apply(tx);
             RelationTypeModel rmodel = returnRelationType(tradNode, relationModel.getType(), tx);
+            if(rmodel == null) rmodel = new RelationTypeModel(relationModel.getType());
 
             // Check that the relation type is compatible with the passed relation model
             if (!relationModel.getScope().equals("local") && !rmodel.getIs_generalizable())
@@ -233,7 +230,7 @@ public class Relation {
                 }
             }
 
-            Boolean isCyclic = ReadingService.wouldGetCyclic(readingA, readingB);
+            Boolean isCyclic = ReadingService.wouldGetCyclic(readingA, readingB, tx);
             if (isCyclic && colocation) {
                     return Response
                             .status(Status.CONFLICT)
@@ -266,10 +263,9 @@ public class Relation {
             }
 
             // We are finally ready to write a relation.
-            readingsAndRelationModel = createSingleRelation(readingA, readingB, relationModel, rmodel);
+            readingsAndRelationModel = createSingleRelation(readingA, readingB, relationModel, rmodel, tx);
             // We can also write any transitive relationships.
             propagateRelation(readingsAndRelationModel, rmodel);
-            tx.commit();
         } catch (Exception e) {
             e.printStackTrace();
             return Response.serverError().entity(jsonerror(e.getMessage())).build();
@@ -287,9 +283,9 @@ public class Relation {
      * @return a GraphModel containing the single n4j relationship plus whatever readings were re-ranked
      */
     private GraphModel createSingleRelation(Node readingA, Node readingB,
-                                            RelationModel relModel, RelationTypeModel rtm) throws Exception {
+                                            RelationModel relModel, RelationTypeModel rtm, Transaction tx) throws Exception {
 
-        try(Transaction tx = db.beginTx()){
+        try{
 
             ArrayList<ReadingModel> changedReadings = new ArrayList<>();
             ArrayList<RelationModel> createdRelations = new ArrayList<>();
@@ -306,8 +302,8 @@ public class Relation {
             relationAtoB.setProperty("b_derivable_from_a", relModel.getB_derivable_from_a());
             relationAtoB.setProperty("alters_meaning", relModel.getAlters_meaning());
             relationAtoB.setProperty("is_hyperrelation", relModel.getIs_hyperrelation());
-            relationAtoB.setProperty("hsource", relModel.getHSource());
-            relationAtoB.setProperty("htarget", relModel.getHTarget());
+            relationAtoB.setProperty("hsource", relModel.getHSource() == null ? "" : relModel.getHSource());
+            relationAtoB.setProperty("htarget", relModel.getHTarget() == null ? "" : relModel.getHTarget());
             relationAtoB.setProperty("is_significant", relModel.getIs_significant());
             relationAtoB.setProperty("non_independent", relModel.getNon_independent());
             relationAtoB.setProperty("reading_a", readingA.getProperty("text"));
@@ -333,6 +329,8 @@ public class Relation {
 
             createdRelations.add(new RelationModel(relationAtoB, tx));
             return new GraphModel(changedReadings, createdRelations, new ArrayList<>());
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
     }
 
@@ -386,7 +384,7 @@ public class Relation {
                 for (Node readingB : iterateNodes) {
                     if (!alreadyRelated.contains(readingB)) {
                         // System.out.println(String.format("...making relation %s to node %d / %s", rm.getType(), readingB.getId(), readingB.getProperty("text")));
-                        GraphModel interim = createSingleRelation(readingA, readingB, rm, rtm);
+                        GraphModel interim = createSingleRelation(readingA, readingB, rm, rtm, tx);
                         newRelationResult.addReadings(interim.getReadings());
                         newRelationResult.addRelations(interim.getRelations());
                     }
@@ -413,7 +411,7 @@ public class Relation {
                         ArrayList<Relationship> priorLinks = DatabaseService.getRelationshipTo(n, c, ERelations.RELATED);
                         if (priorLinks.size() == 0) {
                             // Create a relation based on the looser link
-                            GraphModel interim = createSingleRelation(n, c, newmodel, newtm);
+                            GraphModel interim = createSingleRelation(n, c, newmodel, newtm, tx);
                             newRelationResult.addReadings(interim.getReadings());
                             newRelationResult.addRelations(interim.getRelations());
                         }

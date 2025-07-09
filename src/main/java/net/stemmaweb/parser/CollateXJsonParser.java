@@ -2,6 +2,7 @@ package net.stemmaweb.parser;
 
 import net.stemmaweb.model.ReadingModel;
 import net.stemmaweb.rest.Nodes;
+import net.stemmaweb.services.Database;
 import net.stemmaweb.services.VariantGraphService;
 import net.stemmaweb.services.GraphDatabaseServiceProvider;
 import net.stemmaweb.services.ReadingService;
@@ -21,11 +22,10 @@ import java.util.*;
 
 import static net.stemmaweb.Util.jsonerror;
 import static net.stemmaweb.Util.jsonresp;
+import static net.stemmaweb.services.VariantGraphService.getSectionTraditionNode;
 
 public class CollateXJsonParser {
-
-    private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
-    private final GraphDatabaseService db = dbServiceProvider.getDatabase();
+    private final GraphDatabaseService db = Database.getInstance().session;
 
     /**
      * Parse a CollateX JSON input stream and attach it to the given (section) parentNode.
@@ -122,7 +122,7 @@ public class CollateXJsonParser {
 
         // Now we have the data in our own model classes; proceed.
         try {
-            Node traditionNode = VariantGraphService.getTraditionNode(parentNode, tx);
+            Node traditionNode = getSectionTraditionNode(parentNode, tx);
             // Check that we have all the witnesses
             for (String witString : collationWitnesses) {
                 List<String> wit = parseWitnessSigil(witString);

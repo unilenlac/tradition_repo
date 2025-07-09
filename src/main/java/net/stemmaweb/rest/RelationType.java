@@ -19,6 +19,7 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 
 import net.stemmaweb.Util;
+import net.stemmaweb.services.Database;
 import net.stemmaweb.services.RelationService;
 import org.neo4j.codegen.api.Throw;
 import org.neo4j.exceptions.KernelException;
@@ -39,27 +40,14 @@ import org.neo4j.router.transaction.TransactionLookup;
  */
 
 public class RelationType {
-    private final GraphDatabaseService db;
+    private final GraphDatabaseService db = Database.getInstance().session;
     /**
      * The name of a type of reading relation.
      */
     private final String traditionId;
     private final String typeName;
 
-    public RelationType(String tradId, String requestedType, Boolean test, GraphDatabaseService db) throws KernelException {
-        if(test) {
-            // This is a test, so we don't want to connect to the database.
-            this.db = db;
-        }else{
-            GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
-            this.db = dbServiceProvider.getDatabase();
-        }
-        traditionId = tradId;
-        typeName = requestedType;
-    }
     public RelationType(String tradId, String requestedType) {
-        GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
-        db = dbServiceProvider.getDatabase();
         traditionId = tradId;
         typeName = requestedType;
     }

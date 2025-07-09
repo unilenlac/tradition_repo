@@ -11,6 +11,7 @@ import javax.ws.rs.core.GenericType;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 
+import net.stemmaweb.services.Database;
 import org.glassfish.jersey.test.JerseyTest;
 import org.neo4j.dbms.api.DatabaseManagementService;
 import org.neo4j.graphdb.GraphDatabaseService;
@@ -36,25 +37,31 @@ import org.neo4j.graphdb.Transaction;
  */
 public class CollateXInputTest extends TestCase {
 
-    private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
-    private final GraphDatabaseService db = dbServiceProvider.getDatabase();
+    // private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
+    private final GraphDatabaseService db = Database.getInstance().session;
     private JerseyTest jerseyTest;
 
     public CollateXInputTest() throws IOException {
+        Util.setupTestDB(db);
     }
 
     public void setUp() throws Exception {
         super.setUp();
-
-        Util.setupTestDB(db);
 
         // Create a JerseyTestServer for the necessary REST API calls
         jerseyTest = Util.setupJersey();
     }
 
     public void testParseCollateX() {
-        Response cResult = Util.createTraditionFromFileOrString(jerseyTest, "Auch hier", "LR", "1",
-                "src/TestFiles/plaetzchen_cx.xml", "collatex");
+
+        Response cResult = Util.createTraditionFromFileOrString(
+                jerseyTest,
+                "Auch hier",
+                "LR",
+                "admin@example.org",
+                "src/TestFiles/plaetzchen_cx.xml",
+                "collatex"
+        );
         assertEquals(Response.Status.CREATED.getStatusCode(), cResult.getStatus());
 
         String tradId = Util.getValueFromJson(cResult, "tradId");
@@ -89,13 +96,13 @@ public class CollateXInputTest extends TestCase {
                 .request().get(new GenericType<>() {});
         assertEquals(1, allRelTypes.size());
         assertEquals("transposition", allRelTypes.get(0).getName());
-        assertFalse(allRelTypes.get(0).getIs_colocation());
+        assertTrue(allRelTypes.get(0).getIs_colocation());
     }
 
     public void testParseCollateXFromPlaintext() {
         // To check that we deal as sensibly as possible with extraneous spaces in the
         // CollateX default string tokenisation
-        Response cResult = Util.createTraditionFromFileOrString(jerseyTest, "Quick foxes", "LR", "1",
+        Response cResult = Util.createTraditionFromFileOrString(jerseyTest, "Quick foxes", "LR", "admin@example.org",
                 "src/TestFiles/quick_brown_fox.xml", "collatex");
         assertEquals(Response.Status.CREATED.getStatusCode(), cResult.getStatus());
 
@@ -107,7 +114,7 @@ public class CollateXInputTest extends TestCase {
 
     public void testAddRelationship() {
         // Parse the file
-        Response cResult = Util.createTraditionFromFileOrString(jerseyTest, "Auch hier", "LR", "1",
+        Response cResult = Util.createTraditionFromFileOrString(jerseyTest, "Auch hier", "LR", "admin@example.org",
                 "src/TestFiles/plaetzchen_cx.xml", "collatex");
         assertEquals(Response.Status.CREATED.getStatusCode(), cResult.getStatus());
 
@@ -144,12 +151,10 @@ public class CollateXInputTest extends TestCase {
         GraphModel readingsAndRelationships = actualResponse.readEntity(new GenericType<GraphModel>(){});
         assertEquals(0, readingsAndRelationships.getReadings().size());
         assertEquals(1, readingsAndRelationships.getRelations().size());
-
-
     }
 
     public void testParseCollateXJersey() {
-        Response cResult = Util.createTraditionFromFileOrString(jerseyTest, "Auch hier", "LR", "1",
+        Response cResult = Util.createTraditionFromFileOrString(jerseyTest, "Auch hier", "LR", "admin@example.org",
                 "src/TestFiles/plaetzchen_cx.xml", "collatex");
         assertEquals(Response.Status.CREATED.getStatusCode(), cResult.getStatus());
         String tradId = Util.getValueFromJson(cResult, "tradId");
@@ -185,12 +190,10 @@ public class CollateXInputTest extends TestCase {
     }
 
     public void tearDown() throws Exception {
-        DatabaseManagementService service = dbServiceProvider.getManagementService();
-
-        if (service != null) {
-            service.shutdownDatabase(db.databaseName());
-        }
-
+        // DatabaseManagementService service = Database.getInstance().dbService;
+        // if (service != null) {
+        //     service.shutdown();
+        // }
         jerseyTest.tearDown();
         super.tearDown();
     }

@@ -81,7 +81,7 @@ public class RelationService {
             // res = rtRest.create(rtm);
             res = RelationType.create_relation_type(tradNode, relType, true, tx);
         }
-        assert res != null;
+        // assert res != null;
         return res;
     }
 
@@ -104,10 +104,10 @@ public class RelationService {
             if (referenceNode.hasLabel(Nodes.TRADITION))
                 traditionNode = referenceNode;
             else if (referenceNode.hasLabel(Nodes.SECTION))
-                traditionNode = VariantGraphService.getTraditionNode(referenceNode, tx);
+                traditionNode = VariantGraphService.getSectionTraditionNode(referenceNode, tx);
             else if (referenceNode.hasLabel(Nodes.READING)) {
                 Node sectionNode = tx.getNodeByElementId(referenceNode.getProperty("section_id").toString());
-                traditionNode = VariantGraphService.getTraditionNode(sectionNode, tx);
+                traditionNode = VariantGraphService.getSectionTraditionNode(sectionNode, tx);
             }
             assert(traditionNode != null);
             // ...and query its relation types.

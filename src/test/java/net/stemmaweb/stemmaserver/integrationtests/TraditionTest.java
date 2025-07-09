@@ -242,7 +242,7 @@ public class TraditionTest {
             Iterable<Relationship> ownership = origUser.getRelationships(ERelations.OWNS_TRADITION);
             assertTrue(ownership.iterator().hasNext());
             Node tradNode = ownership.iterator().next().getEndNode();
-            TraditionModel tradition = new TraditionModel(tradNode);
+            TraditionModel tradition = new TraditionModel(tradNode, tx);
 
             assertEquals(tradId, tradition.getId());
             assertEquals("Tradition", tradition.getName());
@@ -274,7 +274,7 @@ public class TraditionTest {
          */
         try (Transaction tx = db.beginTx()) {
             Node tradNode = tx.findNode(Nodes.TRADITION, "id", tradId);
-            TraditionModel tradition = new TraditionModel(tradNode);
+            TraditionModel tradition = new TraditionModel(tradNode, tx);
 
             assertEquals("42", tradition.getOwner());
             assertEquals(tradId, tradition.getId());

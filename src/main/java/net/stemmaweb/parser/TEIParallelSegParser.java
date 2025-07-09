@@ -63,7 +63,7 @@ public class TEIParallelSegParser {
         Node endNode = null;
         Node traditionNode;
         try (Transaction tx = db.beginTx()) {
-            traditionNode = VariantGraphService.getTraditionNode(parentNode, tx);
+            traditionNode = VariantGraphService.getSectionTraditionNode(parentNode, tx);
             parentId = parentNode.getElementId();
             tradId = traditionNode.getProperty("id").toString();
             // Set up the start node

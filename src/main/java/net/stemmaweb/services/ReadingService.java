@@ -663,13 +663,11 @@ public class ReadingService {
      * @param secondReading - the node with which to merge it
      * @return - true or false
      */
-    public static boolean wouldGetCyclic(Node firstReading, Node secondReading) throws Exception {
-//        GraphDatabaseService db = firstReading.getGraphDatabase();
-    	GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
-        Transaction tx = db.beginTx();
+    public static boolean wouldGetCyclic(Node firstReading, Node secondReading, Transaction tx) throws Exception {
+
         // Get our list of colocations
         Node sectionNode = tx.getNodeByElementId(firstReading.getProperty("section_id").toString());
-        Node traditionNode = VariantGraphService.getTraditionNode(sectionNode, tx);
+        Node traditionNode = VariantGraphService.getSectionTraditionNode(sectionNode, tx);
         Map<String, Set<Node>> colocatedLookup = buildColocationLookup(
                 traditionNode, sectionNode, tx
         ); // break
@@ -709,8 +707,6 @@ public class ReadingService {
                     return true;
             }
         }
-        tx.close();
-
         return false;
     }
 

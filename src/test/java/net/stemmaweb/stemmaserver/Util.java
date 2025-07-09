@@ -254,7 +254,7 @@ public class Util {
                     MediaType.APPLICATION_OCTET_STREAM_TYPE);
             form.bodyPart(fdp);
         }
-        return  jerseyTest
+        return jerseyTest
                 .target("/tradition")
                 .request()
                 .post(Entity.entity(form, MediaType.MULTIPART_FORM_DATA));

@@ -6,10 +6,12 @@ import javax.ws.rs.*;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
+import javax.xml.crypto.Data;
 
 import com.qmino.miredot.annotations.ReturnType;
 import net.stemmaweb.model.TraditionModel;
 import net.stemmaweb.model.UserModel;
+import net.stemmaweb.services.Database;
 import net.stemmaweb.services.DatabaseService;
 import net.stemmaweb.services.GraphDatabaseServiceProvider;
 
@@ -34,8 +36,8 @@ public class User {
     private final String userId;
 
     public User (String requestedId) {
-        GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
-        db = dbServiceProvider.getDatabase();
+        // GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
+        db = Database.getInstance().session;
         userId = requestedId;
     }
 
@@ -56,7 +58,7 @@ public class User {
         try (Transaction tx = db.beginTx()) {
             Node foundUser = tx.findNode(Nodes.USER, "id", userId);
             if (foundUser != null) {
-                userModel = new UserModel(foundUser);
+                userModel = new UserModel(foundUser, tx);
             } else {
                 return Response.noContent().build();
             }
@@ -128,7 +130,7 @@ public class User {
         }
         try (Transaction tx = db.beginTx()) {
             extantUser = tx.findNode(Nodes.USER, "id", userId);
-            UserModel returnedModel = new UserModel(extantUser);
+            UserModel returnedModel = new UserModel(extantUser, tx);
             tx.close();
             return Response.status(returnedStatus).entity(returnedModel).build();
         }
@@ -156,7 +158,7 @@ public class User {
             foundUser = tx.findNode(Nodes.USER, "id", userId);
 
             if (foundUser != null) {
-                removed = new UserModel(foundUser);
+                removed = new UserModel(foundUser, tx);
                 // See if the user owns any traditions
                 ArrayList<Node> userTraditions = DatabaseService.getRelated(foundUser, ERelations.OWNS_TRADITION, tx);
                 if (userTraditions.size() > 0)
@@ -194,10 +196,10 @@ public class User {
         }
 
         ArrayList<TraditionModel> traditions = new ArrayList<>();
-        try {
+        try (Transaction tx = db.beginTx()) {
             Node thisUser = getUserNode();
-            DatabaseService.getRelated(thisUser, ERelations.OWNS_TRADITION, null)
-                    .forEach(x -> traditions.add(new TraditionModel(x)));
+            DatabaseService.getRelated(thisUser, ERelations.OWNS_TRADITION, tx)
+                    .forEach(x -> traditions.add(new TraditionModel(x, tx)));
         } catch (Exception e) {
             return Response.serverError().entity(jsonerror(e.getMessage())).build();
         }

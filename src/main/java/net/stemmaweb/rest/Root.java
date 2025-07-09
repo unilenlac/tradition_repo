@@ -7,6 +7,7 @@ import net.stemmaweb.Util;
 import net.stemmaweb.exporter.TeiExporter;
 import net.stemmaweb.model.TraditionModel;
 import net.stemmaweb.model.UserModel;
+import net.stemmaweb.services.Database;
 import net.stemmaweb.services.DatabaseService;
 import net.stemmaweb.services.GraphDatabaseServiceProvider;
 
@@ -49,8 +50,8 @@ import static net.stemmaweb.exporter.TeiExporter.addRdgContent;
 public class Root {
     @Context ServletContext context;
     @Context UriInfo uri;
-    private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
-    private GraphDatabaseService db = dbServiceProvider.getDatabase();
+    // private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
+    private GraphDatabaseService db = Database.getInstance().session;
     /*
      * Delegated API calls
      */
@@ -91,7 +92,8 @@ public class Root {
     @Path("/novus/{tradId}")
     public Novus getNovusTradition(@PathParam("tradId") String tradId) throws Exception {
         GetTraditionFunction<Transaction, Node> getTraditionFunction = Util.getTraditionNode(tradId);
-        return new Novus(tradId, getTraditionFunction, db);
+        Node node = getTraditionFunction.apply(db.beginTx());
+        return new Novus(tradId, node);
 
     }
     /**
@@ -164,9 +166,7 @@ public class Root {
                                   @FormDataParam("file") FormDataMultiPart fileDetail) throws KernelException {
 
 
-        if(db == null){
-            this.db = new GraphDatabaseServiceProvider().getDatabase();
-        }
+
         if (!DatabaseService.userExists(userId, db)) {
             return Response.status(Response.Status.CONFLICT)
                 .entity(jsonerror("No user with this id exists"))
@@ -266,8 +266,7 @@ public class Root {
                 nodeList = tx.findNodes(Nodes.TRADITION, "is_public", true);
             else
                 nodeList = tx.findNodes(Nodes.TRADITION);
-            nodeList.forEachRemaining(t -> traditionList.add(new TraditionModel(t)));
-            tx.close();
+            nodeList.forEachRemaining(t -> traditionList.add(new TraditionModel(t, tx)));
         } catch (Exception e) {
             e.printStackTrace();
             return Response.serverError().entity(jsonerror(e.getMessage())).build();
@@ -294,7 +293,7 @@ public class Root {
         try (Transaction tx = db.beginTx()) {
 
             tx.findNodes(Nodes.USER)
-                    .forEachRemaining(t -> userList.add(new UserModel(t)));
+                    .forEachRemaining(t -> userList.add(new UserModel(t, tx)));
             tx.close();
         } catch (Exception e) {
             return Response.serverError().entity(jsonerror(e.getMessage())).build();

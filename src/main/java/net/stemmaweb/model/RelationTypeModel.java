@@ -193,24 +193,17 @@ public class RelationTypeModel implements Comparable<RelationTypeModel> {
      * @return - The correspondingly named RELATION_TYPE node, or null
      */
     public Node lookup (Node traditionNode) {
-        // GraphDatabaseService db = traditionNode.getGraphDatabase();
-        // GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
-        Node relTypeNode = null;
-        // try (Transaction tx = db.beginTx()) {
-        	//traditionNode = tx.getNodeByElementId(traditionNode.getElementId());
 
-        	// First see if there is a type with this name
+        Node relTypeNode = null;
+
+        // First see if there is a type with this name
         for (Relationship r : traditionNode.getRelationships(Direction.OUTGOING, ERelations.HAS_RELATION_TYPE)) {
             if (r.getEndNode().getProperty("name").toString().equals(this.thename)) {
                 relTypeNode = r.getEndNode();
                 break;
             }
         }
-            // tx.close();
-        // } catch (Exception e) {
-        //     e.printStackTrace();
-        //     return null;
-        // }
+
         return relTypeNode;
     }
 

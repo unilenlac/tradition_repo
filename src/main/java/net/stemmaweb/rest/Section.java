@@ -40,6 +40,7 @@ import net.stemmaweb.Util;
 import net.stemmaweb.builders.XmlBuilder;
 import net.stemmaweb.directors.DocumentDesigner;
 import net.stemmaweb.model.*;
+import net.stemmaweb.services.*;
 import org.neo4j.graphdb.Direction;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Label;
@@ -57,12 +58,7 @@ import com.qmino.miredot.annotations.ReturnType;
 import net.stemmaweb.exporter.DotExporter;
 import net.stemmaweb.exporter.GraphMLExporter;
 import net.stemmaweb.exporter.TabularExporter;
-import net.stemmaweb.services.DatabaseService;
-import net.stemmaweb.services.GraphDatabaseServiceProvider;
-import net.stemmaweb.services.ReadingService;
 import net.stemmaweb.services.ReadingService.AlignmentTraverse;
-import net.stemmaweb.services.RelationService;
-import net.stemmaweb.services.VariantGraphService;
 
 /**
  * Comprises all the API calls related to a tradition section.
@@ -77,8 +73,9 @@ public class Section {
     private final GetTraditionFunction<Transaction, Node> getTraditionNode;
 
     public Section(String traditionId, String sectionId, GetTraditionFunction<Transaction, Node> getTraditionNodeFunction) {
-        GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
-        db = dbServiceProvider.getDatabase();
+        // GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
+        // db = dbServiceProvider.getDatabase();
+        db = Database.getInstance().session;
         tradId = traditionId;
         sectId = sectionId;
         getTraditionNode = getTraditionNodeFunction;
@@ -132,7 +129,7 @@ public class Section {
         if (!sectionInTradition())
             return Response.status(Response.Status.NOT_FOUND).entity(jsonerror("Tradition and/or section not found")).build();
         try (Transaction tx = db.beginTx()) {
-            result = new SectionModel(tx.getNodeByElementId(sectId));
+            result = new SectionModel(tx.getNodeByElementId(sectId), tx);
             tx.commit();
         } catch (Exception e) {
             e.printStackTrace();
@@ -250,7 +247,7 @@ public class Section {
 
         try (Transaction tx = db.beginTx()) {
             ArrayList<WitnessModel> sectionWits = new ArrayList<>();
-            sectionWitnessNodes.forEach(x -> sectionWits.add(new WitnessModel(x)));
+            sectionWitnessNodes.forEach(x -> sectionWits.add(new WitnessModel(x, tx)));
             tx.close();
             Collections.sort(sectionWits);
             return Response.ok().entity(sectionWits).build();
@@ -321,7 +318,7 @@ public class Section {
                 }
             });
             // .filter(x -> x.hasLabel(Label.label("HYPERREADING"))).collect(Collectors.toSet());
-            sectionNodes.forEach(x -> complexReadingModels.add(new ComplexReadingModel(x)));
+            sectionNodes.forEach(x -> complexReadingModels.add(new ComplexReadingModel(x, tx)));
         } catch (Exception e) {
             e.printStackTrace();
             return null;
@@ -753,7 +750,7 @@ public class Section {
                 if (priorSection == null) {
                     return Response.status(Response.Status.NOT_FOUND).entity("Section " + priorSectID + "not found").build();
                 }
-                Node pnTradition = VariantGraphService.getTraditionNode(priorSection, tx);
+                Node pnTradition = VariantGraphService.getSectionTraditionNode(priorSection, tx);
                 if (!pnTradition.getProperty("id").equals(tradId))
                     return Response.status(Response.Status.BAD_REQUEST)
                             .entity("Section " + priorSectID + " doesn't belong to this tradition").build();
@@ -834,7 +831,7 @@ public class Section {
 
             // Make a new section node and insert it into the sequence
             Node newSection = tx.createNode(Nodes.SECTION);
-            VariantGraphService.getTraditionNode(thisSection, tx).createRelationshipTo(newSection, ERelations.PART);
+            VariantGraphService.getSectionTraditionNode(thisSection, tx).createRelationshipTo(newSection, ERelations.PART);
             newSection.setProperty("name", thisSection.getProperty("name") + " split");
             newSectionId = newSection.getElementId();
             Section newSectionRest = new Section(tradId, newSection.getElementId(), getTraditionNode);
@@ -1191,7 +1188,7 @@ public class Section {
             for (Node n : sameText) {
                 if (processed.contains(n.getElementId()))
                     continue;
-                if (!wouldGetCyclic(nodeA, n)) {
+                if (!wouldGetCyclic(nodeA, n, tx)) {
                     // Get the reading models
                     ReadingModel rma = new ReadingModel(nodeA, tx);
                     ReadingModel rmn = new ReadingModel(n, tx);

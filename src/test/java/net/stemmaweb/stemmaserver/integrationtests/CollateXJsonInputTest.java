@@ -14,6 +14,7 @@ import javax.ws.rs.core.GenericType;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 
+import net.stemmaweb.services.Database;
 import net.stemmaweb.services.GraphDatabaseServiceProvider;
 import org.glassfish.jersey.media.multipart.FormDataMultiPart;
 import org.glassfish.jersey.test.JerseyTest;
@@ -36,9 +37,7 @@ import net.stemmaweb.stemmaserver.Util;
 
 public class CollateXJsonInputTest extends TestCase {
 
-    private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
-    private final GraphDatabaseService db = dbServiceProvider.getDatabase();
-    private DatabaseManagementService dbbuilder;
+    private final GraphDatabaseService db = Database.getInstance().session;
     private JerseyTest jerseyTest;
 
     private String tradId;
@@ -56,7 +55,7 @@ public class CollateXJsonInputTest extends TestCase {
         // Create a JerseyTestServer for the necessary REST API calls
         jerseyTest = Util.setupJersey();
 
-        Response jerseyResult = Util.createTraditionFromFileOrString(jerseyTest, "Tradition", "LR", "1",
+        Response jerseyResult = Util.createTraditionFromFileOrString(jerseyTest, "Tradition", "LR", "admin@example.org",
                 "src/TestFiles/Matthew-407.json", "cxjson");
         assertEquals(Response.Status.CREATED.getStatusCode(), jerseyResult.getStatus());
         tradId = Util.getValueFromJson(jerseyResult, "tradId");
@@ -108,7 +107,6 @@ public class CollateXJsonInputTest extends TestCase {
                     }
                 }
             }
-            tx.close();
         }
 
         // Check a witness text
@@ -168,7 +166,7 @@ public class CollateXJsonInputTest extends TestCase {
         assertEquals(Response.Status.OK.getStatusCode(), resp.getStatus());
         dotStr = resp.readEntity(String.class);
         assertTrue(dotStr.contains("label=<<FONT COLOR=\"red\">Դ</FONT>արձեալ>];")); // HTML, no normal form
-        assertTrue(dotStr.contains("label=<Դ<O>ր</O>ձլ<BR/><FONT COLOR=\"grey\">Դարձեալ</FONT>>];")); // HTML, normal form
+        assertTrue(dotStr.contains("label=<Դ&lt;O&gt;ր&lt;/O&gt;ձլ<BR/><FONT COLOR=\"grey\">Դարձեալ</FONT>>];")); // HTML, normal form
         assertTrue(dotStr.contains("label=\"Դարձեալ\"];"));  // no HTML, no normal form
         assertTrue(dotStr.contains("label=<Դարձեալ<BR/><FONT COLOR=\"grey\">դարձեալ</FONT>>];")); // no HTML, normal form
         assertTrue(dotStr.contains("label=<&amp;<BR/><FONT COLOR=\"grey\">և</FONT>>];")); // no HTML / HTML escape, normal form
@@ -222,7 +220,7 @@ public class CollateXJsonInputTest extends TestCase {
         // Make an empty tradition
         form.field("empty", "true");
         form.field("name", "ժամանակագրութիւն Մատթէոսի Ուռհայեցւոյ");
-        form.field("userId", "1");
+        form.field("userId", "admin@example.org");
         String newTradId = Util.getValueFromJson(jerseyTest
                 .target("/tradition")
                 .request()
@@ -282,12 +280,7 @@ public class CollateXJsonInputTest extends TestCase {
     } **/
 
     public void tearDown() throws Exception {
-        DatabaseManagementService service = dbServiceProvider.getManagementService();
-
-        if (service != null) {
-            service.shutdownDatabase(db.databaseName());
-        }
-
         jerseyTest.tearDown();
+        super.tearDown();
     }
 }

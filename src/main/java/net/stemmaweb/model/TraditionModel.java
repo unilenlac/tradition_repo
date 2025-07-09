@@ -73,10 +73,10 @@ public class TraditionModel {
 
     public TraditionModel() {}
 
-    public TraditionModel(Node node) {
-        GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
-//        try (Transaction tx = node.getGraphDatabase().beginTx()) {
-        try (Transaction tx = db.beginTx()) {
+    /*
+    public TraditionModel(Node node, Transaction tx) {
+
+        try {
             Node txNode = tx.getNodeByElementId(node.getElementId());
             setId(txNode.getProperty("id").toString());
             if (txNode.hasProperty("name"))
@@ -102,8 +102,42 @@ public class TraditionModel {
             // For now this is hard-coded
             reltypes = new ArrayList<>(Arrays.asList("grammatical", "spelling", "other", "punctuation",
                     "lexical", "orthographic", "uncertain"));
+        } catch (Exception e) {
+            throw new RuntimeException("Error retrieving tradition properties: " + e.getMessage());
+        }
+    }
+    */
 
-            tx.commit();
+    public TraditionModel(Node node, Transaction tx) {
+
+        try {
+            Node txNode = tx.getNodeByElementId(node.getElementId());
+            setId(txNode.getProperty("id").toString());
+            if (txNode.hasProperty("name"))
+                setName(txNode.getProperty("name").toString());
+            if (txNode.hasProperty("language"))
+                setLanguage(txNode.getProperty("language").toString());
+            if (txNode.hasProperty("direction"))
+                setDirection(txNode.getProperty("direction").toString());
+            if (txNode.hasProperty("is_public"))
+                setIs_public((Boolean) txNode.getProperty("is_public"));
+            if (txNode.hasProperty("stemweb_jobid"))
+                setStemweb_jobid(Integer.parseInt(txNode.getProperty("stemweb_jobid").toString()));
+
+            Relationship ownerRel = txNode.getSingleRelationship(ERelations.OWNS_TRADITION,
+                    org.neo4j.graphdb.Direction.INCOMING);
+            if( ownerRel != null ) {
+                setOwner(ownerRel.getStartNode().getProperty("id").toString());
+            }
+
+            witnesses = new ArrayList<>();
+            DatabaseService.getRelated(txNode, ERelations.HAS_WITNESS, tx).forEach(
+                    x -> witnesses.add(x.getProperty("sigil").toString()));
+            // For now this is hard-coded
+            reltypes = new ArrayList<>(Arrays.asList("grammatical", "spelling", "other", "punctuation",
+                    "lexical", "orthographic", "uncertain"));
+        } catch (NumberFormatException e) {
+            throw new RuntimeException(e);
         }
     }
 

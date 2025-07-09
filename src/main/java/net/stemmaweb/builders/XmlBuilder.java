@@ -35,7 +35,7 @@ public class XmlBuilder implements DocumentBuilder{
     public void addHeaderToWriter(String tradition_id, XMLStreamWriter writer, Transaction tx, Config config) throws XMLStreamException {
         Node tradition_node = tx.findNode(Nodes.TRADITION, "id", tradition_id);
 
-        TraditionModel tradition = new TraditionModel(tradition_node);
+        TraditionModel tradition = new TraditionModel(tradition_node, tx);
         ArrayList<String> witnesses = tradition.getWitnesses();
 
         //title description
@@ -132,7 +132,7 @@ public class XmlBuilder implements DocumentBuilder{
                         writer.writeEndElement();
                     }
                     ReadingModel rdg = new ReadingModel(node, tx);
-                    TraditionModel tradition = new TraditionModel(tradition_node);
+                    TraditionModel tradition = new TraditionModel(tradition_node, tx);
                     int trad_w_count = tradition.getWitnesses().size();
                     int rdg_w_count = rdg.getWitnesses().size();
                     boolean is_app = trad_w_count != rdg_w_count;

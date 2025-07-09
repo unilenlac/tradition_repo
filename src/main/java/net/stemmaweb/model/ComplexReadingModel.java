@@ -119,7 +119,7 @@ public class ComplexReadingModel {
     /**
     * Initialize reccursively using the HAS_HYPERNODE relations of the current node.
     */
-    public ComplexReadingModel(Node node) {
+    public ComplexReadingModel(Node node, Transaction tx) {
 
         this.id = "";
         this.reading = null;
@@ -129,23 +129,24 @@ public class ComplexReadingModel {
         this.is_lemma = node.hasProperty("is_lemma") ? (Boolean) node.getProperty("is_lemma") : false;
         this.weight = node.hasProperty("weight") ? (int) node.getProperty("weight") : 0;
 
-        GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+        // GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
 
-        try (Transaction tx = db.beginTx()) {
+        try {
             setId(node.getElementId());
             List<ComplexReadingModel> compReadings = new ArrayList<>();
               for (Relationship r: node.getRelationships(ERelations.HAS_HYPERNODE)) {
                   Node otherNode = r.getOtherNode(node);
                   if (otherNode.hasLabel(Nodes.HYPERREADING)) {
                     // if complex node: initialize reccursively with the component node
-                    compReadings.add(new ComplexReadingModel(otherNode));
+                    compReadings.add(new ComplexReadingModel(otherNode, tx));
                   } else {
                     // if simple nodes: initialize with Reading
                     compReadings.add(new ComplexReadingModel(new ReadingModel(otherNode, tx)));
                   }
               }
             this.setComponents(compReadings);
-            tx.commit();
+        } catch (Exception e) {
+            throw new RuntimeException("Error while initializing complex reading: " + e.getMessage(), e);
         }
     }
 }

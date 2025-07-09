@@ -821,15 +821,15 @@ public class Reading {
                 break;
             }
         }
-        tx.close();
         // Test for cycles.
         if (!aligned) {
-            if (ReadingService.wouldGetCyclic(stayingReading, deletingReading)) {
+            if (ReadingService.wouldGetCyclic(stayingReading, deletingReading, tx)) {
                 errorMessage = "Readings to be merged would make the graph cyclic";
                 return false;
             }
         }
 
+        tx.close();
         return true;
     }
 
@@ -1005,7 +1005,7 @@ public class Reading {
                 return errorResponse(Status.INTERNAL_SERVER_ERROR);
 
             readingsAndRelations = split(originalReading, splitIndex, model, tx);
-            Node tradNode = VariantGraphService.getTraditionNode(originalReading, tx);
+            Node tradNode = VariantGraphService.getSectionTraditionNode(originalReading, tx);
             ReadingService.recalculateRank(tradNode, originalReading, true, tx);
 
             tx.commit();
@@ -1311,7 +1311,7 @@ public class Reading {
                 resp =  errorResponse(Status.CONFLICT);
             } else if (canBeCompressed(read1, read2)) {
                 resp = Response.ok().entity(compress(read1, read2, boundary, tx)).build();
-                Node tradNode = VariantGraphService.getTraditionNode(read1, tx);
+                Node tradNode = VariantGraphService.getSectionTraditionNode(read1, tx);
                 ReadingService.recalculateRank(tradNode, read1, false, tx);
             } else {
                 resp = errorResponse(Status.CONFLICT);
@@ -1345,10 +1345,9 @@ public class Reading {
                     .uniqueness(Uniqueness.RELATIONSHIP_GLOBAL).traverse(myReading)
                     .nodes()) {
               if (node != myReading) {
-                crList.add(new ComplexReadingModel(node));
+                crList.add(new ComplexReadingModel(node, tx));
               }
             }
-            tx.close();
         } catch (Exception e) {
             e.printStackTrace();
             return Response.serverError().entity(jsonerror(e.getMessage())).build();
@@ -1385,7 +1384,7 @@ public class Reading {
                   embeddedHyperNode.createRelationshipTo(hyperNode, ERelations.HAS_HYPERNODE);
                 }
             }
-            ComplexReadingModel complex_reading = new ComplexReadingModel(hyperNode);
+            ComplexReadingModel complex_reading = new ComplexReadingModel(hyperNode, tx);
             tx.commit();
             return Response.ok(complex_reading).build();
         } catch (NotFoundException e) {

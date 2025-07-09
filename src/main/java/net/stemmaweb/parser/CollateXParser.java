@@ -4,6 +4,7 @@ import net.stemmaweb.model.RelationTypeModel;
 import net.stemmaweb.rest.ERelations;
 import net.stemmaweb.rest.Nodes;
 import net.stemmaweb.rest.RelationType;
+import net.stemmaweb.services.Database;
 import net.stemmaweb.services.GraphDatabaseServiceProvider;
 import net.stemmaweb.services.VariantGraphService;
 import org.neo4j.graphdb.*;
@@ -21,8 +22,8 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Optional;
 
-import static net.stemmaweb.Util.jsonerror;
-import static net.stemmaweb.Util.jsonresp;
+import static net.stemmaweb.Util.*;
+import static net.stemmaweb.services.VariantGraphService.getSectionTraditionNode;
 
 /**
  * Parser for CollateX-collated traditions.
@@ -30,8 +31,8 @@ import static net.stemmaweb.Util.jsonresp;
  * @author tla
  */
 public class CollateXParser {
-    private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
-    private final GraphDatabaseService db = dbServiceProvider.getDatabase();
+    // private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
+    private final GraphDatabaseService db = Database.getInstance().session;
 
     /**
      * Parse a CollateX XML input stream and attach it to the given (section) parentNode.
@@ -40,7 +41,7 @@ public class CollateXParser {
      * @param parentNode - The section node that will carry the parsed data
      * @return a Response to indicate the result
      */
-    public Response parseCollateX(InputStream filestream, Node parentNode)
+    public Response parseCollateX(InputStream filestream, Node parentNode, Transaction tx)
     {
         // Try this the DOM parsing way
         Document doc;
@@ -60,8 +61,9 @@ public class CollateXParser {
             NamedNodeMap keyAttrs = keyNodes.item(i).getAttributes();
             dataKeys.put(keyAttrs.getNamedItem("id").getNodeValue(), keyAttrs.getNamedItem("attr.name").getNodeValue());
         }
-        try (Transaction tx = db.beginTx()) {
-            Node traditionNode = VariantGraphService.getTraditionNode(parentNode, tx);
+        try {
+
+            Node traditionNode = getSectionTraditionNode(parentNode, tx);
             // Create all the nodes from the graphml nodes
             NodeList readingNodes = rootEl.getElementsByTagName("node");
             HashMap<String,Node> createdReadings = new HashMap<>();
@@ -158,8 +160,6 @@ public class CollateXParser {
                 if (rtResult.getStatus() == Response.Status.INTERNAL_SERVER_ERROR.getStatusCode())
                     return rtResult;
             }
-
-            tx.close();
         } catch (IllegalArgumentException e) {
             return Response.status(Response.Status.BAD_REQUEST).entity(e.getMessage()).build();
         } catch (Exception e) {

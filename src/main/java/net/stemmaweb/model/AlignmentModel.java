@@ -57,7 +57,7 @@ public class AlignmentModel {
     public AlignmentModel(Node sectionNode, boolean excludeLayers, Transaction tx) {
 
         String sectId = sectionNode.getElementId();
-        Node traditionNode = VariantGraphService.getTraditionNode(sectionNode, tx);
+        Node traditionNode = VariantGraphService.getSectionTraditionNode(sectionNode, tx);
         Node startNode = VariantGraphService.getStartNode(sectId, tx);
         Node endNode = VariantGraphService.getEndNode(sectId, tx);
 

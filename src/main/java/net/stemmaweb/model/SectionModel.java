@@ -2,6 +2,7 @@ package net.stemmaweb.model;
 
 import javax.xml.bind.annotation.XmlRootElement;
 
+import net.stemmaweb.services.Database;
 import org.neo4j.graphdb.Direction;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Node;
@@ -50,10 +51,10 @@ public class SectionModel {
      * Generates a model from a Neo4j Node
      * @param node - the section node to initialize from
      */
-    public SectionModel(Node node) {
-        GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+    public SectionModel(Node node, Transaction tx) {
+        // GraphDatabaseService db = Database.getInstance().session;
 //        try (Transaction tx = node.getGraphDatabase().beginTx()) {
-        try (Transaction tx = db.beginTx()) {
+        try {
             setId(node.getElementId());
             if (node.hasProperty("name"))
                 setName(node.getProperty("name").toString());
@@ -71,7 +72,9 @@ public class SectionModel {
             if(sectionEnd != null){
                 setEndRank(Long.valueOf(sectionEnd.getEndNode().getProperty("rank").toString()));
             }
-            tx.close();
+            // tx.close();
+        } catch (NumberFormatException e) {
+            throw new RuntimeException(e);
         }
     }
 

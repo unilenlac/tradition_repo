@@ -44,10 +44,10 @@ public class UserModel {
 
     public UserModel() {}
 
-    public UserModel(Node node) {
-        GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
-//    	try (Transaction tx = node.getGraphDatabase().beginTx()) {
-        try (Transaction tx = db.beginTx()) {
+    public UserModel(Node node, Transaction tx) {
+        // GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+        // try (Transaction tx = node.getGraphDatabase().beginTx()) {
+        try {
             setId(node.getProperty("id").toString());
             if (node.hasProperty("passphrase"))
                 setPassphrase(node.getProperty("passphrase").toString());
@@ -57,7 +57,8 @@ public class UserModel {
                 setActive((Boolean) node.getProperty("active"));
             if (node.hasProperty("email"))
                 setEmail(node.getProperty("email").toString());
-            tx.close();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
     }
 
