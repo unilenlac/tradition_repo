@@ -2,10 +2,7 @@ package net.stemmaweb.parser;
 
 import net.stemmaweb.model.*;
 import net.stemmaweb.rest.*;
-import net.stemmaweb.services.DatabaseService;
-import net.stemmaweb.services.GraphDatabaseServiceProvider;
-import net.stemmaweb.services.RelationService;
-import net.stemmaweb.services.VariantGraphService;
+import net.stemmaweb.services.*;
 import org.neo4j.graphdb.*;
 import org.neo4j.graphdb.Node;
 import org.w3c.dom.*;
@@ -25,8 +22,7 @@ import static net.stemmaweb.Util.jsonresp;
  * Created by tla on 17/02/2017.
  */
 public class GraphMLParser {
-    private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
-    private final GraphDatabaseService db = dbServiceProvider.getDatabase();
+    private final GraphDatabaseService db = Database.getInstance().session;
 
     /**
      * Parses a single GraphML file (the old style) representing either an entire tradition or a single

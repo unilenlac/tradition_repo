@@ -8,6 +8,7 @@ import net.stemmaweb.model.ReadingModel;
 import net.stemmaweb.model.VariantModel;
 import net.stemmaweb.model.VariantListModel;
 import net.stemmaweb.model.VariantLocationModel;
+import net.stemmaweb.rest.Nodes;
 import net.stemmaweb.services.ReadingService;
 import net.stemmaweb.services.VariantGraphService;
 import org.neo4j.graphdb.GraphDatabaseService;
@@ -43,14 +44,16 @@ public class TabularExporter {
         try (Transaction tx = db.beginTx()){
 
             ArrayList<Node> traditionSections;
-            Node tradNode = tx.getNodeByElementId(tradId);
+            Node tradNode = tx.findNode(Nodes.TRADITION, "id", tradId);
             traditionSections = getSections(tradNode, sectionList, tx);
             if(traditionSections==null) {
                 return Response.status(Response.Status.NOT_FOUND).build();
             }
 
+            AlignmentModel tradAlignment = getTraditionAlignment(traditionSections, conflate, excludeLayers, tx);
+
             tx.commit();
-            return Response.ok(getTraditionAlignment(traditionSections, conflate, excludeLayers),
+            return Response.ok(tradAlignment,
                     MediaType.APPLICATION_JSON_TYPE).build();
 
         } catch (TabularExporterException e) {
@@ -96,7 +99,7 @@ public class TabularExporter {
     public Response exportAsCSV(String tradId, char separator, List<String> conflate, List<String> sectionList, boolean excludeLayers) {
         AlignmentModel wholeTradition;
         try (Transaction tx = db.beginTx()) {
-            Node tradNode = tx.getNodeByElementId(tradId);
+            Node tradNode = tx.findNode(Nodes.TRADITION, "id", tradId);
             wholeTradition = returnFullAlignment(tradNode, conflate, sectionList, excludeLayers, tx);
             tx.commit();
         } catch (TabularExporterException e) {
@@ -220,7 +223,7 @@ public class TabularExporter {
             throws Exception {
         ArrayList<Node> traditionSections = getSections(tradNode, sectionList, tx);
         if(traditionSections==null) return null;
-        return getTraditionAlignment(traditionSections, conflate, excludeLayers);
+        return getTraditionAlignment(traditionSections, conflate, excludeLayers, tx);
     }
 
     private static String shortenSigil (String sigil) {
@@ -252,7 +255,7 @@ public class TabularExporter {
         return collectedSections;
     }
 
-    private AlignmentModel getTraditionAlignment(ArrayList<Node> traditionSections, List<String> collapseRelated, boolean excludeLayers)
+    private AlignmentModel getTraditionAlignment(ArrayList<Node> traditionSections, List<String> collapseRelated, boolean excludeLayers, Transaction tx)
             throws Exception {
         // Make a new alignment model that has a column for every witness layer across the requested sections.
 
@@ -262,9 +265,9 @@ public class TabularExporter {
         ArrayList<AlignmentModel> tables = new ArrayList<>();
         int length = 0;
         for (Node sectionNode : traditionSections) {
-            if (collapseRelated != null) VariantGraphService.normalizeGraph(sectionNode, collapseRelated, db.beginTx());
-            AlignmentModel asJson = new AlignmentModel(sectionNode, excludeLayers, db.beginTx());
-            if (collapseRelated != null) VariantGraphService.clearNormalization(sectionNode);
+            if (collapseRelated != null) VariantGraphService.normalizeGraph(sectionNode, collapseRelated, tx);
+            AlignmentModel asJson = new AlignmentModel(sectionNode, excludeLayers, tx);
+            if (collapseRelated != null) VariantGraphService.clearNormalization(sectionNode, tx);
             // Save the alignment to our tables list
             tables.add(asJson);
             length += asJson.getLength();

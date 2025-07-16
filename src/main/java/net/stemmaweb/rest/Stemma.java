@@ -16,6 +16,7 @@ import net.stemmaweb.Util.GetTraditionFunction;
 import net.stemmaweb.model.StemmaModel;
 import net.stemmaweb.parser.DotParser;
 import net.stemmaweb.parser.NewickParser;
+import net.stemmaweb.services.Database;
 import net.stemmaweb.services.GraphDatabaseServiceProvider;
 
 import org.neo4j.graphdb.*;
@@ -39,8 +40,8 @@ public class Stemma {
     }
 
     public Stemma (String traditionId, String requestedName, Boolean created) {
-        GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
-        db = dbServiceProvider.getDatabase();
+
+        db = Database.getInstance().session;
         tradId = traditionId;
         name = requestedName;
         newCreated = created;
@@ -222,7 +223,7 @@ public class Stemma {
             // and make sure the stemma is directed.
             stemma.setProperty("directed", true);
 
-        tx.close();
+        tx.commit();
         }
         return getStemma();
 

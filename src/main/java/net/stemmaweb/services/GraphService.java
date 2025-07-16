@@ -18,7 +18,7 @@ public class GraphService {
                 ") as g" +
                 " RETURN g.graphName AS graph", witness_count);
         Result res  = tx.execute(graph_query);
-        System.out.printf("graph %s is ready%n", res.next().get("graph"));
+        // System.out.printf("graph %s is ready%n", res.next().get("graph"));
     }
     public void removeSectionGraph(Transaction tx){
         String related_graph = "RETURN gds.graph.exists('section') AS exists";
@@ -78,6 +78,14 @@ public class GraphService {
                 " WITH rank, collect(node)[0] AS selectedNode\n" +
                 " RETURN elementId(selectedNode) as id\n" +
                 " ORDER BY selectedNode.rank\n", section_id);
+        return tx.execute(query);
+    }
+    public Result getTraditionWitnesses(String tradition_id, Transaction tx) {
+        /*
+        get all witnesses in a tradition
+         */
+        String query = String.format("MATCH (t:TRADITION {id: \"%s\"})-[:HAS_WITNESS]->(w:WITNESS)\n" +
+                " RETURN w", tradition_id);
         return tx.execute(query);
     }
 }

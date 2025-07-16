@@ -180,7 +180,7 @@ public class VariantListModel {
 
             // Clean up if we normalised
             if (conflate != null && !conflate.isEmpty())
-                VariantGraphService.clearNormalization(sectionNode);
+                VariantGraphService.clearNormalization(sectionNode, tx);
 
             tx.commit();
         }

@@ -278,7 +278,7 @@ public class Util {
     public static List<String> importFlorilegium (JerseyTest jerseyTest) {
         List<String> florIds = new ArrayList<>();
         Response jerseyResult = Util.createTraditionFromFileOrString(jerseyTest, "Florilegium", "LR",
-                "user@example.com", "src/TestFiles/florilegium_w.csv", "csv");
+                "admin@example.org", "src/TestFiles/florilegium_w.csv", "csv");
         assertEquals(Response.Status.CREATED.getStatusCode(), jerseyResult.getStatus());
         String florId = Util.getValueFromJson(jerseyResult, "tradId");
         florIds.add(florId);

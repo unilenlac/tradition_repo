@@ -101,7 +101,7 @@ public class VariantGraphServiceTest {
     }
 
     @Test
-    public void getTraditionNodeTest(Transaction tx) {
+    public void getTraditionNodeTest(Transaction tx) throws Exception {
         Node foundTradition = VariantGraphService.getTraditionNode(traditionId, tx);
         assertNotNull(foundTradition);
         // Now by section node
@@ -144,10 +144,10 @@ public class VariantGraphServiceTest {
 
         // Now clear the normalization and make sure we didn't fail.
         try (Transaction tx = db.beginTx()) {
-            VariantGraphService.clearNormalization(sections.get(0));
+            VariantGraphService.clearNormalization(sections.get(0), tx);
             assertTrue(tx.getAllRelationships().stream().noneMatch(x -> x.isType(ERelations.NSEQUENCE)));
             assertTrue(tx.getAllRelationships().stream().noneMatch(x -> x.isType(ERelations.REPRESENTS)));
-            tx.close();
+            tx.commit();
         } catch (Exception e) {
             fail();
         }

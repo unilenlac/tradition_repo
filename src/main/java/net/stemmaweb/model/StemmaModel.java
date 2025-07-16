@@ -3,6 +3,7 @@ package net.stemmaweb.model;
 import javax.ws.rs.core.Response;
 import javax.xml.bind.annotation.XmlRootElement;
 
+import net.stemmaweb.services.Database;
 import org.neo4j.graphdb.Direction;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Node;
@@ -52,8 +53,8 @@ public class StemmaModel {
     public StemmaModel () {}
 
     public StemmaModel(Node stemmaNode, Transaction tx) {
-//        GraphDatabaseService db = stemmaNode.getGraphDatabase();
-        GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+        // GraphDatabaseService db = stemmaNode.getGraphDatabase();
+        GraphDatabaseService db = Database.getInstance().session;
         // try (Transaction tx = db.beginTx()) {
             identifier = stemmaNode.getProperty("name").toString();
             is_undirected = !stemmaNode.hasRelationship(ERelations.HAS_ARCHETYPE);

@@ -157,9 +157,10 @@ public class DotParser {
                 while(pathNodes.hasNext()) {
                     chainpoint = pathNodes.next();
                     if (chainpoint.equals(witness)) {
-                        contaminated = true;
+                        // contaminated = true;
                         break;
                     }
+                    contaminated = true;
                 }
             }
 

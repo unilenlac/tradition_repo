@@ -11,6 +11,7 @@ import net.stemmaweb.rest.ERelations;
 import net.stemmaweb.rest.Nodes;
 import net.stemmaweb.rest.Relation;
 import net.stemmaweb.rest.RelationType;
+import net.stemmaweb.services.Database;
 import net.stemmaweb.services.GraphDatabaseServiceProvider;
 import net.stemmaweb.services.VariantGraphService;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
@@ -33,7 +34,7 @@ import static net.stemmaweb.Util.*;
  * into a tradition.
  */
 public class TabularParser {
-    private final GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+    private final GraphDatabaseService db = Database.getInstance().session;
 
     /**
      * Parse a comma- or tab-separated file stream into a graph.
@@ -44,7 +45,7 @@ public class TabularParser {
      *
      * @return Response
      */
-    public Response parseCSV(InputStream fileData, Node sectionNode, char sepChar) {
+    public Response parseCSV(InputStream fileData, Node sectionNode, char sepChar, Transaction tx) {
         // Parse the CSV file
         ArrayList<String[]> csvRows = new ArrayList<>();
         try {
@@ -59,7 +60,7 @@ public class TabularParser {
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
                 .entity(jsonerror(e.getMessage())).build();
         }
-        return parseTableToCollation(csvRows, sectionNode);
+        return parseTableToCollation(csvRows, sectionNode, tx);
     }
 
     /**
@@ -71,7 +72,7 @@ public class TabularParser {
      *
      * @return Response
      */
-    public Response parseExcel(InputStream fileData, Node sectionNode, String excelType) {
+    public Response parseExcel(InputStream fileData, Node sectionNode, String excelType, Transaction tx) {
         ArrayList<String[]> excelRows;
         try {
             Workbook workbook;
@@ -85,7 +86,7 @@ public class TabularParser {
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
                     .entity(jsonerror(e.getMessage())).build();
         }
-        return parseTableToCollation(excelRows, sectionNode);
+        return parseTableToCollation(excelRows, sectionNode, tx);
     }
 
     // Extract a table from the first sheet of an Excel workbook.
@@ -110,11 +111,11 @@ public class TabularParser {
         return excelRows;
     }
 
-    private Response parseTableToCollation(ArrayList<String[]> tableData, Node parentNode) {
+    private Response parseTableToCollation(ArrayList<String[]> tableData, Node parentNode, Transaction tx) {
         String response;
         Response.Status result = Response.Status.OK;
         Node traditionNode;
-        try (Transaction tx = db.beginTx()) {
+        try {
             traditionNode = VariantGraphService.getSectionTraditionNode(parentNode, tx);
             // Make the start node
             Node startNode = Util.createStartNode(parentNode, tx);
@@ -230,7 +231,7 @@ public class TabularParser {
                 List<ReadingModel> collatedReadings = createdReadings.values().stream().map(n -> new ReadingModel(n, tx))
                         .filter(x -> !x.isMeta()).collect(Collectors.toList());
                 int i = collatedReadings.size();
-                Relation relRest = new Relation(traditionNode.getProperty("id").toString(), getTraditionNode(traditionNode.getProperty("id").toString()));
+                // Relation relRest = new Relation(traditionNode.getProperty("id").toString(), getTraditionNode(traditionNode.getProperty("id").toString()));
                 RelationModel rm = new RelationModel();
                 rm.setType("collated");
                 rm.setAnnotation("Aligned in tabular input");
@@ -242,7 +243,7 @@ public class TabularParser {
                         throw new Exception("Same reading twice in createdReadings?!");
                     rm.setSource(srdg.getId());
                     rm.setTarget(trdg.getId());
-                    Response resp = relRest.create(rm);
+                    Response resp = Relation.create_relation_model(rm, traditionNode, tx);
                     if (resp.getStatus() > 399)
                         throw new Exception("Problem collating aligned readings: " + resp.getEntity().toString());
                     i--;
@@ -268,7 +269,6 @@ public class TabularParser {
             // We are done!
             result = Response.Status.CREATED;
             response = jsonresp("parentId", parentNode.getElementId());
-            tx.close();
         } catch (IllegalArgumentException e) {
             return Response.status(Response.Status.BAD_REQUEST).entity(jsonerror(e.getMessage())).build();
         } catch (Exception e) {

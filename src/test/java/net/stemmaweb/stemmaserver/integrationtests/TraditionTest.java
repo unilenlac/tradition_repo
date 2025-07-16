@@ -24,6 +24,7 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 
+import net.stemmaweb.services.Database;
 import net.stemmaweb.services.GraphDatabaseServiceProvider;
 import org.glassfish.jersey.test.JerseyTest;
 import org.junit.After;
@@ -59,8 +60,7 @@ import net.stemmaweb.stemmaserver.Util;
 public class TraditionTest {
     private String tradId;
 
-    private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
-    private final GraphDatabaseService db = dbServiceProvider.getDatabase();
+    private final GraphDatabaseService db = Database.getInstance().session;
 
     /*
      * JerseyTest is the test environment to Test api calls it provides a
@@ -86,7 +86,7 @@ public class TraditionTest {
         /*
          * create a tradition inside the test DB
          */
-        tradId = createTraditionFromFile("Tradition", "src/TestFiles/testTradition.xml", "1");
+        tradId = createTraditionFromFile("Tradition", "src/TestFiles/testTradition.xml", "admin@example.org");
     }
 
     private String createTraditionFromFile(String tName, String fName, String userId) {
@@ -107,7 +107,7 @@ public class TraditionTest {
 
         // import a second tradition into the db
         String testfile = "src/TestFiles/testTradition.xml";
-        expectedIds.add(createTraditionFromFile("Tradition", testfile, "1"));
+        expectedIds.add(createTraditionFromFile("Tradition", testfile, "admin@example.org"));
 
         List<TraditionModel> traditions = jerseyTest.target("/traditions")
                 .request()
@@ -131,7 +131,7 @@ public class TraditionTest {
        an order that is not guaranteed. */
     @Test(expected = org.junit.ComparisonFailure.class)
     public void getAllRelationshipsTest() {
-        String jsonPayload = "{\"role\":\"user\",\"id\":1}";
+        String jsonPayload = "{\"role\":\"user\",\"id\":admin@example.org}";
         jerseyTest.target("/user/1")
                 .request(MediaType.APPLICATION_JSON)
                 .put(Entity.json(jsonPayload));
@@ -171,7 +171,7 @@ public class TraditionTest {
 
     @Test
     public void getAllWitnessesTest() {
-        Set<String> expectedWitnesses = new HashSet<>(Arrays.asList("A", "B", "C"));
+        Set<String> expectedWitnesses = new HashSet<>(Arrays.asList("A", "B", "C", "0"));
         List<WitnessModel> witnesses = jerseyTest.target("/tradition/" + tradId + "/witnesses")
                 .request()
                 .get(new GenericType<>() {});
@@ -324,10 +324,10 @@ public class TraditionTest {
         /* Preconditon
          * The user with id 1 has tradition
          */
-        Response jerseyResult = jerseyTest.target("/user/1/traditions").request().get();
+        Response jerseyResult = jerseyTest.target("/user/admin@example.org/traditions").request().get();
         assertEquals(Response.Status.OK.getStatusCode(), jerseyResult.getStatus());
         List<TraditionModel> tradList = jerseyResult.readEntity(new GenericType<>() {});
-        assertEquals(1, tradList.size());
+        assertEquals(2, tradList.size());
         assertEquals(tradId, tradList.get(0).getId());
 
         /*
@@ -348,10 +348,10 @@ public class TraditionTest {
         /* PostCondition
          * The user with id 1 has still tradition
          */
-        jerseyResult = jerseyTest.target("/user/1/traditions").request().get();
+        jerseyResult = jerseyTest.target("/user/admin@example.org/traditions").request().get();
         assertEquals(Response.Status.OK.getStatusCode(), jerseyResult.getStatus());
         tradList = jerseyResult.readEntity(new GenericType<>() {});
-        assertEquals(1, tradList.size());
+        assertEquals(2, tradList.size());
         assertEquals(tradId, tradList.get(0).getId());
         assertEquals("Tradition", tradList.get(0).getName());
 
@@ -469,7 +469,6 @@ public class TraditionTest {
         AtomicInteger numNodes = new AtomicInteger(0);
         try (Transaction tx = db.beginTx()) {
             tx.execute("match (n) return n").forEachRemaining(x -> numNodes.getAndIncrement());
-            tx.close();
         }
         int originalNodeCount = numNodes.get();
 
@@ -529,7 +528,6 @@ public class TraditionTest {
                     .request()
                     .post(Entity.json(txrel));
             assertEquals(Response.Status.CREATED.getStatusCode(), jerseyResponse.getStatusInfo().getStatusCode());
-            tx.close();
         }
 
         // now count the nodes
@@ -574,7 +572,7 @@ public class TraditionTest {
             /*
              * Test if user 1 still exists
              */
-            Result result = tx.execute("match (userId:USER {id:'1'}) return userId");
+            Result result = tx.execute("match (userId:USER {id:'admin@example.org'}) return userId");
             Iterator<Node> nodes = result.columnAs("userId");
             assertTrue(nodes.hasNext());
 
@@ -595,11 +593,6 @@ public class TraditionTest {
      */
     @After
     public void tearDown() throws Exception {
-        DatabaseManagementService service = dbServiceProvider.getManagementService();
-
-        if (service != null) {
-            service.shutdownDatabase(db.databaseName());
-        }
 
         jerseyTest.tearDown();
     }

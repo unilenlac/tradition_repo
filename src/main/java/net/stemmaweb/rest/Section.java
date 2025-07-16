@@ -816,7 +816,7 @@ public class Section {
             // at the start of the new section too.
             boolean lacunoseWitsPresent = false;
             HashSet<Relationship> linksToSplit = new HashSet<>();
-            for (Relationship r : sequencesCrossingRank(rank, false)) {
+            for (Relationship r : sequencesCrossingRank(rank, false, tx)) {
                 Node thisStart = r.getStartNode();
                 Long endRank = (Long) r.getEndNode().getProperty("rank");
                 linksToSplit.add(r);
@@ -921,10 +921,10 @@ public class Section {
 
 
     @SuppressWarnings("SameParameterValue")
-    private List<Relationship> sequencesCrossingRank(Long rank, Boolean leftfencepost) {
-        Node startNode = VariantGraphService.getStartNode(sectId, db.beginTx());
+    private List<Relationship> sequencesCrossingRank(Long rank, Boolean leftfencepost, Transaction tx) {
+        Node startNode = VariantGraphService.getStartNode(sectId, tx);
 //        return VariantGraphService.returnAllSequences(startNode).relationships().stream()
-        return StreamSupport.stream(VariantGraphService.returnAllSequences(startNode).relationships().spliterator(), false)
+        return StreamSupport.stream(VariantGraphService.returnAllSequences(startNode, tx).relationships().spliterator(), false)
                 .filter(x -> crossesRank(x, rank, leftfencepost))
                 .collect(Collectors.toList());
     }
@@ -1470,12 +1470,12 @@ public class Section {
         try (Transaction tx = db.beginTx()) {
             // Find all the last readings at or prior to the fromRank. Omit any lacunae that
             // span the range - we don't emend a lacunose text.
-            Set<Node> atOrPrior = sequencesCrossingRank(proposal.getFromRank(), false)
+            Set<Node> atOrPrior = sequencesCrossingRank(proposal.getFromRank(), false, tx)
                     .stream().filter(x -> !(x.getStartNode().hasProperty("is_lacuna")
                                 && (Long) x.getEndNode().getProperty("rank", 0) >= proposal.getToRank()))
                     .map(Relationship::getStartNode).collect(Collectors.toSet());
             // Find all the first readings at or after the toRank. Again omit the lacunae.
-            Set<Node> atOrAfter = sequencesCrossingRank(proposal.getToRank(), false)
+            Set<Node> atOrAfter = sequencesCrossingRank(proposal.getToRank(), false, tx)
                     .stream().filter(x -> !(x.getStartNode().hasProperty("is_lacuna")
                                 && (Long) x.getStartNode().getProperty("rank", 0) < proposal.getFromRank()))
                             .map(Relationship::getEndNode).collect(Collectors.toSet());
@@ -1488,7 +1488,7 @@ public class Section {
             emendation.setProperty("text", proposal.getText());
             emendation.setProperty("authority", proposal.getAuthority());
             emendation.setProperty("rank", proposal.getFromRank());
-            emendation.setProperty("section_id", Long.valueOf(sectId));
+            emendation.setProperty("section_id", sectId);
             ReadingModel emrm = new ReadingModel(emendation, tx);
             result.setReadings(Collections.singletonList(emrm));
             // Connect it in the graph
@@ -1501,7 +1501,7 @@ public class Section {
             // If it is a zero-width emendation, re-rank the graph
             Node tradNode = getTraditionNode.apply(tx);
             ReadingService.recalculateRank(tradNode, emendation, false, tx);
-
+            tx.commit();
         } catch (Exception e) {
             e.printStackTrace();
             return Response.serverError().entity(jsonerror(e.getMessage())).build();

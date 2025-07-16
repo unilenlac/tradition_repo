@@ -9,6 +9,7 @@ import java.util.ArrayList;
 
 import javax.ws.rs.core.Response;
 
+import net.stemmaweb.services.Database;
 import net.stemmaweb.services.GraphDatabaseServiceProvider;
 import org.junit.After;
 import org.junit.Before;
@@ -23,6 +24,7 @@ import net.stemmaweb.rest.ERelations;
 import net.stemmaweb.services.DatabaseService;
 import net.stemmaweb.services.VariantGraphService;
 import net.stemmaweb.stemmaserver.Util;
+import org.neo4j.graphdb.Transaction;
 
 /**
  * 
@@ -33,11 +35,8 @@ public class DatabaseServiceTest {
 
     private String traditionId;
     private String userId;
-	private DatabaseManagementService dbbuilder;
 
-    private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
-
-    private final GraphDatabaseService db = dbServiceProvider.getDatabase();
+    private final GraphDatabaseService db = Database.getInstance().session;
 
     public DatabaseServiceTest() throws IOException {
     }
@@ -45,11 +44,7 @@ public class DatabaseServiceTest {
     @Before
     public void setUp() throws Exception {
 
-//      db = new GraphDatabaseServiceProvider(new TestGraphDatabaseFactory().newImpermanentDatabase()).getDatabase();
-    	// dbbuilder = new DatabaseManagementServiceBuilder(Path.of("")).build();
-    	// dbbuilder.createDatabase("stemmatest");
-    	// db = dbbuilder.database("stemmatest");
-        userId = "simon";
+        userId = "admin@example.org";
         Util.setupTestDB(db);
 
         /*
@@ -66,9 +61,11 @@ public class DatabaseServiceTest {
 
     @Test
     public void getRelatedTest() {
-        Node tradition = VariantGraphService.getTraditionNode(traditionId, db.beginTx());
-        ArrayList<Node> witnesses = DatabaseService.getRelated(tradition, ERelations.HAS_WITNESS, null);
-        assertEquals(3, witnesses.size());
+        try (Transaction tx = db.beginTx()) {
+            Node tradition = VariantGraphService.getTraditionNode(traditionId, tx);
+            ArrayList<Node> witnesses = DatabaseService.getRelated(tradition, ERelations.HAS_WITNESS, tx);
+            assertEquals(4, witnesses.size()); // 3 if the archetype W is excluded, 4 with it. Actually the base can't make the difference
+        }
     }
 
     @Test
@@ -81,10 +78,6 @@ public class DatabaseServiceTest {
      */
     @After
     public void tearDown() {
-        DatabaseManagementService service = dbServiceProvider.getManagementService();
 
-        if (service != null) {
-            service.shutdownDatabase(db.databaseName());
-        }
     }
 }

@@ -244,7 +244,7 @@ public class RelationService {
     }
 
     static Node findRepresentative(Set<Node> alternatives, Transaction tx) {
-        GraphDatabaseService db;
+
         // See if this is trivial
         if (alternatives.isEmpty()) return null;
         Node ref = alternatives.stream().findFirst().get();
@@ -290,7 +290,6 @@ public class RelationService {
                 representative = alternatives.stream().sorted((a, b) -> RelationService.byWitnessesDescending(a, b, tx))
                         .collect(Collectors.toList()).get(0);
 
-            tx.commit();
         }catch(Exception e){
             e.printStackTrace();
         }

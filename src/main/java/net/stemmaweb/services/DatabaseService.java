@@ -71,18 +71,18 @@ public class DatabaseService {
 
         ArrayList<Node> result = new ArrayList<>();
         // if (tx == null) {
-        //     GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+        //     GraphDatabaseService db = Database.getInstance().session;
         //     try (Transaction ntx = db.beginTx()) {
         //         Node startNode2 = ntx.getNodeByElementId(startNode.getElementId());
         //         Iterator<Relationship> allRels = startNode2.getRelationships(relType).iterator();
         //         allRels.forEachRemaining(x -> result.add(x.getOtherNode(startNode2)));
-        //         ntx.close();
+        //         // ntx.close();
         //     };
         // }else{
-            Node startNode2 = tx.getNodeByElementId(startNode.getElementId());
-            Iterator<Relationship> allRels = startNode2.getRelationships(relType).iterator();
-            allRels.forEachRemaining(x -> result.add(x.getOtherNode(startNode2)));
-        //};
+        Node startNode2 = tx.getNodeByElementId(startNode.getElementId());
+        Iterator<Relationship> allRels = startNode2.getRelationships(relType).iterator();
+        allRels.forEachRemaining(x -> result.add(x.getOtherNode(startNode2)));
+        // };
         return result;
     }
 

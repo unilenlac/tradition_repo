@@ -44,8 +44,7 @@ public class Reading {
     private final String readId;
 
     public Reading(String requestedId) {
-        GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
-        db = dbServiceProvider.getDatabase();
+        db = Database.getInstance().session;
         readId = requestedId; // This might be set to -1 if the reading was requested
                               // via a tradition it doesn't belong to
     }

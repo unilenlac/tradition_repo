@@ -1,10 +1,12 @@
 package net.stemmaweb.services;
 
+import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
+import net.stemmaweb.Util;
 import net.stemmaweb.rest.Tradition;
 import org.neo4j.graphdb.Direction;
 import org.neo4j.graphdb.GraphDatabaseService;
@@ -204,16 +206,16 @@ public class VariantGraphService {
     // 	return getTraditionNode(section, tx);
     // }
 
-    public static Node getSectionTraditionNode(Node n, Transaction tx) {
-        Node tradition;
+    public static Node getSectionTraditionNode(Node n, Transaction tx) throws Exception {
+        Node tradition = null;
         Node section;
         if(Objects.equals(n.getLabels().iterator().next().toString(), "READING")){
     	    section = tx.getNodeByElementId(n.getProperty("section_id").toString());
-        }else{
-            section = tx.getNodeByElementId(n.getElementId());
+            tradition = VariantGraphService.getSectionTraditionNode(section, tx);
         }
-        tradition = section.getSingleRelationship(ERelations.PART, Direction.INCOMING).getStartNode();
-
+        if (Objects.equals(n.getLabels().iterator().next().toString(), "SECTION")){
+            tradition = n.getSingleRelationship(ERelations.PART, Direction.INCOMING).getStartNode();
+        }
         return tradition;
     }
 
@@ -222,7 +224,7 @@ public class VariantGraphService {
      *
      * @param sectionNode - The section for which to perform the calculation
      */
-    public static void calculateCommon(Node sectionNode, Transaction tx) {
+    public static void calculateCommon(Node sectionNode, Transaction tx) throws Exception {
 
         // Get an AlignmentModel for the given section, and go rank by rank to find
         // the common nodes.
@@ -269,7 +271,7 @@ public class VariantGraphService {
 
     public static HashMap<Node,Node> normalizeGraph(Node sectionNode, List<String> normalizeTypeList, Transaction tx) throws Exception {
         HashMap<Node,Node> representatives = new HashMap<>();
-    	GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+    	GraphDatabaseService db = Database.getInstance().session;
         // Make sure the relation type exists
         //*
         Node tradition = getSectionTraditionNode(sectionNode, tx);
@@ -351,10 +353,10 @@ public class VariantGraphService {
      * @throws Exception if anything was missed
      */
 
-    public static void clearNormalization(Node sectionNode) throws Exception {
+    public static void clearNormalization(Node sectionNode, Transaction tx) throws Exception {
 //        GraphDatabaseService db = sectionNode.getGraphDatabase();
-    	GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
-        try (Transaction tx = db.beginTx()) {
+    	// GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+        try {
             Node sectionStartNode = sectionNode.getSingleRelationship(ERelations.COLLATION, Direction.OUTGOING).getEndNode();
             sectionStartNode.removeProperty("ncommon");
             tx.traversalDescription().breadthFirst()
@@ -373,7 +375,10 @@ public class VariantGraphService {
         	if (StreamSupport.stream(VariantGraphService.returnTraditionSection(sectionNode.getElementId(), tx).relationships().spliterator(), false)
         			.anyMatch(x -> x.isType(ERelations.NSEQUENCE) || x.isType(ERelations.REPRESENTS)))
                 throw new Exception("Data consistency error on normalization cleanup of section " + sectionNode.getElementId());
-            tx.commit();
+            // tx.commit();
+        } catch (Exception e) {
+            tx.rollback();
+            throw new Exception("Error clearing normalization for section " + sectionNode.getElementId() + ": " + e.getMessage(), e);
         }
     }
 
@@ -383,7 +388,7 @@ public class VariantGraphService {
      * @param  sectionNode - The section to calculate
      * @return an ordered List of READING nodes that make up the majority text
      */
-    public static List<Node> calculateMajorityText(Node sectionNode, Transaction tx) {
+    public static List<Node> calculateMajorityText(Node sectionNode, Transaction tx) throws Exception {
         // Get the IDs of our majority readings by going through the alignment table rank by rank
         AlignmentModel am = new AlignmentModel(sectionNode, tx);
         ArrayList<String> majorityReadings = new ArrayList<>();
@@ -614,7 +619,7 @@ public class VariantGraphService {
      * @return             an org.neo4j.graphdb.traversal.Traverser object containing the relations
      */
     public static Traverser returnTraditionRelations(Node traditionNode) {
-        GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+        GraphDatabaseService db = Database.getInstance().session;
         return returnTraverser(traditionNode.getElementId(), traditionRelations, PathExpanders.allTypesAndDirections(), db.beginTx());
     }
 
@@ -625,8 +630,8 @@ public class VariantGraphService {
      * @param startNode the Node object of the tradition or section to crawl
      * @return          an org.neo4j.graphdb.traversal.Traverser object containing the sequences
      */
-    public static Traverser returnAllSequences(Node startNode) {
-        GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
-        return returnTraverser(startNode.getElementId(), sequenceLinks, PathExpanders.forDirection(Direction.OUTGOING), db.beginTx());
+    public static Traverser returnAllSequences(Node startNode, Transaction tx) {
+        // GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+        return returnTraverser(startNode.getElementId(), sequenceLinks, PathExpanders.forDirection(Direction.OUTGOING), tx);
     }
 }

@@ -334,7 +334,7 @@ public class DotExporter
 
                 // Clean up after ourselves
                 if (seqLabel.equals(ERelations.NSEQUENCE))
-                    VariantGraphService.clearNormalization(sectionNode);
+                    VariantGraphService.clearNormalization(sectionNode, tx);
             }
 
             write("}\n");

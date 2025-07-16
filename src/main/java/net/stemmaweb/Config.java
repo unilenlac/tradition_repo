@@ -46,4 +46,7 @@ public class Config {
     public String getNeo4jPath() {
         return props.getProperty("neo4j.path", "");
     }
+    public String getNeo4jUtilsPath () {
+        return props.getProperty("neo4j.utils.path", "/var/lib/stemmarest");
+    }
 }

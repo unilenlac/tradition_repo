@@ -343,13 +343,13 @@ public class Tradition {
         // Parse the contents of the given file into that section
         if (filetype.equals("csv"))
             // Pass it off to the CSV reader
-            result = new TabularParser().parseCSV(uploadedInputStream, parentNode, ',');
+            result = new TabularParser().parseCSV(uploadedInputStream, parentNode, ',', tx);
         if (filetype.equals("tsv"))
             // Pass it off to the CSV reader with tab separators
-            result = new TabularParser().parseCSV(uploadedInputStream, parentNode, '\t');
+            result = new TabularParser().parseCSV(uploadedInputStream, parentNode, '\t', tx);
         if (filetype.startsWith("xls"))
             // Pass it off to the Excel reader
-            result = new TabularParser().parseExcel(uploadedInputStream, parentNode, filetype);
+            result = new TabularParser().parseExcel(uploadedInputStream, parentNode, filetype, tx);
         if (filetype.equals("teips"))
             // Pass it off to the TEI parser
             result = new TEIParallelSegParser().parseTEIParallelSeg(uploadedInputStream, parentNode);

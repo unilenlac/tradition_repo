@@ -1,13 +1,12 @@
 package net.stemmaweb;
 
+import com.google.errorprone.annotations.Var;
 import com.sun.xml.txw2.output.IndentingXMLStreamWriter;
 import net.stemmaweb.model.ReadingModel;
 import net.stemmaweb.rest.ERelations;
-import net.stemmaweb.services.VariantGraphService;
-import org.neo4j.graphdb.Direction;
-import org.neo4j.graphdb.Node;
-import org.neo4j.graphdb.Result;
-import org.neo4j.graphdb.Transaction;
+import net.stemmaweb.rest.Nodes;
+import net.stemmaweb.services.*;
+import org.neo4j.graphdb.*;
 
 import javax.ws.rs.core.Response;
 import javax.xml.stream.*;
@@ -60,7 +59,7 @@ public class Util {
         Map<String, Object> top_hn_id = filtered_stats.get(filtered_stats.size() - 1);
         return hn_list.stream().filter(x -> x.get("hyperId").equals(top_hn_id.get("hid"))).findFirst().orElse(null);
     }
-    public List<Map<String, Object>> populateHypernodes(Map<String, Object> top_hn, List<Map<String, Object>> filtered_hn, List<Map<String, Object>> hn_stats, List<Map<String, Object>> variant_list, XMLStreamWriter writer, Transaction tx) throws XMLStreamException {
+    public List<Map<String, Object>> populateHypernodes(Map<String, Object> top_hn, List<Map<String, Object>> filtered_hn, List<Map<String, Object>> hn_stats, List<Map<String, Object>> variant_list, XMLStreamWriter writer, List<String> sigils, Transaction tx) throws XMLStreamException {
         /*
         top_hn_list : list of all hn connected to the traversed section node
         filtered_hn : contains the list of all hypernodes, also contains a state of the hypernodes when a list of node is traversed
@@ -92,7 +91,7 @@ public class Util {
                 Map<String, Object> top_hn_node = target_top_hn(local_top_hn_list, hn_stats);
                 node_skip = count_nodes(top_hn_node.get("hyperId").toString(), tx)-1;
                 writer.writeStartElement("app");
-                remaining_hn = populateHypernodes(top_hn_node, remaining_hn, hn_stats, variant_list, writer, tx);
+                remaining_hn = populateHypernodes(top_hn_node, remaining_hn, hn_stats, variant_list, writer, sigils, tx);
                 writer.writeEndElement();
                 remaining_hn = remaining_hn.stream().filter(x -> !x.get("hyperId").equals(local_top_hn.get().get("hyperId"))).collect(Collectors.toList());
             } else {
@@ -101,7 +100,7 @@ public class Util {
                 } else {
                     int node_relations = node.getDegree(ERelations.RELATED);
                     if (node_relations > 0){
-                        populateVariants(node, variant_locus, writer, tx);
+                        populateVariants(node, variant_locus, writer, sigils, tx);
                     } else {
                         String string = node.getProperty("text").toString();
                         if(string!=null && string.length() > 0)
@@ -159,8 +158,9 @@ public class Util {
         return nodes;
     }
 
-    public void populateVariants(Node section_node, Result filtered_variants, XMLStreamWriter writer, Transaction tx) throws XMLStreamException {
+    public void populateVariants(Node section_node, Result filtered_variants, XMLStreamWriter writer, List<String> sigils, Transaction tx) throws XMLStreamException {
         LinkedList<HashMap<String, String>> app_elements = new LinkedList<>();
+        List<String> sigils_copy = new ArrayList<>(sigils);
         writer.writeStartElement("app");
         writer.writeAttribute("rank", section_node.getProperty("rank").toString());
         while (filtered_variants.hasNext()){
@@ -170,12 +170,20 @@ public class Util {
                 ReadingModel rdg = new ReadingModel(variant, tx);
                 xmlement.put("wit", rdg.getWitnesses().stream().map(x -> "#"+x).collect(Collectors.joining(" ")));
                 app_elements.add(xmlement);
+
+                sigils_copy.removeAll(rdg.getWitnesses());
             }
         }
         for(Map<String, String> el: app_elements){
             writer.writeStartElement(el.get("el"));
             writer.writeAttribute("wit", el.get("wit"));
             addRdgContent(el.get("text"), writer);
+            writer.writeEndElement();
+        }
+        // add om.
+        if(!sigils_copy.isEmpty()){
+            writer.writeStartElement("rdg");
+            writer.writeAttribute("wit", sigils_copy.stream().map(x -> "#"+x).collect(Collectors.joining(" ")));
             writer.writeEndElement();
         }
         writer.writeEndElement();

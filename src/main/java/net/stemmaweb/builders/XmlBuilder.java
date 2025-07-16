@@ -97,6 +97,16 @@ public class XmlBuilder implements DocumentBuilder{
             List<Map<String, Object>> hn_stats = stats.stream().collect(Collectors.toList());
 
             Result section = graphService.getSectionByRank(section_id, tx);
+            Result witnesses = graphService.getTraditionWitnesses(tradition_id, tx);
+            List<String> sigils = new ArrayList<>();
+
+            while (witnesses.hasNext()){
+                Map<String, Object> next = witnesses.next();
+                if (next.get("w") != null) {
+                    Node witness = (Node) next.get("w");
+                    sigils.add(witness.getProperty("sigil").toString());
+                }
+            }
             LinkedList<Node> node_section = new LinkedList<>();
             section.stream().map(x -> tx.getNodeByElementId(x.get("id").toString())).forEach(node_section::add);
 
@@ -107,6 +117,7 @@ public class XmlBuilder implements DocumentBuilder{
                 Node node = node_section.removeFirst();
                 if(node_skip == 0){
                     // get all hypernodes linked to traversed section node
+                    // rank is the criterion of  selection...gg
                     List<Map<String, Object>> node_hns = hn_table.stream().filter(x -> x.get("rank").equals(node.getProperty("rank"))).collect(Collectors.toList());
 
                     // get all node that share the same ranking, get the variant locus of the traversed nodes
@@ -128,7 +139,7 @@ public class XmlBuilder implements DocumentBuilder{
                         Map<String, Object> top_hn_object = util.target_top_hn(top_hn_list, hn_stats);
                         writer.writeStartElement("app");
                         node_skip = util.count_nodes(top_hn_object.get("hyperId").toString(), tx)-1;
-                        util.populateHypernodes(top_hn_object, hn_table, hn_stats, variant_table, writer, tx);
+                        util.populateHypernodes(top_hn_object, hn_table, hn_stats, variant_table, writer, sigils, tx);
                         writer.writeEndElement();
                     }
                     ReadingModel rdg = new ReadingModel(node, tx);
@@ -138,7 +149,7 @@ public class XmlBuilder implements DocumentBuilder{
                     boolean is_app = trad_w_count != rdg_w_count;
                     // populate variants outside hyper-readings
                     if(node_hns.isEmpty() && node_section.size() >= 1 && is_app){
-                        util.populateVariants(node, variant_locus, writer, tx);
+                        util.populateVariants(node, variant_locus, writer, sigils, tx);
                     }
                     // populate non variating text on the main element
                     if(node_hns.isEmpty() && node_section.size() >= 1 && !is_app) {

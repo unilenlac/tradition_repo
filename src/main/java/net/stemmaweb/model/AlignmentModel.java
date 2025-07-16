@@ -49,12 +49,12 @@ public class AlignmentModel {
     // Make an empty alignment table
     public AlignmentModel() {}
 
-    public AlignmentModel(Node sectionNode, Transaction tx) {
+    public AlignmentModel(Node sectionNode, Transaction tx) throws Exception {
         this(sectionNode, false, tx);
     }
 
     // Get an alignment table
-    public AlignmentModel(Node sectionNode, boolean excludeLayers, Transaction tx) {
+    public AlignmentModel(Node sectionNode, boolean excludeLayers, Transaction tx) throws Exception {
 
         String sectId = sectionNode.getElementId();
         Node traditionNode = VariantGraphService.getSectionTraditionNode(sectionNode, tx);

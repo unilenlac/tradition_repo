@@ -12,6 +12,7 @@ import javax.xml.stream.XMLStreamConstants;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamReader;
 
+import net.stemmaweb.services.Database;
 import org.neo4j.graphdb.*;
 
 import net.stemmaweb.model.RelationModel;
@@ -30,8 +31,7 @@ import net.stemmaweb.services.VariantGraphService;
  * @author PSE FS 2015 Team2
  */
 public class StemmawebParser {
-    private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
-    private final GraphDatabaseService db = dbServiceProvider.getDatabase();
+    private final GraphDatabaseService db = Database.getInstance().session;
 
     /* public Response parseGraphML(String filename, Node parentNode)
         throws FileNotFoundException {

@@ -176,7 +176,7 @@ public class Util {
 
     // Helper to set colocation flags on all colocated RELATED links.
     // NOTE: For use inside a transaction
-    static void setColocationFlags (Node traditionNode) {
+    static void setColocationFlags (Node traditionNode) throws IOException {
         HashSet<String> colocatedTypes = new HashSet<>();
         for (Relationship r : traditionNode.getRelationships(Direction.OUTGOING, ERelations.HAS_RELATION_TYPE)) {
             RelationTypeModel relType = new RelationTypeModel(r.getEndNode());

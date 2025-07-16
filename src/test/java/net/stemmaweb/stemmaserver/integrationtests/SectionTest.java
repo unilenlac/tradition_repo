@@ -649,7 +649,8 @@ public class SectionTest extends TestCase {
                     continue;
                 r.setProperty("is_lemma", true);
             }
-            tx.close();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
 
         Response r = jerseyTest.target("/tradition/" + florId + "/section/" + flor3 + "/setlemma")
