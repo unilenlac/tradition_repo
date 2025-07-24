@@ -137,7 +137,7 @@ public class XmlBuilder implements DocumentBuilder{
 
                         List<Map<String, Object>> filtered_hn_table = hn_table.stream().filter(x -> x.get("group").equals(top_hn.get().get("group"))).collect(Collectors.toList());
                         List<Map<String, Object>> filtered_hn_stats = hn_stats.stream().filter(x -> x.get("group").equals(top_hn.get().get("group"))).collect(Collectors.toList());
-                        List<Map<String, Object>> hns_nodes_mat = util.completeHnsNodeMatrix(filtered_hn_table, sigils.size(), (long) node.getProperty("rank"), filtered_hn_stats, section_id, top_hn.get(), tx);
+                        List<Map<String, Object>> hns_nodes_mat = util.completeHnsNodeMatrix(filtered_hn_table, (long) node.getProperty("rank"), filtered_hn_stats, section_id, tx);
                         List<Map<String, Object>> top_hn_node_list = node_hns.stream().filter(x -> x.get("is_lemma").equals(true)).collect(Collectors.toList());
 
                         Map<String, List<Map<String, Object>>> hn_infos = util.collectSectionHypernodes(section_node, new ArrayList<>(), tx);

@@ -104,7 +104,7 @@ public class Util {
                 List<Map<String, Object>> filtered_hn_table = filtered_hn.stream().filter(x -> x.get("group").equals(local_top_hn.get().get("group"))).collect(Collectors.toList());
                 List<Map<String, Object>> filtered_hn_stats = hn_stats.stream().filter(x -> x.get("group").equals(local_top_hn.get().get("group"))).collect(Collectors.toList());
                 // List<Map<String, Object>> local_node_mat = completeHnsNodeMatrix(filtered_hn_table, sigils.size(), (long) node.getProperty("rank"), filtered_hn_stats, node.getProperty("section_id").toString(), local_top_hn.get(), tx);
-                List<Map<String, Object>> nodes_mat = completeHnsNodeMatrix(filtered_hn_table, sigils.size(), (long) node.getProperty("rank"), filtered_hn_stats, node.getProperty("section_id").toString(), local_top_hn.get(), tx);
+                List<Map<String, Object>> nodes_mat = completeHnsNodeMatrix(filtered_hn_table, (long) node.getProperty("rank"), filtered_hn_stats, node.getProperty("section_id").toString(), tx);
 
                 Map<String, List<Map<String, Object>>> hn_infos = collectSectionHypernodes(section_node, excluded_hn, tx);
                 remaining_hn = hn_infos.get("hn_table").stream().filter(x -> !x.get("hyperId").equals(top_hn.get("hyperId"))).collect(Collectors.toList());
@@ -465,7 +465,8 @@ public class Util {
             return (tx) -> VariantGraphService.getTraditionNode(tradId, tx);
         }
     }
-    public List<Map<String, Object>> completeHnsNodeMatrix(List<Map<String, Object>> hnsNodes, long witnesses, long actual_rank, List<Map<String, Object>> hn_stats, String section_id, Map<String, Object> detected_hn_node, Transaction tx){
+    public List<Map<String, Object>> completeHnsNodeMatrix(List<Map<String, Object>> hnsNodes, long actual_rank, List<Map<String, Object>> hn_stats, String section_id, Transaction tx){
+
         Map<String, Object> empty_node = new HashMap<>();
         empty_node.put("note", "ghost node");
         empty_node.put("is_lemma", false);
@@ -477,14 +478,28 @@ public class Util {
         empty_node.put("nodeId", "na");
 
         for(Map<String, Object> hn_info: hn_stats){
+
             Node hn = tx.getNodeByElementId(hn_info.get("hid").toString());
             Map<String, Object> new_node = new HashMap<>(empty_node);
+
+            // select hypernode and find if the hypernode is a lemma
             List<Map<String, Object>> filtered_hn = hnsNodes.stream().filter(x -> x.get("hyperId").equals(hn_info.get("hid"))).collect(Collectors.toList());
             boolean is_lemma = (boolean) filtered_hn.get(0).get("is_lemma");
+
+            // get all nodes that belongs to a hypernode group and define matrix boundaries
+            List<Map<String, Object>> grouped_filtered_hn;
+            grouped_filtered_hn = hnsNodes.stream()
+                    .filter(x -> x.get("group").equals(hn_info.get("group")))
+                    .collect(Collectors.toList());
+
+            Set<Long> filtered_grouped_hn_ranks = grouped_filtered_hn.stream().map(x -> (Long) x.get("rank")).collect(Collectors.toSet());
+            List<Long> sorted_filtered_grouped_hn_ranks = filtered_grouped_hn_ranks.stream().sorted().collect(Collectors.toList());
+            long max_rank = Collections.max(sorted_filtered_grouped_hn_ranks);
+            long min_rank = Collections.min(sorted_filtered_grouped_hn_ranks);
+
+            // get rank range from the hypernode that belong to the hn_info value
             Set<Long> filtered_hn_ranks = filtered_hn.stream().map(x -> (Long) x.get("rank")).collect(Collectors.toSet());
             List<Long> sorted_filtered_hn_ranks = filtered_hn_ranks.stream().sorted().collect(Collectors.toList());
-            long max_rank = Collections.max(sorted_filtered_hn_ranks);
-            long min_rank = Collections.min(sorted_filtered_hn_ranks);
 
             while (min_rank <= max_rank) {
                 if (!sorted_filtered_hn_ranks.contains(min_rank)) {
