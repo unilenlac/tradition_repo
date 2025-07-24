@@ -163,7 +163,7 @@ public class Relation {
                     }
                 }
             }
-            // tx.commit();
+            tx.commit();
             return Response.status(Status.CREATED).entity(relationChanges).build();
         } catch (Exception e) {
             throw new RuntimeException(e);

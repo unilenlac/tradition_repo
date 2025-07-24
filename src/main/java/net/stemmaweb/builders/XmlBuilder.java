@@ -98,6 +98,7 @@ public class XmlBuilder implements DocumentBuilder{
 
             Result section = graphService.getSectionByRank(section_id, tx);
             Result witnesses = graphService.getTraditionWitnesses(tradition_id, tx);
+            long ranks = graphService.getEndRank(section_id, tx);
             List<String> sigils = new ArrayList<>();
 
             while (witnesses.hasNext()){
@@ -117,13 +118,13 @@ public class XmlBuilder implements DocumentBuilder{
                 Node node = node_section.removeFirst();
                 if(node_skip == 0){
                     // get all hypernodes linked to traversed section node
-                    // rank is the criterion of  selection...gg
+
                     List<Map<String, Object>> node_hns = hn_table.stream().filter(x -> x.get("rank").equals(node.getProperty("rank"))).collect(Collectors.toList());
 
                     // get all node that share the same ranking, get the variant locus of the traversed nodes
                     Result variant_locus = util.variant_locus((String) node.getProperty("section_id"), (Long) node.getProperty("rank"), tx);
 
-                    // later we gonna need to count all the variants without exhausting the variant locus iterator, this a basic list of all reading that share the same rank in the section
+                    // later we are going to count all the variants without exhausting the variant locus iterator, this a basic list of all reading that share the same rank in the section
                     List<Map<String, Object>> filtered_variants = variant_table.stream().filter(x -> x.get("rank") == node.getProperty("rank")).collect(Collectors.toList());
 
                     // populate hyper-readings
@@ -134,12 +135,20 @@ public class XmlBuilder implements DocumentBuilder{
 
                     if(!top_hn.isEmpty()){
 
-                        List<Map<String, Object>> top_hn_list = node_hns.stream().filter(x -> x.get("is_lemma").equals(true)).collect(Collectors.toList());
+                        List<Map<String, Object>> filtered_hn_table = hn_table.stream().filter(x -> x.get("group").equals(top_hn.get().get("group"))).collect(Collectors.toList());
+                        List<Map<String, Object>> filtered_hn_stats = hn_stats.stream().filter(x -> x.get("group").equals(top_hn.get().get("group"))).collect(Collectors.toList());
+                        List<Map<String, Object>> hns_nodes_mat = util.completeHnsNodeMatrix(filtered_hn_table, sigils.size(), (long) node.getProperty("rank"), filtered_hn_stats, section_id, top_hn.get(), tx);
+                        List<Map<String, Object>> top_hn_node_list = node_hns.stream().filter(x -> x.get("is_lemma").equals(true)).collect(Collectors.toList());
+
+                        Map<String, List<Map<String, Object>>> hn_infos = util.collectSectionHypernodes(section_node, new ArrayList<>(), tx);
+
                         // hn_object fields are : text, nodeId, nodeUuid, hyperId, note
-                        Map<String, Object> top_hn_object = util.target_top_hn(top_hn_list, hn_stats);
+                        Map<String, Object> top_hn_object = util.target_top_hn(top_hn_node_list, hn_stats);
                         writer.writeStartElement("app");
+                        // todo : improve counting with filtered_hn_table
                         node_skip = util.count_nodes(top_hn_object.get("hyperId").toString(), tx)-1;
-                        util.populateHypernodes(top_hn_object, hn_table, hn_stats, variant_table, writer, sigils, tx);
+
+                        util.populateHypernodes(top_hn_object, hn_infos.get("hn_table"), hn_infos.get("hn_stats"), writer, sigils, section_node, new ArrayList<>(), hns_nodes_mat, tx);
                         writer.writeEndElement();
                     }
                     ReadingModel rdg = new ReadingModel(node, tx);

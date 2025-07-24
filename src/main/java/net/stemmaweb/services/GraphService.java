@@ -3,6 +3,9 @@ package net.stemmaweb.services;
 import net.stemmaweb.rest.Nodes;
 import org.neo4j.graphdb.*;
 
+import java.util.HashMap;
+import java.util.Map;
+
 public class GraphService {
 
     public void sectionGraph(Transaction tx, Long witness_count){
@@ -87,5 +90,24 @@ public class GraphService {
         String query = String.format("MATCH (t:TRADITION {id: \"%s\"})-[:HAS_WITNESS]->(w:WITNESS)\n" +
                 " RETURN w", tradition_id);
         return tx.execute(query);
+    }
+    public long getEndRank(String section_id, Transaction tx){
+
+        Map<String, Object> properties = new HashMap<>();
+        properties.put("text", "#END#");
+        properties.put("section_id", section_id);
+        ResourceIterator<Node> rank = tx.findNodes(Nodes.READING, properties);
+        long end_rank = 0;
+        try{
+            if (rank.hasNext()){
+                Node endNode = rank.next();
+                if (endNode.hasProperty("rank")) {
+                    end_rank = (long) endNode.getProperty("rank");
+                }
+            }
+        }catch (Exception e) {
+            e.printStackTrace();
+        }
+        return end_rank - 1;
     }
 }

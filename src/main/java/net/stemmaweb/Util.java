@@ -1,5 +1,6 @@
 package net.stemmaweb;
 
+import apoc.coll.Coll;
 import com.google.errorprone.annotations.Var;
 import com.sun.xml.txw2.output.IndentingXMLStreamWriter;
 import net.stemmaweb.model.ReadingModel;
@@ -17,6 +18,7 @@ import java.util.concurrent.Callable;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.LongStream;
 
 /**
  * Utility functions for anything that needs a Response
@@ -59,7 +61,17 @@ public class Util {
         Map<String, Object> top_hn_id = filtered_stats.get(filtered_stats.size() - 1);
         return hn_list.stream().filter(x -> x.get("hyperId").equals(top_hn_id.get("hid"))).findFirst().orElse(null);
     }
-    public List<Map<String, Object>> populateHypernodes(Map<String, Object> top_hn, List<Map<String, Object>> filtered_hn, List<Map<String, Object>> hn_stats, List<Map<String, Object>> variant_list, XMLStreamWriter writer, List<String> sigils, Transaction tx) throws XMLStreamException {
+    public List<Map<String, Object>> populateHypernodes(
+            Map<String, Object> top_hn,
+            List<Map<String, Object>> filtered_hn,
+            List<Map<String, Object>> hn_stats,
+            XMLStreamWriter writer,
+            List<String> sigils,
+            Node section_node,
+            List<Map<String, Object>> excluded_hn,
+            List<Map<String, Object>> hns_nodes_mat,
+            Transaction tx
+        ) throws XMLStreamException {
         /*
         top_hn_list : list of all hn connected to the traversed section node
         filtered_hn : contains the list of all hypernodes, also contains a state of the hypernodes when a list of node is traversed
@@ -69,11 +81,12 @@ public class Util {
         List<Node> nodes = get_hn_nodes(top_hn, tx);
 
         int hn_node_count = nodes.size();
+        excluded_hn.addAll(filtered_hn.stream().filter(x -> x.get("hyperId").equals(top_hn.get("hyperId"))).collect(Collectors.toList()));
         List<Map<String, Object>> remaining_hn = filtered_hn.stream().filter(x -> !x.get("hyperId").equals(top_hn.get("hyperId"))).collect(Collectors.toList());
         Node node_sample = nodes.get(1);
-        ReadingModel rdg_sample = new ReadingModel(node_sample, tx);
+
         writer.writeStartElement("lem");
-        writer.writeAttribute("wit", rdg_sample.getWitnesses().stream().map(x -> "#"+x).collect(Collectors.joining(" ")));
+        writer.writeAttribute("wit", top_hn.get("witness").toString());
 
         // add rank attribute to the hypernode
         // todo: remove this when job is done
@@ -87,11 +100,21 @@ public class Util {
             Optional<Map<String, Object>> local_top_hn = local_node_hns.stream().filter(x -> x.get("is_lemma").equals(true)).findAny();
             Result variant_locus = variant_locus((String) node.getProperty("section_id"), (Long) node.getProperty("rank"), tx);
             if (local_top_hn.isPresent()){
+
+                List<Map<String, Object>> filtered_hn_table = filtered_hn.stream().filter(x -> x.get("group").equals(local_top_hn.get().get("group"))).collect(Collectors.toList());
+                List<Map<String, Object>> filtered_hn_stats = hn_stats.stream().filter(x -> x.get("group").equals(local_top_hn.get().get("group"))).collect(Collectors.toList());
+                // List<Map<String, Object>> local_node_mat = completeHnsNodeMatrix(filtered_hn_table, sigils.size(), (long) node.getProperty("rank"), filtered_hn_stats, node.getProperty("section_id").toString(), local_top_hn.get(), tx);
+                List<Map<String, Object>> nodes_mat = completeHnsNodeMatrix(filtered_hn_table, sigils.size(), (long) node.getProperty("rank"), filtered_hn_stats, node.getProperty("section_id").toString(), local_top_hn.get(), tx);
+
+                Map<String, List<Map<String, Object>>> hn_infos = collectSectionHypernodes(section_node, excluded_hn, tx);
+                remaining_hn = hn_infos.get("hn_table").stream().filter(x -> !x.get("hyperId").equals(top_hn.get("hyperId"))).collect(Collectors.toList());
+
                 List<Map<String, Object>> local_top_hn_list = local_node_hns.stream().filter(x -> x.get("is_lemma").equals(true)).collect(Collectors.toList());
                 Map<String, Object> top_hn_node = target_top_hn(local_top_hn_list, hn_stats);
                 node_skip = count_nodes(top_hn_node.get("hyperId").toString(), tx)-1;
                 writer.writeStartElement("app");
-                remaining_hn = populateHypernodes(top_hn_node, remaining_hn, hn_stats, variant_list, writer, sigils, tx);
+
+                remaining_hn = populateHypernodes(top_hn_node, remaining_hn, hn_infos.get("hn_stats"), writer, sigils, section_node, excluded_hn, nodes_mat, tx);
                 writer.writeEndElement();
                 remaining_hn = remaining_hn.stream().filter(x -> !x.get("hyperId").equals(local_top_hn.get().get("hyperId"))).collect(Collectors.toList());
             } else {
@@ -110,35 +133,41 @@ public class Util {
             }
         }
         writer.writeEndElement();
+        try{
 
-        List<Map<String, Object>> filtered_variants = variant_list.stream().filter(x -> x.get("rank") == tx.getNodeByElementId(node_sample.getElementId()).getProperty("rank")).collect(Collectors.toList());
-        List<Map<String, Object>> filtered_bottom_hn = new ArrayList<>();
-        for (Map<String, Object> variant: filtered_variants){
-            if(!variant.get("nodeId").equals(node_sample) || variant.get("nodeId").equals(node_sample) && filtered_variants.size() == 1){
-                filtered_bottom_hn.addAll(remaining_hn.stream().filter(x -> Objects.equals(x.get("nodeUuid").toString(), variant.get("nodeId"))).collect(Collectors.toList()));
-            }
-        }
-        if (filtered_bottom_hn.size() >= 1) {
-            filtered_bottom_hn.sort((m1, m2) -> {
-                Integer w1 = (Integer) m1.get("weight");
-                Integer w2 = (Integer) m2.get("weight");
-                return w1.compareTo(w2);
-            });
-            for (Map<String, Object> hn: filtered_bottom_hn){
+            // List<Map<String, Object>> filtered_variants = full_variant_table.stream().filter(x -> x.get("rank") == tx.getNodeByElementId(node_sample.getElementId()).getProperty("rank")).collect(Collectors.toList());
+            List<Map<String, Object>> filtered_bottom_hn = new ArrayList<>();
+            // for (Map<String, Object> variant: filtered_variants){
+            //     if(!variant.get("nodeId").equals(node_sample) || variant.get("nodeId").equals(node_sample) && filtered_variants.size() == 1){
+            //         filtered_bottom_hn.addAll(remaining_hn.stream().filter(x -> Objects.equals(x.get("nodeUuid").toString(), variant.get("nodeId"))).collect(Collectors.toList()));
+            //     }
+            // }
+            filtered_bottom_hn = hns_nodes_mat.stream().filter(x -> x.get("group").equals(top_hn.get("group")) && !x.get("witness").equals(top_hn.get("witness"))).collect(Collectors.toList());
+            if (filtered_bottom_hn.size() >= 1) {
+                filtered_bottom_hn = filtered_bottom_hn.stream().filter(x -> x.get("rank").equals(node_sample.getProperty("rank"))).collect(Collectors.toList());
+                filtered_bottom_hn.sort((m1, m2) -> {
+                    Integer w1 = (Integer) m1.get("weight");
+                    Integer w2 = (Integer) m2.get("weight");
+                    return w1.compareTo(w2);
+                });
+                for (Map<String, Object> hn: filtered_bottom_hn){
 
-                List<Node> tmp_nodes = get_hn_nodes(hn, tx);
-                List<String> hn_nodes = tmp_nodes.stream().map(x -> x.getProperty("text").toString()).collect(Collectors.toList());
-                if(hn_nodes.size() == hn_node_count){
-                    writer.writeStartElement("rdg");
-                    ReadingModel w_node = new ReadingModel(tmp_nodes.get(1), tx);
-                    writer.writeAttribute("wit", w_node.getWitnesses().stream().map(x -> "#"+x).collect(Collectors.joining(" ")));
-                    for(String n: hn_nodes){
-                        if(n!=null && n.length() > 0)
-                            addRdgContent(n+" ", writer);
+                    List<Node> tmp_nodes = get_hn_nodes(hn, tx);
+                    List<String> hn_nodes = tmp_nodes.stream().map(x -> x.getProperty("text").toString()).collect(Collectors.toList());
+                    if(hn_nodes.size() == hn_node_count){
+                        writer.writeStartElement("rdg");
+                        // ReadingModel w_node = new ReadingModel(tmp_nodes.get(1), tx);
+                        writer.writeAttribute("wit", hn.get("witness").toString());
+                        for(String n: hn_nodes){
+                            if(n!=null && n.length() > 0)
+                                addRdgContent(n+" ", writer);
+                        }
+                        writer.writeEndElement();
                     }
-                    writer.writeEndElement();
                 }
             }
+        } catch (Throwable t){
+            t.printStackTrace();
         }
         return remaining_hn;
     }
@@ -155,6 +184,7 @@ public class Util {
             Node tmp_node = (Node) node_res.next().get("node");
             nodes.add(tmp_node);
         }
+        nodes.sort(Comparator.comparing(m -> (Long) m.getProperty("rank")));
         return nodes;
     }
 
@@ -368,8 +398,8 @@ public class Util {
          */
         String query = String.format("match (r:READING)-[l:HAS_HYPERNODE]->(h:HYPERREADING)\n" +
                 " WHERE r.section_id=\"%s\"\n" +
-                " WITH r.text as text, id(r) as nodeId, elementId(r) as nodeUuid, elementId(h) as hyperId, h.note as note, r.rank as rank, h.is_lemma as is_lemma, h.weight as weight\n" +
-                " RETURN text, nodeId, nodeUuid, hyperId, note, rank, is_lemma, weight ORDER BY nodeId ASC", section_node.getElementId());
+                " WITH r.text as text, id(r) as nodeId, elementId(r) as nodeUuid, elementId(h) as hyperId, h.note as group, h.source as witness, r.rank as rank, h.is_lemma as is_lemma, h.weight as weight\n" +
+                " RETURN text, nodeId, nodeUuid, hyperId, group, witness, rank, is_lemma, weight ORDER BY nodeId ASC", section_node.getElementId());
         return tx.execute(query);
     }
     public Result hn_stats(Node section_node, Transaction tx){
@@ -382,7 +412,7 @@ public class Util {
          */
         String query = String.format("match (r:READING)-[l:HAS_HYPERNODE]->(h:HYPERREADING)\n" +
                 " WHERE r.section_id=\"%s\"\n" +
-                " with elementId(h) as hid, count(h) as rCount\n" +
+                " with elementId(h) as hid, count(h) as rCount, h.note as group, h.source as witness\n" +
                 " return *", section_node.getElementId());
         return tx.execute(query);
     }
@@ -434,5 +464,72 @@ public class Util {
         }else{
             return (tx) -> VariantGraphService.getTraditionNode(tradId, tx);
         }
+    }
+    public List<Map<String, Object>> completeHnsNodeMatrix(List<Map<String, Object>> hnsNodes, long witnesses, long actual_rank, List<Map<String, Object>> hn_stats, String section_id, Map<String, Object> detected_hn_node, Transaction tx){
+        Map<String, Object> empty_node = new HashMap<>();
+        empty_node.put("note", "ghost node");
+        empty_node.put("is_lemma", false);
+        empty_node.put("rank", actual_rank);
+        empty_node.put("weight", 1000);
+        empty_node.put("text", "");
+        empty_node.put("hyperId", "na");
+        empty_node.put("nodeUuid", "na");
+        empty_node.put("nodeId", "na");
+
+        for(Map<String, Object> hn_info: hn_stats){
+            Node hn = tx.getNodeByElementId(hn_info.get("hid").toString());
+            Map<String, Object> new_node = new HashMap<>(empty_node);
+            List<Map<String, Object>> filtered_hn = hnsNodes.stream().filter(x -> x.get("hyperId").equals(hn_info.get("hid"))).collect(Collectors.toList());
+            boolean is_lemma = (boolean) filtered_hn.get(0).get("is_lemma");
+            Set<Long> filtered_hn_ranks = filtered_hn.stream().map(x -> (Long) x.get("rank")).collect(Collectors.toSet());
+            List<Long> sorted_filtered_hn_ranks = filtered_hn_ranks.stream().sorted().collect(Collectors.toList());
+            long max_rank = Collections.max(sorted_filtered_hn_ranks);
+            long min_rank = Collections.min(sorted_filtered_hn_ranks);
+
+            while (min_rank <= max_rank) {
+                if (!sorted_filtered_hn_ranks.contains(min_rank)) {
+                    Node reading = tx.createNode(Nodes.READING);
+                    reading.setProperty("text", "");
+                    reading.setProperty("rank", min_rank);
+                    reading.setProperty("section_id", section_id);
+                    reading.setProperty("note", hn_info.get("group"));
+                    reading.setProperty("source", hn_info.get("witness"));
+                    reading.createRelationshipTo(hn, ERelations.HAS_HYPERNODE);
+
+                    new_node.put("rank", min_rank);
+                    new_node.put("hyperId", hn_info.get("hid"));
+                    new_node.put("is_lemma", is_lemma);
+                    new_node.put("nodeUuid", reading.getElementId());
+                    new_node.put("group", hn_info.get("group"));
+                    new_node.put("witness", hn_info.get("witness"));
+                    hnsNodes.add(new HashMap<>(new_node));
+                }
+                min_rank++;
+            }
+        }
+        return hnsNodes;
+    }
+    public Map<String, List<Map<String, Object>>> collectSectionHypernodes(Node section_node, List<Map<String, Object>> excluded_hn_nodes, Transaction tx) {
+
+        Result variants = this.getVariants(section_node, tx);
+        Result hypernodes = this.getHypernodes(section_node, tx);
+        Result stats = this.hn_stats(section_node, tx);
+
+        Set<String> hn_ids = excluded_hn_nodes.stream().map(x -> x.get("nodeUuid").toString()).collect(Collectors.toSet());
+        Set<String> hn_groups = excluded_hn_nodes.stream().map(x -> x.get("group").toString()).collect(Collectors.toSet());
+        // todo stemmarest stop and rerun (test this new implementation)
+        List<Map<String, Object>> variant_table = variants.stream()
+                .filter(x -> !hn_ids.contains(x.get("nodeId").toString()))
+                .collect(Collectors.toList());
+        List<Map<String, Object>> hn_table = hypernodes.stream()
+                .filter(x -> !hn_groups.contains(x.get("group").toString()))
+                .collect(Collectors.toList());
+        List<Map<String, Object>> hn_stats = stats.stream().collect(Collectors.toList());
+
+        Map<String, List<Map<String, Object>>> res = new HashMap<>();
+        res.put("variant_table", variant_table);
+        res.put("hn_table", hn_table);
+        res.put("hn_stats", hn_stats);
+        return res;
     }
 }

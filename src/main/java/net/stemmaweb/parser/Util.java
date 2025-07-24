@@ -6,23 +6,15 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
+import java.util.*;
+import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 import javax.xml.parsers.DocumentBuilderFactory;
 
 import org.apache.commons.compress.utils.IOUtils;
-import org.neo4j.graphdb.Direction;
-import org.neo4j.graphdb.GraphDatabaseService;
-import org.neo4j.graphdb.Node;
-import org.neo4j.graphdb.Path;
-import org.neo4j.graphdb.PathExpander;
-import org.neo4j.graphdb.Relationship;
-import org.neo4j.graphdb.ResourceIterable;
-import org.neo4j.graphdb.Transaction;
+import org.neo4j.graphdb.*;
 import org.neo4j.graphdb.traversal.BranchState;
 import org.neo4j.internal.helpers.collection.Iterables;
 import org.w3c.dom.Document;
@@ -57,19 +49,14 @@ public class Util {
 
     // Start and end node creation
     static Node createEndNode(Node parentNode, Long rank, Transaction tx) {
-        // GraphDatabaseService db = parentNode.getGraphDatabase();
-        // GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+
         Node endNode;
-        // try (Transaction tx = db.beginTx()) {
-            // Node parentNodeTx = tx.getNodeByElementId(parentNode.getElementId());
-	        endNode = tx.createNode(Nodes.READING);
-	        endNode.setProperty("is_end", true);
-	        endNode.setProperty("section_id", parentNode.getElementId());
-	        endNode.setProperty("text", "#END#");
-            endNode.setProperty("rank", rank);
-	        parentNode.createRelationshipTo(endNode, ERelations.HAS_END);
-	    //     tx.commit();
-        // }
+        endNode = tx.createNode(Nodes.READING);
+        endNode.setProperty("is_end", true);
+        endNode.setProperty("section_id", parentNode.getElementId());
+        endNode.setProperty("text", "#END#");
+        endNode.setProperty("rank", rank);
+        parentNode.createRelationshipTo(endNode, ERelations.HAS_END);
         return endNode;
     }
 
@@ -214,5 +201,4 @@ public class Util {
             }
         };
     }
-
 }
