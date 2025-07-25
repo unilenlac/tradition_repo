@@ -1,24 +1,17 @@
 package net.stemmaweb;
 
-import apoc.coll.Coll;
-import com.google.errorprone.annotations.Var;
-import com.sun.xml.txw2.output.IndentingXMLStreamWriter;
 import net.stemmaweb.model.ReadingModel;
 import net.stemmaweb.rest.ERelations;
 import net.stemmaweb.rest.Nodes;
 import net.stemmaweb.services.*;
 import org.neo4j.graphdb.*;
 
-import javax.ws.rs.core.Response;
 import javax.xml.stream.*;
 import java.io.StringReader;
-import java.io.StringWriter;
 import java.util.*;
-import java.util.concurrent.Callable;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-import java.util.stream.LongStream;
 
 /**
  * Utility functions for anything that needs a Response
@@ -52,14 +45,32 @@ public class Util {
         // TODO: escape other non-printing characters using uXXXX notation
         return escaped;
     }
-    public Map<String, Object> target_top_hn(List<Map<String, Object>> hn_list, List<Map<String, Object>>stats){
-        /*
-        if a node is linked to multiple hypernodes that have the "main" mention,
-        this method returns the largest hypernode group and allow to keep hypernode processing hierarchy
-         */
-        List<Map<String, Object>>filtered_stats = stats.stream().filter(s -> hn_list.stream().anyMatch(hn -> s.get("hid").equals(hn.get("hyperId")))).sorted(Comparator.comparingInt(x -> Integer.parseInt(x.get("rCount").toString()))).distinct().collect(Collectors.toList());
+    /**
+     * Identifies the largest hypernode group associated with a node and maintains
+     * hypernode processing hierarchy.
+     *
+     * @param hn_list A list of maps representing hypernodes linked to the node.
+     *                Each map contains hypernode details such as "hyperId".
+     * @param stats A list of maps containing statistics about hypernodes.
+     *              Each map includes details such as "hid" (hypernode ID) and "rCount" (reading count).
+     * @return A map representing the largest hypernode group, or null if no match is found.
+     */
+    public Map<String, Object> target_top_hn(List<Map<String, Object>> hn_list, List<Map<String, Object>> stats) {
+        // Filter the stats to include only those hypernodes present in the hn_list
+        List<Map<String, Object>> filtered_stats = stats.stream()
+                .filter(s -> hn_list.stream().anyMatch(hn -> s.get("hid").equals(hn.get("hyperId"))))
+                .sorted(Comparator.comparingInt(x -> Integer.parseInt(x.get("rCount").toString()))) // Sort by reading count
+                .distinct() // Remove duplicates
+                .collect(Collectors.toList());
+
+        // Retrieve the hypernode with the highest reading count
         Map<String, Object> top_hn_id = filtered_stats.get(filtered_stats.size() - 1);
-        return hn_list.stream().filter(x -> x.get("hyperId").equals(top_hn_id.get("hid"))).findFirst().orElse(null);
+
+        // Find and return the corresponding hypernode from the hn_list
+        return hn_list.stream()
+                .filter(x -> x.get("hyperId").equals(top_hn_id.get("hid")))
+                .findFirst()
+                .orElse(null);
     }
     public List<Map<String, Object>> populateHypernodes(
             Map<String, Object> top_hn,
@@ -103,8 +114,7 @@ public class Util {
 
                 List<Map<String, Object>> filtered_hn_table = filtered_hn.stream().filter(x -> x.get("group").equals(local_top_hn.get().get("group"))).collect(Collectors.toList());
                 List<Map<String, Object>> filtered_hn_stats = hn_stats.stream().filter(x -> x.get("group").equals(local_top_hn.get().get("group"))).collect(Collectors.toList());
-                // List<Map<String, Object>> local_node_mat = completeHnsNodeMatrix(filtered_hn_table, sigils.size(), (long) node.getProperty("rank"), filtered_hn_stats, node.getProperty("section_id").toString(), local_top_hn.get(), tx);
-                List<Map<String, Object>> nodes_mat = completeHnsNodeMatrix(filtered_hn_table, (long) node.getProperty("rank"), filtered_hn_stats, node.getProperty("section_id").toString(), tx);
+                List<Map<String, Object>> nodes_mat = completeHnsNodeTable(filtered_hn_table, (long) node.getProperty("rank"), filtered_hn_stats, node.getProperty("section_id").toString(), tx);
 
                 Map<String, List<Map<String, Object>>> hn_infos = collectSectionHypernodes(section_node, excluded_hn, tx);
                 remaining_hn = hn_infos.get("hn_table").stream().filter(x -> !x.get("hyperId").equals(top_hn.get("hyperId"))).collect(Collectors.toList());
@@ -196,12 +206,13 @@ public class Util {
         while (filtered_variants.hasNext()){
             Node variant = (Node) filtered_variants.next().get("node");
             if(Objects.equals(section_node.getProperty("section_id"), variant.getProperty("section_id"))){
-                HashMap<String, String> xmlement = find_lemma(variant);
-                ReadingModel rdg = new ReadingModel(variant, tx);
-                xmlement.put("wit", rdg.getWitnesses().stream().map(x -> "#"+x).collect(Collectors.joining(" ")));
-                app_elements.add(xmlement);
-
-                sigils_copy.removeAll(rdg.getWitnesses());
+                if (!variant.hasProperty("ghost")) { // ignore hypernode ghost nodes
+                    HashMap<String, String> xmlement = find_lemma(variant);
+                    ReadingModel rdg = new ReadingModel(variant, tx);
+                    xmlement.put("wit", rdg.getWitnesses().stream().map(x -> "#"+x).collect(Collectors.joining(" ")));
+                    app_elements.add(xmlement);
+                    sigils_copy.removeAll(rdg.getWitnesses());
+                }
             }
         }
         for(Map<String, String> el: app_elements){
@@ -465,8 +476,28 @@ public class Util {
             return (tx) -> VariantGraphService.getTraditionNode(tradId, tx);
         }
     }
-    public List<Map<String, Object>> completeHnsNodeMatrix(List<Map<String, Object>> hnsNodes, long actual_rank, List<Map<String, Object>> hn_stats, String section_id, Transaction tx){
+    /**
+     * Completes the hypernode table.
+     * This method fills in missing nodes in the hypernode matrix table based on the provided hypernodes and their statistics.
+     *
+     * allows to go from this:
+     * ()-()-() hn(1)
+     * ---()-() hn(2)
+     * to this :
+     * (          )-()-() hn(1)
+     * (ghost_node)-()-() hn(2)
+     * and allow further nested hypernode or simple variants to be detected and included in the output
+     *
+     * @param hnsNodes A list of maps representing hypernodes and their associated nodes.
+     * @param actual_rank The current rank being processed.
+     * @param hn_stats A list of maps containing statistics about hypernodes.
+     * @param section_id The ID of the section being processed.
+     * @param tx The Neo4j transaction used for database operations.
+     * @return A list of maps representing the updated hypernode matrix table.
+     */
+    public List<Map<String, Object>> completeHnsNodeTable(List<Map<String, Object>> hnsNodes, long actual_rank, List<Map<String, Object>> hn_stats, String section_id, Transaction tx){
 
+        // Create a template for an empty node to be used as a placeholder
         Map<String, Object> empty_node = new HashMap<>();
         empty_node.put("note", "ghost node");
         empty_node.put("is_lemma", false);
@@ -477,40 +508,47 @@ public class Util {
         empty_node.put("nodeUuid", "na");
         empty_node.put("nodeId", "na");
 
+        // Iterate through the hypernode statistics
         for(Map<String, Object> hn_info: hn_stats){
 
+            // Retrieve the hypernode from the database using its ID
             Node hn = tx.getNodeByElementId(hn_info.get("hid").toString());
             Map<String, Object> new_node = new HashMap<>(empty_node);
 
-            // select hypernode and find if the hypernode is a lemma
+            // Filter the hypernodes to find those matching the current hypernode ID
             List<Map<String, Object>> filtered_hn = hnsNodes.stream().filter(x -> x.get("hyperId").equals(hn_info.get("hid"))).collect(Collectors.toList());
             boolean is_lemma = (boolean) filtered_hn.get(0).get("is_lemma");
 
-            // get all nodes that belongs to a hypernode group and define matrix boundaries
+            // Group hypernodes by their group property and define matrix boundaries
             List<Map<String, Object>> grouped_filtered_hn;
             grouped_filtered_hn = hnsNodes.stream()
                     .filter(x -> x.get("group").equals(hn_info.get("group")))
                     .collect(Collectors.toList());
 
+            // Extract and sort the ranks of the grouped hypernodes
             Set<Long> filtered_grouped_hn_ranks = grouped_filtered_hn.stream().map(x -> (Long) x.get("rank")).collect(Collectors.toSet());
             List<Long> sorted_filtered_grouped_hn_ranks = filtered_grouped_hn_ranks.stream().sorted().collect(Collectors.toList());
             long max_rank = Collections.max(sorted_filtered_grouped_hn_ranks);
             long min_rank = Collections.min(sorted_filtered_grouped_hn_ranks);
 
-            // get rank range from the hypernode that belong to the hn_info value
+            // Extract and sort the ranks of the current hypernode
             Set<Long> filtered_hn_ranks = filtered_hn.stream().map(x -> (Long) x.get("rank")).collect(Collectors.toSet());
             List<Long> sorted_filtered_hn_ranks = filtered_hn_ranks.stream().sorted().collect(Collectors.toList());
 
+            // Fill in missing nodes within the rank range
             while (min_rank <= max_rank) {
                 if (!sorted_filtered_hn_ranks.contains(min_rank)) {
+                    // Create a new node in the database for the missing rank
                     Node reading = tx.createNode(Nodes.READING);
                     reading.setProperty("text", "");
                     reading.setProperty("rank", min_rank);
                     reading.setProperty("section_id", section_id);
                     reading.setProperty("note", hn_info.get("group"));
                     reading.setProperty("source", hn_info.get("witness"));
+                    reading.setProperty("ghost", true);
                     reading.createRelationshipTo(hn, ERelations.HAS_HYPERNODE);
 
+                    // Add the new node to the hypernode table
                     new_node.put("rank", min_rank);
                     new_node.put("hyperId", hn_info.get("hid"));
                     new_node.put("is_lemma", is_lemma);
@@ -524,27 +562,47 @@ public class Util {
         }
         return hnsNodes;
     }
+    /**
+     * Collects hypernodes and their associated data for a given section node, excluding specified hypernodes.
+     *
+     * @param section_node The section node for which hypernodes are being collected.
+     * @param excluded_hn_nodes A list of hypernodes to exclude from the results.
+     * @param tx The Neo4j transaction used for database operations.
+     * @return A map containing three lists:
+     *         - "variant_table": A list of variant nodes not excluded by the provided hypernode IDs.
+     *         - "hn_table": A list of hypernodes not excluded by the provided hypernode groups.
+     *         - "hn_stats": A list of statistics for all hypernodes in the section.
+     */
     public Map<String, List<Map<String, Object>>> collectSectionHypernodes(Node section_node, List<Map<String, Object>> excluded_hn_nodes, Transaction tx) {
 
+        // Retrieve variants, hypernodes, and their statistics for the section node
         Result variants = this.getVariants(section_node, tx);
         Result hypernodes = this.getHypernodes(section_node, tx);
         Result stats = this.hn_stats(section_node, tx);
 
+        // Extract IDs and groups of excluded hypernodes
         Set<String> hn_ids = excluded_hn_nodes.stream().map(x -> x.get("nodeUuid").toString()).collect(Collectors.toSet());
         Set<String> hn_groups = excluded_hn_nodes.stream().map(x -> x.get("group").toString()).collect(Collectors.toSet());
-        // todo stemmarest stop and rerun (test this new implementation)
+
+        // Filter variants to exclude those with IDs matching the excluded hypernode IDs
         List<Map<String, Object>> variant_table = variants.stream()
                 .filter(x -> !hn_ids.contains(x.get("nodeId").toString()))
                 .collect(Collectors.toList());
+
+        // Filter hypernodes to exclude those with groups matching the excluded hypernode groups
         List<Map<String, Object>> hn_table = hypernodes.stream()
                 .filter(x -> !hn_groups.contains(x.get("group").toString()))
                 .collect(Collectors.toList());
+
+        // Collect statistics for all hypernodes in the section
         List<Map<String, Object>> hn_stats = stats.stream().collect(Collectors.toList());
 
+        // Create a result map containing the filtered data
         Map<String, List<Map<String, Object>>> res = new HashMap<>();
         res.put("variant_table", variant_table);
         res.put("hn_table", hn_table);
         res.put("hn_stats", hn_stats);
+
         return res;
     }
 }
