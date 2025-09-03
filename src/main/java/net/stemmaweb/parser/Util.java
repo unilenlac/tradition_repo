@@ -1,19 +1,30 @@
 package net.stemmaweb.parser;
 
+import java.io.BufferedInputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.util.*;
+import java.util.stream.Collectors;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+
+import javax.xml.parsers.DocumentBuilderFactory;
+
+import org.apache.commons.compress.utils.IOUtils;
+import org.neo4j.graphdb.*;
+import org.neo4j.graphdb.traversal.BranchState;
+import org.neo4j.internal.helpers.collection.Iterables;
+import org.w3c.dom.Document;
+
 import net.stemmaweb.model.RelationTypeModel;
 import net.stemmaweb.rest.ERelations;
 import net.stemmaweb.rest.Nodes;
 import net.stemmaweb.services.DatabaseService;
+import net.stemmaweb.services.GraphDatabaseServiceProvider;
 import net.stemmaweb.services.VariantGraphService;
-import org.neo4j.graphdb.*;
-import org.neo4j.graphdb.traversal.BranchState;
-import org.w3c.dom.Document;
-
-import javax.xml.parsers.DocumentBuilderFactory;
-import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.stream.Collectors;
 
 /**
  * Utility functions for the parsers
@@ -22,55 +33,76 @@ import java.util.stream.Collectors;
 public class Util {
 
     // Start and end node creation
-    static Node createStartNode(Node parentNode) {
-        GraphDatabaseService db = parentNode.getGraphDatabase();
-        Node startNode = db.createNode(Nodes.READING);
+    static Node createStartNode(Node parentNode, Transaction tx) {
+
+        Node startNode;
+        Node parentNodeTx = tx.getNodeByElementId(parentNode.getElementId());
+        startNode = tx.createNode(Nodes.READING);
         startNode.setProperty("is_start", true);
-        startNode.setProperty("section_id", parentNode.getId());
+        startNode.setProperty("section_id", parentNode.getElementId());
         startNode.setProperty("rank", 0L);
         startNode.setProperty("text", "#START#");
-        parentNode.createRelationshipTo(startNode, ERelations.COLLATION);
+        parentNodeTx.createRelationshipTo(startNode, ERelations.COLLATION);
+
         return startNode;
     }
 
     // Start and end node creation
-    static Node createEndNode(Node parentNode) {
-        GraphDatabaseService db = parentNode.getGraphDatabase();
-        Node endNode = db.createNode(Nodes.READING);
+    static Node createEndNode(Node parentNode, Long rank, Transaction tx) {
+
+        Node endNode;
+        endNode = tx.createNode(Nodes.READING);
         endNode.setProperty("is_end", true);
-        endNode.setProperty("section_id", parentNode.getId());
+        endNode.setProperty("section_id", parentNode.getElementId());
         endNode.setProperty("text", "#END#");
+        endNode.setProperty("rank", rank);
         parentNode.createRelationshipTo(endNode, ERelations.HAS_END);
         return endNode;
     }
 
     // Witness node creation
-    static Node createWitness(Node traditionNode, String sigil, Boolean hypothetical) throws IllegalArgumentException {
+    static Node createWitness(Node traditionNode, String sigil, Boolean hypothetical, Transaction tx) throws IllegalArgumentException {
         // First check if the sigil has any characters that will cause trouble for REST
-        for (String illegal : new String[] {"<", ">", "#", "%", "\"", "{", "}", "|", "\\", "^", "[", "]", "`", "(", ")"})
+        for (String illegal : new String[] {"<", ">", "#", "%", "\"", "{", "}", "|", "\\", "^", "`", "(", ")"})
             if (sigil.contains(illegal))
                 throw new IllegalArgumentException("The character " + illegal + " may not appear in a sigil name.");
-        GraphDatabaseService db = traditionNode.getGraphDatabase();
-        Node witnessNode = db.createNode(Nodes.WITNESS);
+        Node witnessNode;
+
+        Node trad = tx.getNodeByElementId(traditionNode.getElementId());
+        witnessNode = tx.createNode(Nodes.WITNESS);
         witnessNode.setProperty("sigil", sigil);
         witnessNode.setProperty("hypothetical", hypothetical);
         witnessNode.setProperty("quotesigil", !isDotId(sigil));
+        trad.createRelationshipTo(witnessNode, ERelations.HAS_WITNESS);
+
         return witnessNode;
     }
 
-    static Node findOrCreateExtant(Node traditionNode, String sigil) {
+    static Node findOrCreateExtant(Node traditionNode, String sigil, Transaction tx) {
         // This list should contain either zero or one items.
-        ArrayList<Node> existingWit = DatabaseService.getRelated(traditionNode, ERelations.HAS_WITNESS)
-                .stream().filter(x -> x.hasProperty("hypothetical")
-                        && x.getProperty("hypothetical").equals(false)
-                        && x.getProperty("sigil").equals(sigil))
-                .collect(Collectors.toCollection(ArrayList::new));
+
+        ArrayList<Node> existingWit = DatabaseService.getRelatedWitness(traditionNode, ERelations.HAS_WITNESS, sigil, tx);
+
         if (existingWit.size() == 0) {
-            Node witnessNode = createWitness(traditionNode, sigil, false);
-            traditionNode.createRelationshipTo(witnessNode, ERelations.HAS_WITNESS);
-            return witnessNode;
+            return createWitness(traditionNode, sigil, false, tx);
         } else {
             return existingWit.get(0);
+        }
+    }
+
+    static void ensureSectionLink (Node traditionNode, Node sectionNode, Transaction tx) {
+        // GraphDatabaseService db = traditionNode.getGraphDatabase();
+        // GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+        try  {
+            // String tradId = traditionNode.getProperty("id").toString();
+            ArrayList<Node> tsections = VariantGraphService.getSectionNodes(traditionNode, tx);
+            if (!tsections.contains(sectionNode)) {
+                traditionNode.createRelationshipTo(sectionNode, ERelations.PART);
+                if (!tsections.isEmpty())
+                    tsections.get(tsections.size()-1).createRelationshipTo(sectionNode, ERelations.NEXT);
+            }
+        } catch (Exception e){
+            e.printStackTrace();
         }
     }
 
@@ -89,6 +121,32 @@ public class Util {
         }
     }
 
+    // Zip parsing utilities - public because also used by test suite
+    // Returns a structure which is a list of zip
+    public static LinkedHashMap<String,File> extractGraphMLZip(InputStream is) throws IOException {
+        LinkedHashMap<String,File> result = new LinkedHashMap<>();
+        BufferedInputStream buf = new BufferedInputStream(is);
+        ZipInputStream zipIn = new ZipInputStream(buf);
+        ZipEntry ze;
+        while ((ze = zipIn.getNextEntry()) != null) {
+            // SOMEDAY can we do this without writing out to a file?
+            String zfName = ze.getName();
+            File someTmp = File.createTempFile(zfName, "");
+            FileOutputStream fo = new FileOutputStream(someTmp);
+            IOUtils.copy(zipIn, fo);
+            fo.close();
+            zipIn.closeEntry();
+            result.put(zfName, someTmp);
+        }
+        zipIn.close();
+        return result;
+    }
+
+    public static void cleanupExtractedZip(LinkedHashMap<String,File> result) throws IOException {
+        for (File f : result.values())
+            Files.deleteIfExists(f.toPath());
+    }
+
     // Helper to get any existing SEQUENCE link between two readings.
     // NOTE: For use inside a transaction
     static Relationship getSequenceIfExists (Node source, Node target) {
@@ -105,9 +163,9 @@ public class Util {
 
     // Helper to set colocation flags on all colocated RELATED links.
     // NOTE: For use inside a transaction
-    static void setColocationFlags (Node traditionNode) {
+    static void setColocationFlags (Node traditionNode) throws IOException {
         HashSet<String> colocatedTypes = new HashSet<>();
-        for (Relationship r : traditionNode.getRelationships(ERelations.HAS_RELATION_TYPE, Direction.OUTGOING)) {
+        for (Relationship r : traditionNode.getRelationships(Direction.OUTGOING, ERelations.HAS_RELATION_TYPE)) {
             RelationTypeModel relType = new RelationTypeModel(r.getEndNode());
             if (relType.getIs_colocation()) colocatedTypes.add(relType.getName());
         }
@@ -126,15 +184,15 @@ public class Util {
         final String pStemmaName = stemmaName;
         return new PathExpander() {
             @Override
-            public java.lang.Iterable expand(Path path, BranchState branchState) {
+            public ResourceIterable expand(Path path, BranchState branchState) {
                 ArrayList<Relationship> goodPaths = new ArrayList<>();
                 for (Relationship link : path.endNode()
-                        .getRelationships(ERelations.TRANSMITTED, d)) {
+                        .getRelationships(d, ERelations.TRANSMITTED)) {
                     if (link.getProperty("hypothesis").equals(pStemmaName)) {
                         goodPaths.add(link);
                     }
                 }
-                return goodPaths;
+				return Iterables.resourceIterable(goodPaths);
             }
 
             @Override
@@ -142,29 +200,5 @@ public class Util {
                 return null;
             }
         };
-    }
-
-    static String jsonerror (String message) {
-        return jsonresp("error", message);
-    }
-    static String jsonresp (String key, String message) {
-        return String.format("{\"%s\": \"%s\"}", key, escape(message));
-    }
-    @SuppressWarnings("SameParameterValue")
-    static String jsonresp (String key, Long value) {
-        return String.format("{\"%s\": %d}", key, value);
-    }
-
-    private static String escape(String raw) {
-        String escaped = raw;
-        escaped = escaped.replace("\\", "\\\\");
-        escaped = escaped.replace("\"", "\\\"");
-        escaped = escaped.replace("\b", "\\b");
-        escaped = escaped.replace("\f", "\\f");
-        escaped = escaped.replace("\n", "\\n");
-        escaped = escaped.replace("\r", "\\r");
-        escaped = escaped.replace("\t", "\\t");
-        // TODO: escape other non-printing characters using uXXXX notation
-        return escaped;
     }
 }

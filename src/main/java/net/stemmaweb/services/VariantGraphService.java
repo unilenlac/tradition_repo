@@ -1,57 +1,89 @@
 package net.stemmaweb.services;
 
+import java.io.IOException;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
+
+import net.stemmaweb.Util;
+import net.stemmaweb.rest.Tradition;
+import org.neo4j.graphdb.Direction;
+import org.neo4j.graphdb.GraphDatabaseService;
+import org.neo4j.graphdb.Label;
+import org.neo4j.graphdb.Node;
+import org.neo4j.graphdb.PathExpander;
+import org.neo4j.graphdb.PathExpanders;
+import org.neo4j.graphdb.Relationship;
+import org.neo4j.graphdb.Transaction;
+import org.neo4j.graphdb.traversal.*;
+
 import net.stemmaweb.model.AlignmentModel;
 import net.stemmaweb.model.ReadingModel;
 import net.stemmaweb.model.RelationTypeModel;
 import net.stemmaweb.model.WitnessTokensModel;
 import net.stemmaweb.rest.ERelations;
 import net.stemmaweb.rest.Nodes;
-import org.neo4j.graphdb.*;
-import org.neo4j.graphdb.traversal.*;
-
-import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
 
 public class VariantGraphService {
 
     /**
      * Check whether a given section actually belongs to the given tradition.
      *
-     * @param tradId - The alleged parent tradition
-     * @param aSectionId - The section to check
-     * @param db - the GraphDatabaseService where the tradition is stored
      * @return - true or false
      */
-    public static Boolean sectionInTradition(String tradId, String aSectionId, GraphDatabaseService db) {
-        Node traditionNode = getTraditionNode(tradId, db);
-        if (traditionNode == null)
-            return false;
 
+    public static TraversalDescription simpleTraverser(Transaction tx, int section_length, Long witnesses_count){
+        return tx.traversalDescription()
+                .order(BranchOrderingPolicies.PREORDER_BREADTH_FIRST)
+                .evaluator(new VariantEvaluator(witnesses_count))
+                .evaluator(Evaluators.atDepth(section_length))
+                .uniqueness(Uniqueness.NODE_GLOBAL)
+                .relationships(ERelations.COLLATION, Direction.OUTGOING)
+                .relationships(ERelations.SEQUENCE, Direction.OUTGOING);
+    }
+
+
+    public static Boolean sectionInTradition(String tradId, String aSectionId, GraphDatabaseService db) {
         boolean found = false;
         try (Transaction tx = db.beginTx()) {
-            for (Node s : DatabaseService.getRelated(traditionNode, ERelations.PART)) {
-                if (s.getId() == Long.parseLong(aSectionId)) {
-                    found = true;
-                }
-            }
-            tx.success();
+        	found = sectionInTradition(tradId, aSectionId, tx);
+            tx.close();
         }
         return found;
     }
 
+    public static Boolean sectionInTradition(String tradId, String aSectionId, Transaction tx) {
+    	Node traditionNode = getTraditionNode(tradId, tx);
+    	if (traditionNode == null)
+    		return false;
+    	
+    	boolean found = false;
+		for (Node s : DatabaseService.getRelated(traditionNode, ERelations.PART, tx)) {
+			if (s.getElementId().equals(aSectionId)) {
+				found = true;
+				break;
+			}
+		}
+    	return found;
+    }
+    
     /**
      * Get the start node of a section, or the first section in a tradition
      *
      * @param nodeId the ID of the tradition or section whose start node should be returned
-     * @param db  the GraphDatabaseService where the tradition is stored
+     * @param tx  the main database transaction
      * @return  the start node, or null if there is none.
      *      NOTE if there are multiple unordered sections, an arbitrary start node may be returned!
      */
-    public static Node getStartNode(String nodeId, GraphDatabaseService db) {
-        return getBoundaryNode(nodeId, db, ERelations.COLLATION);
-    }
+    // public static Node getStartNode(String nodeId, Transaction tx) {
+    // 	return getBoundaryNode(nodeId, tx, ERelations.COLLATION);
+    // }
 
+    public static Node getStartNode(String nodeId, Transaction tx) {
+    	return getBoundaryNode(nodeId, tx, ERelations.COLLATION);
+    }
+    
     /**
      * Get the end node of a section, or the last section in a tradition
      *
@@ -60,72 +92,83 @@ public class VariantGraphService {
      * @return  the end node, or null if there is none
      *      NOTE if there are multiple unordered sections, an arbitrary end node may be returned!
      */
-    public static Node getEndNode(String nodeId, GraphDatabaseService db) {
-        return getBoundaryNode(nodeId, db, ERelations.HAS_END);
+    public static Node getEndNode(String nodeId, GraphDatabaseService db, Transaction tx) {
+    	// Transaction tx = db.beginTx();
+        // tx.close();
+    	return getBoundaryNode(nodeId, tx, ERelations.HAS_END);
     }
 
-    private static Node getBoundaryNode(String nodeId, GraphDatabaseService db, ERelations direction) {
+    public static Node getEndNode(String nodeId, Transaction tx) {
+    	return getBoundaryNode(nodeId, tx, ERelations.HAS_END);
+    }
+    
+    private static Node getBoundaryNode(String nodeId, Transaction tx, ERelations direction) {
         Node boundNode = null;
         // If we have been asked for a tradition node, use either the first or the last of
         // its section nodes instead.
-        Node currentNode = getTraditionNode(nodeId, db);
+        Node currentNode = getTraditionNode(nodeId, tx);
         if (currentNode != null) {
-            ArrayList<Node> sections = getSectionNodes(nodeId, db);
-            if (sections != null && sections.size() > 0) {
+            ArrayList<Node> sections = getSectionNodes(currentNode, tx);
+            if (!sections.isEmpty()) {
                 Node relevantSection = direction.equals(ERelations.HAS_END)
                         ? sections.get(sections.size() - 1)
                         : sections.get(0);
-                return getBoundaryNode(String.valueOf(relevantSection.getId()), db, direction);
+                return getBoundaryNode(relevantSection.getElementId(), tx, direction);
             } else return null;
         }
-        // Were we asked for a nonexistent tradition node (i.e. a non-Long that corresponds to no tradition)?
-        long nodeIndex;
-        try {
-            nodeIndex = Long.parseLong(nodeId);
-        } catch (NumberFormatException e) {
-            return null;
-        }
+//        // Were we asked for a nonexistent tradition node (i.e. a non-Long that corresponds to no tradition)?
+//        long nodeIndex;
+//        try {
+//            nodeIndex = Long.parseLong(nodeId);
+//        } catch (NumberFormatException e) {
+//            return null;
+//        }
         // If we are here, we were asked for a section node.
-        try (Transaction tx = db.beginTx()) {
-            currentNode = db.getNodeById(nodeIndex);
-            if (currentNode != null)
-                boundNode = currentNode.getSingleRelationship(direction, Direction.OUTGOING).getEndNode();
-            tx.success();
-        }
-        return boundNode;
+		currentNode = tx.getNodeByElementId(nodeId);
+		if (currentNode != null)
+            if(currentNode.getDegree(direction, Direction.OUTGOING) > 0){
+			    return currentNode.getSingleRelationship(direction, Direction.OUTGOING).getEndNode();
+            }else {
+                boundNode = currentNode;
+            }
+		return boundNode;
     }
 
     /**
      * Return the list of a tradition's sections, ordered by NEXT relationship
      *
-     * @param tradId    the tradition whose sections to return
-     * @param db        the GraphDatabaseService where the tradition is stored
-     * @return          a list of sections, or null if the tradition doesn't exist
+     * @param tradNode    the tradition whose sections to return
+     * @param tx        the database transaction
+     * @return          a list of sections, which is empty if the tradition doesn't exist
      */
-    public static ArrayList<Node> getSectionNodes(String tradId, GraphDatabaseService db) {
-        Node tradition = getTraditionNode(tradId, db);
-        if (tradition == null)
-            return null;
+    // public static ArrayList<Node> getSectionNodes(String tradId, Transaction tx) {
+    // 	ArrayList<Node> sectionNodes;
+    // 	try {
+    // 		sectionNodes = getSectionNodes(tradId, tx);
+    //     }
+    // 	return sectionNodes;
+    // }
+    public static ArrayList<Node> getSectionNodes(Node tradNode, Transaction tx) {
+        // Node tradition = getTraditionNode(tradId, tx);
         ArrayList<Node> sectionNodes = new ArrayList<>();
-        ArrayList<Node> sections = DatabaseService.getRelated(tradition, ERelations.PART);
+        if (tradNode == null)
+            return sectionNodes;
+        ArrayList<Node> sections = DatabaseService.getRelated(tradNode, ERelations.PART, tx);
         int size = sections.size();
-        try (Transaction tx = db.beginTx()) {
-            for(Node n: sections) {
-                if (!n.getRelationships(Direction.INCOMING, ERelations.NEXT)
-                        .iterator()
-                        .hasNext()) {
-                    db.traversalDescription()
-                            .depthFirst()
-                            .relationships(ERelations.NEXT, Direction.OUTGOING)
-                            .evaluator(Evaluators.toDepth(size))
-                            .uniqueness(Uniqueness.NODE_GLOBAL)
-                            .traverse(n)
-                            .nodes()
-                            .forEach(sectionNodes::add);
-                    break;
-                }
+        for(Node n: sections) {
+            if (!n.getRelationships(Direction.INCOMING, ERelations.NEXT)
+                    .iterator()
+                    .hasNext()) {
+                tx.traversalDescription()
+                        .depthFirst()
+                        .relationships(ERelations.NEXT, Direction.OUTGOING)
+                        .evaluator(Evaluators.toDepth(size))
+                        .uniqueness(Uniqueness.NODE_GLOBAL)
+                        .traverse(n)
+                        .nodes()
+                        .forEach(sectionNodes::add);
+                break;
             }
-            tx.success();
         }
         return sectionNodes;
     }
@@ -134,30 +177,44 @@ public class VariantGraphService {
      * Get the node of the specified tradition
      *
      * @param tradId  the string ID of the tradition we're hunting
-     * @param db      the GraphDatabaseService where the tradition is stored
+     * @param tx      the GraphDatabaseService where the tradition is stored
      * @return        the relevant tradition node
      */
-    public static Node getTraditionNode(String tradId, GraphDatabaseService db) {
-        Node tradition;
-        try (Transaction tx = db.beginTx()) {
-            tradition = db.findNode(Nodes.TRADITION, "id", tradId);
-            tx.success();
-        }
-        return tradition;
-    }
+    // public static Node getTraditionNode(String tradId, GraphDatabaseService db, Transaction tx) {
+        // Node tradition;
+        // try (Transaction tx = db.beginTx()) {
+        //     tradition = tx.findNode(Nodes.TRADITION, "id", tradId);
+        //     tx.close();
+        // }
+        // return tx.findNode(Nodes.TRADITION, "id", tradId);
+    // }
 
+    public static Node getTraditionNode(String tradId, Transaction tx) {
+    	Node tradition;
+    	tradition = tx.findNode(Nodes.TRADITION, "id", tradId);
+    	return tradition;
+    }
+    
     /**
      * Get the tradition node that the specified section belongs to
      *
-     * @param section  the section node whose tradition we're hunting
+     * @param n  the section node whose tradition we're hunting
+     * @param tx  database transaction
      * @return         the relevant tradition node
      */
-    public static Node getTraditionNode(Node section) {
-        Node tradition;
-        GraphDatabaseService db = section.getGraphDatabase();
-        try (Transaction tx = db.beginTx()) {
-            tradition = section.getSingleRelationship(ERelations.PART, Direction.INCOMING).getStartNode();
-            tx.success();
+    // public static Node getTraditionNode(Node section, Transaction tx) {
+    // 	return getTraditionNode(section, tx);
+    // }
+
+    public static Node getSectionTraditionNode(Node n, Transaction tx) throws Exception {
+        Node tradition = null;
+        Node section;
+        if(Objects.equals(n.getLabels().iterator().next().toString(), "READING")){
+    	    section = tx.getNodeByElementId(n.getProperty("section_id").toString());
+            tradition = VariantGraphService.getSectionTraditionNode(section, tx);
+        }
+        if (Objects.equals(n.getLabels().iterator().next().toString(), "SECTION")){
+            tradition = n.getSingleRelationship(ERelations.PART, Direction.INCOMING).getStartNode();
         }
         return tradition;
     }
@@ -167,30 +224,30 @@ public class VariantGraphService {
      *
      * @param sectionNode - The section for which to perform the calculation
      */
-    public static void calculateCommon(Node sectionNode) {
-        GraphDatabaseService db = sectionNode.getGraphDatabase();
+    public static void calculateCommon(Node sectionNode, Transaction tx) throws Exception {
+
         // Get an AlignmentModel for the given section, and go rank by rank to find
         // the common nodes.
-        AlignmentModel am = new AlignmentModel(sectionNode);
-        Node startNode = VariantGraphService.getStartNode(String.valueOf(sectionNode.getId()), db);
-        try (Transaction tx = db.beginTx()) {
-            // See which kind of flag we are setting
-            String propName = startNode.hasRelationship(ERelations.NSEQUENCE, Direction.OUTGOING) ? "ncommon" : "is_common";
-            // Go through the table rank by rank - if a given rank has only a single reading
-            // apart from lacunae, and no gaps, it is common
-            for (AtomicInteger i = new AtomicInteger(0); i.get() < am.getLength(); i.getAndIncrement()) {
-                List<ReadingModel> readingsAtRank = am.getAlignment().stream()
-                        .map(x -> x.getTokens().get(i.get())).collect(Collectors.toList());
-                HashSet<Long> distinct = new HashSet<>();
-                for (ReadingModel rm : readingsAtRank) {
-                    if (rm == null) distinct.add(0L);
-                    else if (!rm.getIs_lacuna()) distinct.add(Long.valueOf(rm.getId()));
-                }
-                // Set the commonality property. It is true if the size of the 'distinct' set is 1.
-                distinct.stream().filter(x -> x > 0)
-                        .forEach(x -> db.getNodeById(x).setProperty(propName, distinct.size() == 1));
+
+        AlignmentModel am = new AlignmentModel(sectionNode, tx);
+        // try (Transaction tx = db.beginTx()) {
+        Node startNode = VariantGraphService.getStartNode(sectionNode.getElementId(), tx);
+        // See which kind of flag we are setting
+        String propName = startNode.hasRelationship(Direction.OUTGOING, ERelations.NSEQUENCE) ? "ncommon" : "is_common";
+        // Go through the table rank by rank - if a given rank has only a single reading
+        // apart from lacunae, and no gaps, it is common
+        for (AtomicInteger i = new AtomicInteger(0); i.get() < am.getLength(); i.getAndIncrement()) {
+            List<ReadingModel> readingsAtRank = am.getAlignment().stream()
+                    .map(x -> x.getTokens().get(i.get())).collect(Collectors.toList());
+            HashSet<String> distinct = new HashSet<>();
+            for (ReadingModel rm : readingsAtRank) {
+                if (rm == null) distinct.add("");
+                else if (!rm.getIs_lacuna()) distinct.add(rm.getId());
             }
-            tx.success();
+            // Set the commonality property. It is true if the size of the 'distinct' set is 1.
+            distinct.stream().filter(x -> !x.isEmpty())
+                    .forEach(x -> tx.getNodeByElementId(x).setProperty(propName, distinct.size() == 1));
+
         }
     }
 
@@ -205,64 +262,75 @@ public class VariantGraphService {
      * a map of each section node to its representative node.
      *
      * @param sectionNode     The section to be normalized
-     * @param normalizeTypeList   The (string) name list of the types on which we are normalizing
+     * @param normalizeTypeList   List containing the (string) name of the type on which we are normalizing
      * @return                A HashMap of nodes to their representatives
      *
-     * @throws                Exception, if clusters cannot be got, if the requested relation type doesn't
+     * @throws                Exception if clusters cannot be got, if the requested relation type doesn't
      *                        exist, or if something goes wrong with the transaction
      */
 
-    public static HashMap<Node,Node> normalizeGraph(Node sectionNode, List<String> normalizeTypeList) throws Exception {
+    public static HashMap<Node,Node> normalizeGraph(Node sectionNode, List<String> normalizeTypeList, Transaction tx) throws Exception {
         HashMap<Node,Node> representatives = new HashMap<>();
-        GraphDatabaseService db = sectionNode.getGraphDatabase();
+    	GraphDatabaseService db = Database.getInstance().session;
         // Make sure the relation type exists
-        Node tradition = getTraditionNode(sectionNode);
+        //*
+        Node tradition = getSectionTraditionNode(sectionNode, tx);
+        Node relType;
         for (String normalizeType : normalizeTypeList) {
-            Node relType = new RelationTypeModel(normalizeType).lookup(tradition);
+            relType = new RelationTypeModel(normalizeType).lookup(tradition);
             if (relType == null)
                 throw new Exception("Relation type " + normalizeType + " does not exist in this tradition");
         }
 
-        try (Transaction tx = db.beginTx()) {
-            Node sectionStart = sectionNode.getSingleRelationship(ERelations.COLLATION, Direction.OUTGOING).getEndNode();
-            // Get the list of all readings in this section
-            Set<Node> sectionNodes = returnTraditionSection(sectionNode).nodes().stream()
-                    .filter(x -> x.hasLabel(Label.label("READING")))
-                    .filter(x -> ! x.hasLabel(Label.label("HYPERREADING")))
-                    .collect(Collectors.toSet());
+        Node sectionStart = sectionNode.getSingleRelationship(ERelations.COLLATION, Direction.OUTGOING).getEndNode();
+        // Get the list of all readings in this section
+        //            Set<Node> sectionNodes = returnTraditionSection(sectionNode).nodes().stream()
+        //                    .filter(x -> x.hasLabel(Label.label("READING"))).collect(Collectors.toSet());
+        Iterable<Node> tmp = returnTraditionSection(sectionNode.getElementId(), tx).nodes();
+        Set<Node> sectionNodes = new HashSet<>();
+        for(Node n: tmp){
+            if(!n.hasLabel(Nodes.HYPERREADING) && n.hasLabel(Nodes.READING)){
+                sectionNodes.add(n);
+            };
+        }
+        // Set<Node> sectionNodes = StreamSupport
+        //         .stream(returnTraditionSection(sectionNode.getElementId(), db.beginTx()).nodes().spliterator(), false)
+        //         .filter(x -> x.hasLabel(Label.label("READING"))).collect(Collectors.toSet());
 
-            // Find the normalisation clusters and nominate a representative for each
-            String tradId = tradition.getProperty("id").toString();
-            String sectionId = String.valueOf(sectionNode.getId());
-            for (Set<Node> cluster : RelationService.getCloselyRelatedClusters(
-                    tradId, sectionId, db, normalizeTypeList)) {
-                if (cluster.size() == 0) continue;
-                Node representative = RelationService.findRepresentative(cluster);
-                if (representative == null)
-                    throw new Exception("No representative found for cluster");
-                // Set the representative for all cluster members.
-                for (Node n : cluster) {
-                    representatives.put(n, representative);
-                    if (!n.equals(representative))
-                        representative.createRelationshipTo(n, ERelations.REPRESENTS);
-                    if (!sectionNodes.remove(n))
-                        throw new Exception("Tried to make equivalence for node (" + n.getId()
-                                + ": " + n.getAllProperties().toString()
-                                + ") that was not in sectionNodes");
-                }
+        // Find the normalisation clusters and nominate a representative for each
+        String tradId = tradition.getProperty("id").toString();
+        String sectionId = sectionNode.getElementId();
+        for (Set<Node> cluster : RelationService.getCloselyRelatedClusters(
+                tradition, sectionNode, tx, normalizeTypeList)) {
+            if (cluster.size() == 0) continue;
+            Node representative = RelationService.findRepresentative(cluster, tx);
+            if (representative == null)
+                throw new Exception("No representative found for cluster");
+            // Set the representative for all cluster members.
+            for (Node n : cluster) {
+                representatives.put(n, representative);
+                if (!n.equals(representative))
+                    representative.createRelationshipTo(n, ERelations.REPRESENTS);
+                if (!sectionNodes.remove(n))
+                    throw new Exception("Tried to make equivalence for node (" + n.getElementId()
+                            + ": " + n.getAllProperties().toString()
+                            + ") that was not in sectionNodes");
             }
+        }
 
-            // All remaining un-clustered readings are represented by themselves
-            sectionNodes.forEach(x -> representatives.put(x, x));
+        // All remaining un-clustered readings are represented by themselves
+        sectionNodes.forEach(x -> representatives.put(x, x));
 
-            // Make sure we didn't have any accidental recursion in representation
-            for (Node n : representatives.values()) {
-                if (n.hasRelationship(ERelations.REPRESENTS, Direction.INCOMING))
-                    throw new Exception("Recursive representation was created on node " + n.getId() + ": " + n.getAllProperties().toString());
-            }
+        // Make sure we didn't have any accidental recursion in representation
+        for (Node n : representatives.values()) {
+            if (n.hasRelationship(Direction.INCOMING, ERelations.REPRESENTS))
+                throw new Exception("Recursive representation was created on node " + n.getElementId() + ": " + n.getAllProperties().toString());
+        }
 
-            // Now that we have done this, make the shadow sequence
-            for (Relationship r : db.traversalDescription().breadthFirst()
+        // Now that we have done this, make the shadow sequence
+
+        try(Transaction subTx = db.beginTx()){
+            for (Relationship r : subTx.traversalDescription().breadthFirst()
                     .relationships(ERelations.SEQUENCE,Direction.OUTGOING)
                     .uniqueness(Uniqueness.RELATIONSHIP_GLOBAL).traverse(sectionStart).relationships()) {
                 Node repstart = representatives.getOrDefault(r.getStartNode(), r.getStartNode());
@@ -270,8 +338,8 @@ public class VariantGraphService {
                 ReadingService.transferWitnesses(repstart, repend, r, ERelations.NSEQUENCE);
             }
             // and calculate the common readings.
-            calculateCommon(sectionNode);
-            tx.success();
+            calculateCommon(sectionNode, subTx);
+            subTx.commit();
         }
 
         return representatives;
@@ -282,15 +350,16 @@ public class VariantGraphService {
      * Clean up after performing normalizeGraph. Removes all NSEQUENCE and REPRESENTS relationships within a section.
      *
      * @param sectionNode  the section to clean up
-     * @throws             Exception, if anything was missed
+     * @throws Exception if anything was missed
      */
 
-    public static void clearNormalization(Node sectionNode) throws Exception {
-        GraphDatabaseService db = sectionNode.getGraphDatabase();
-        try (Transaction tx = db.beginTx()) {
+    public static void clearNormalization(Node sectionNode, Transaction tx) throws Exception {
+//        GraphDatabaseService db = sectionNode.getGraphDatabase();
+    	// GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+        try {
             Node sectionStartNode = sectionNode.getSingleRelationship(ERelations.COLLATION, Direction.OUTGOING).getEndNode();
             sectionStartNode.removeProperty("ncommon");
-            db.traversalDescription().breadthFirst()
+            tx.traversalDescription().breadthFirst()
                     .relationships(ERelations.NSEQUENCE,Direction.OUTGOING)
                     .relationships(ERelations.REPRESENTS, Direction.OUTGOING)
                     .uniqueness(Uniqueness.RELATIONSHIP_GLOBAL)
@@ -301,10 +370,15 @@ public class VariantGraphService {
                     });
 
             // TEMPORARY: Check that we aren't polluting the graph DB
-            if (VariantGraphService.returnTraditionSection(sectionNode).relationships()
-                    .stream().anyMatch(x -> x.isType(ERelations.NSEQUENCE) || x.isType(ERelations.REPRESENTS)))
-                throw new Exception("Data consistency error on normalization cleanup of section " + sectionNode.getId());
-            tx.success();
+//            if (VariantGraphService.returnTraditionSection(sectionNode).relationships()
+//                    .stream().anyMatch(x -> x.isType(ERelations.NSEQUENCE) || x.isType(ERelations.REPRESENTS)))
+        	if (StreamSupport.stream(VariantGraphService.returnTraditionSection(sectionNode.getElementId(), tx).relationships().spliterator(), false)
+        			.anyMatch(x -> x.isType(ERelations.NSEQUENCE) || x.isType(ERelations.REPRESENTS)))
+                throw new Exception("Data consistency error on normalization cleanup of section " + sectionNode.getElementId());
+            // tx.commit();
+        } catch (Exception e) {
+            tx.rollback();
+            throw new Exception("Error clearing normalization for section " + sectionNode.getElementId() + ": " + e.getMessage(), e);
         }
     }
 
@@ -314,10 +388,10 @@ public class VariantGraphService {
      * @param  sectionNode - The section to calculate
      * @return an ordered List of READING nodes that make up the majority text
      */
-    public static List<Node> calculateMajorityText(Node sectionNode) {
+    public static List<Node> calculateMajorityText(Node sectionNode, Transaction tx) throws Exception {
         // Get the IDs of our majority readings by going through the alignment table rank by rank
-        AlignmentModel am = new AlignmentModel(sectionNode);
-        ArrayList<Long> majorityReadings = new ArrayList<>();
+        AlignmentModel am = new AlignmentModel(sectionNode, tx);
+        ArrayList<String> majorityReadings = new ArrayList<>();
         for (int rank = 1; rank <= am.getLength(); rank++) {
             int numNulls = 0;
             ArrayList<ReadingModel> rankReadings = new ArrayList<>();
@@ -331,28 +405,59 @@ public class VariantGraphService {
             // Now find the winner
             Optional<ReadingModel> winner = rankReadings.stream().max(Comparator.comparingInt(x -> x.getWitnesses().size()));
             if (winner.isPresent() && winner.get().getWitnesses().size() >= numNulls) {
-                majorityReadings.add(Long.valueOf(winner.get().getId()));
+                majorityReadings.add(winner.get().getId());
             }
         }
 
         // Now make the relations between them
-        GraphDatabaseService db = sectionNode.getGraphDatabase();
         ArrayList<Node> result = new ArrayList<>();
-        try (Transaction tx = db.beginTx()) {
+        GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+        try (Transaction subTx = db.beginTx()) {
             // Go through the alignment model rank by rank, finding the majority reading for each rank
-            String sectionId = String.valueOf(sectionNode.getId());
-            result.add(getStartNode(sectionId, db));
-            majorityReadings.forEach(x -> result.add(db.getNodeById(x)));
-            result.add(getEndNode(sectionId, db));
-            tx.success();
+            String sectionId = sectionNode.getElementId();
+            result.add(getStartNode(sectionId, subTx));
+            majorityReadings.forEach(x -> result.add(subTx.getNodeByElementId(x)));
+            result.add(getEndNode(sectionId, subTx));
+            subTx.commit();
         }
         return result;
     }
+
+    /**
+     * Collect all annotations, recursively, on the set of nodes that has been passed in.
+     *
+     *
+     * @return The annotation nodes that point (ultimately) to the nodes in question
+     */
+    public static List<Node> collectAnnotationsOnSet(List<Node> nodeSet, boolean collectReferents, Transaction tx) {
+        ArrayList<Node> annotationNodes = new ArrayList<>();
+        try {
+            // We want to find all annotation nodes that are linked both to the tradition node
+            // and (perhaps indirectly through other annotations) to some node in this set.
+            HashSet<Node> foundAnns = new HashSet<>();
+            for (Node n : nodeSet) {
+                if (collectReferents) {
+                    Traverser theseAnnotations = returnTraverser(n.getElementId(), nodeAnnotations, PathExpanders.forDirection(Direction.INCOMING), tx);
+                    theseAnnotations.nodes().forEach(foundAnns::add);
+                } else {
+                    for (Relationship r : n.getRelationships(Direction.INCOMING))
+                        if (r.getStartNode().hasRelationship(Direction.INCOMING, ERelations.HAS_ANNOTATION))
+                            foundAnns.add(r.getStartNode());
+                }
+            }
+            annotationNodes = new ArrayList<>(foundAnns);
+        }catch (Exception e){
+            e.printStackTrace();
+        }
+        return annotationNodes;
+    }
+
 
     /*
      * Tradition and section crawlers, respectively
      */
 
+    // Returns every node pointing outward from a TRADITION.
     private static final Evaluator traditionCrawler = path -> {
         if (path.length() == 0)
             return Evaluation.INCLUDE_AND_CONTINUE;
@@ -361,11 +466,34 @@ public class VariantGraphService {
         return Evaluation.INCLUDE_AND_CONTINUE;
     };
 
+    // Returns every node pointing outward from a TRADITION, stopping at PART relationships and
+    // HAS_ANNOTATION relationships to exclude sections and annotations.
+    private static final Evaluator traditionMetaCrawler = path -> {
+        if (path.length() == 0)
+            return Evaluation.INCLUDE_AND_CONTINUE;
+        if (path.lastRelationship().getType().name().equals(ERelations.OWNS_TRADITION.toString()))
+            return Evaluation.EXCLUDE_AND_PRUNE;
+        // Stop at the sections, inclusively
+        if (path.lastRelationship().getStartNode().hasLabel(Nodes.SECTION)) {
+            // We want to keep the relationship if it is a NEXT or a PUB_ORDER one, otherwise truncate.
+            ArrayList<String> allowed = new ArrayList<>(Arrays.asList("NEXT", "PUB_ORDER"));
+            if (allowed.contains(path.lastRelationship().getType().name()))
+                return Evaluation.INCLUDE_AND_PRUNE;
+            else
+                return Evaluation.EXCLUDE_AND_PRUNE;
+        }
+        // Also exclude any annotations
+        if (path.lastRelationship().getType().name().equals(ERelations.HAS_ANNOTATION.toString()))
+            return Evaluation.EXCLUDE_AND_PRUNE;
+        return Evaluation.INCLUDE_AND_CONTINUE;
+    };
+
     private static final Evaluator sectionCrawler = path -> {
         if (path.length() == 0)
             return Evaluation.INCLUDE_AND_CONTINUE;
         String type = path.lastRelationship().getType().name();
-        if (type.equals(ERelations.PART.toString()) || type.equals(ERelations.NEXT.toString()))
+        if (type.equals(ERelations.PART.toString()) || type.equals(ERelations.NEXT.toString())
+                || type.equals(ERelations.PUB_ORDER.toString()))
             return Evaluation.EXCLUDE_AND_PRUNE;
         return Evaluation.INCLUDE_AND_CONTINUE;
     };
@@ -380,19 +508,57 @@ public class VariantGraphService {
         return Evaluation.EXCLUDE_AND_CONTINUE;
     };
 
+    private static final Evaluator nodeAnnotations = path -> {
+        // Don't include the node in question
+        if (path.length() == 0)
+            return Evaluation.EXCLUDE_AND_CONTINUE;
+        // Truncate before we get back to the tradition itself
+        if (path.lastRelationship().getType().name().equals(ERelations.HAS_ANNOTATION.toString()))
+            return Evaluation.EXCLUDE_AND_PRUNE;
+        // Do follow through any annotation nodes, identified by the existence of that relationship
+        if (path.lastRelationship().getStartNode().hasRelationship(Direction.INCOMING, ERelations.HAS_ANNOTATION))
+            return Evaluation.INCLUDE_AND_CONTINUE;
+        // Don't follow anything else
+        return Evaluation.EXCLUDE_AND_PRUNE;
+    };
+
+    private static final Evaluator sequenceLinks = path -> {
+        final Set<String> sequenceTypes = new HashSet<>();
+        sequenceTypes.add("SEQUENCE");
+        sequenceTypes.add("LEMMA_TEXT");
+        sequenceTypes.add("NSEQUENCE"); // this really shouldn't be found though
+        sequenceTypes.add("MAJORITY");  // nor this
+        sequenceTypes.add("EMENDED");
+        // Don't include the start node
+        if (path.length() == 0)
+            return Evaluation.EXCLUDE_AND_CONTINUE;
+        Relationship lr = path.lastRelationship();
+        // If we are on a tradition node or a sequence node we need to traverse down to the sequence start nodes
+        if (lr.getStartNode().hasLabel(Label.label("TRADITION")))
+            return lr.getType().name().equals("PART")
+                    ? Evaluation.EXCLUDE_AND_CONTINUE : Evaluation.EXCLUDE_AND_PRUNE;
+        if (lr.getStartNode().hasLabel(Label.label("SECTION")))
+            return lr.getType().name().equals("HAS_COLLATION")
+                    ? Evaluation.EXCLUDE_AND_CONTINUE : Evaluation.EXCLUDE_AND_PRUNE;
+        // By this point we should have got to the section start. Follow all readings, knowing that emendations
+        // are also readings.
+        if (lr.getStartNode().hasLabel(Label.label("READING")))
+            return sequenceTypes.contains(lr.getType().name())
+                    ? Evaluation.INCLUDE_AND_CONTINUE : Evaluation.EXCLUDE_AND_PRUNE;
+        // If we are in any other situation, cut it off.
+        return Evaluation.EXCLUDE_AND_PRUNE;
+    };
+
     @SuppressWarnings("rawtypes")
-    private static Traverser returnTraverser (Node startNode, Evaluator ev, PathExpander ex) {
+    private static Traverser returnTraverser (String startNodeId, Evaluator ev, PathExpander ex, Transaction tx) {
         Traverser tv;
-        GraphDatabaseService db = startNode.getGraphDatabase();
-        try (Transaction tx = db.beginTx()) {
-            tv = db.traversalDescription()
-                    .depthFirst()
-                    .expand(ex)
-                    .evaluator(ev)
-                    .uniqueness(Uniqueness.RELATIONSHIP_GLOBAL)
-                    .traverse(startNode);
-            tx.success();
-        }
+        Node startNode = tx.getNodeByElementId(startNodeId);
+        tv = tx.traversalDescription()
+                .depthFirst()
+                .expand(ex)
+                .evaluator(ev)
+                .uniqueness(Uniqueness.RELATIONSHIP_GLOBAL)
+                .traverse(startNode);
         return tv;
     }
 
@@ -404,7 +570,7 @@ public class VariantGraphService {
      * @return        an org.neo4j.graphdb.traversal.Traverser object for the whole tradition
      */
     public static Traverser returnEntireTradition(String tradId, GraphDatabaseService db) {
-        return returnEntireTradition(getTraditionNode(tradId, db));
+        return returnEntireTradition(getTraditionNode(tradId, db.beginTx()), db.beginTx());
     }
 
     /**
@@ -413,8 +579,14 @@ public class VariantGraphService {
      * @param traditionNode   the Node object of the tradition to crawl
      * @return                an org.neo4j.graphdb.traversal.Traverser object for the whole tradition
      */
-    public static Traverser returnEntireTradition(Node traditionNode) {
-        return returnTraverser(traditionNode, traditionCrawler, PathExpanders.forDirection(Direction.OUTGOING));
+    public static Traverser returnEntireTradition(Node traditionNode, Transaction tx) {
+        // GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+        return returnTraverser(traditionNode.getElementId(), traditionCrawler, PathExpanders.forDirection(Direction.OUTGOING), tx);
+    }
+
+    public static Traverser returnTraditionMeta(Node traditionNode, Transaction tx) {
+        // GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+        return returnTraverser(traditionNode.getElementId(), traditionMetaCrawler, PathExpanders.forDirection(Direction.OUTGOING), tx);
     }
 
     /**
@@ -424,24 +596,20 @@ public class VariantGraphService {
      * @param db         the relevant GraphDatabaseService
      * @return           an org.neo4j.graphdb.traversal.Traverser object for the section
      */
-    public static Traverser returnTraditionSection(String sectionId, GraphDatabaseService db) {
-        Traverser tv;
-        try (Transaction tx = db.beginTx()) {
-            Node sectionNode = db.getNodeById(Long.parseLong(sectionId));
-            tv = returnTraditionSection(sectionNode);
-            tx.success();
-        }
-        return tv;
-    }
+    // public static Traverser returnTraditionSection(String sectionId, Transaction tx) {
+    //     Traverser tv;
+    //     tv = returnTraditionSection(sectionId, tx);
+    //     return tv;
+    // }
 
     /**
      * Return a traverser that includes all nodes and relationships for a particular section.
      *
-     * @param sectionNode  the Node object of the section to crawl
+     * @param sectionId  the Node object of the section to crawl
      * @return             an org.neo4j.graphdb.traversal.Traverser object for the section
      */
-    public static Traverser returnTraditionSection(Node sectionNode) {
-        return returnTraverser(sectionNode, sectionCrawler, PathExpanders.forDirection(Direction.OUTGOING));
+    public static Traverser returnTraditionSection(String sectionId, Transaction tx) {
+        return returnTraverser(sectionId, sectionCrawler, PathExpanders.forDirection(Direction.OUTGOING), tx);
     }
 
     /**
@@ -451,6 +619,19 @@ public class VariantGraphService {
      * @return             an org.neo4j.graphdb.traversal.Traverser object containing the relations
      */
     public static Traverser returnTraditionRelations(Node traditionNode) {
-        return returnTraverser(traditionNode, traditionRelations, PathExpanders.allTypesAndDirections());
+        GraphDatabaseService db = Database.getInstance().session;
+        return returnTraverser(traditionNode.getElementId(), traditionRelations, PathExpanders.allTypesAndDirections(), db.beginTx());
+    }
+
+    /**
+     * Return a traverser that includes all sequence-like relations in a tradition or section.
+     * It can start from the tradition node, the section node, or the section start node.
+     *
+     * @param startNode the Node object of the tradition or section to crawl
+     * @return          an org.neo4j.graphdb.traversal.Traverser object containing the sequences
+     */
+    public static Traverser returnAllSequences(Node startNode, Transaction tx) {
+        // GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+        return returnTraverser(startNode.getElementId(), sequenceLinks, PathExpanders.forDirection(Direction.OUTGOING), tx);
     }
 }

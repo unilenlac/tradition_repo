@@ -2,9 +2,17 @@ package net.stemmaweb.services;
 
 import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.stream.Collectors;
+
+import org.neo4j.graphdb.Direction;
+import org.neo4j.graphdb.Entity;
+import org.neo4j.graphdb.GraphDatabaseService;
+import org.neo4j.graphdb.Node;
+import org.neo4j.graphdb.Relationship;
+import org.neo4j.graphdb.RelationshipType;
+import org.neo4j.graphdb.Transaction;
 
 import net.stemmaweb.rest.Nodes;
-import org.neo4j.graphdb.*;
 
 /**
  * Generic helper methods for querying the graph database
@@ -21,12 +29,12 @@ public class DatabaseService {
      */
     public static void createRootNode(GraphDatabaseService db) {
         try (Transaction tx = db.beginTx()) {
-            Node result = db.findNode(Nodes.ROOT, "name", "Root node");
+            Node result = tx.findNode(Nodes.ROOT, "name", "Root node");
             if (result == null) {
-                Node node = db.createNode(Nodes.ROOT);
+                Node node = tx.createNode(Nodes.ROOT);
                 node.setProperty("name", "Root node");
+                tx.commit();
             }
-            tx.success();
         }
     }
 
@@ -36,16 +44,45 @@ public class DatabaseService {
      *
      * @param startNode - the node at one end of the relationship
      * @param relType - the relationship type to follow
-     * @return ArrayList<Node> all nodes related to startNode by the given relationship
+     * @return a list of all nodes related to startNode by the given relationship
      */
-    public static ArrayList<Node> getRelated (Node startNode, RelationshipType relType) {
+    public static ArrayList<Node> getRelated (Node startNode, RelationshipType relType, Transaction tx) {
+
+    	ArrayList<Node> result = null;
+
+        result = getRelatedNode(startNode, relType, tx);
+
+        return result;
+    }
+
+    public static ArrayList<Node> getRelatedWitness (Node startNode, RelationshipType relType, String sigil, Transaction tx) {
+
+        ArrayList<Node> result = null;
+        result = getRelatedNode(startNode, relType, tx)
+                .stream().filter(x -> x.hasProperty("hypothetical")
+                         && x.getProperty("hypothetical").equals(false)
+                         && x.getProperty("sigil").equals(sigil))
+                 .collect(Collectors.toCollection(ArrayList::new));
+        return result;
+    }
+
+
+    public static ArrayList<Node> getRelatedNode (Node startNode, RelationshipType relType, Transaction tx) {
+
         ArrayList<Node> result = new ArrayList<>();
-        GraphDatabaseService db = startNode.getGraphDatabase();
-        try (Transaction tx = db.beginTx()) {
-            Iterator<Relationship> allRels = startNode.getRelationships(relType).iterator();
-            allRels.forEachRemaining(x -> result.add(x.getOtherNode(startNode)));
-            tx.success();
-        }
+        // if (tx == null) {
+        //     GraphDatabaseService db = Database.getInstance().session;
+        //     try (Transaction ntx = db.beginTx()) {
+        //         Node startNode2 = ntx.getNodeByElementId(startNode.getElementId());
+        //         Iterator<Relationship> allRels = startNode2.getRelationships(relType).iterator();
+        //         allRels.forEachRemaining(x -> result.add(x.getOtherNode(startNode2)));
+        //         // ntx.close();
+        //     };
+        // }else{
+        Node startNode2 = tx.getNodeByElementId(startNode.getElementId());
+        Iterator<Relationship> allRels = startNode2.getRelationships(relType).iterator();
+        allRels.forEachRemaining(x -> result.add(x.getOtherNode(startNode2)));
+        // };
         return result;
     }
 
@@ -58,13 +95,9 @@ public class DatabaseService {
      */
     public static ArrayList<Relationship> getRelationshipTo(Node startNode, Node endNode, RelationshipType rtype) {
         ArrayList<Relationship> found = new ArrayList<>();
-        GraphDatabaseService db = startNode.getGraphDatabase();
-        try (Transaction tx = db.beginTx()) {
-            for (Relationship r : startNode.getRelationships(rtype, Direction.BOTH))
-                if (r.getOtherNode(startNode).equals(endNode))
-                    found.add(r);
-            tx.success();
-        }
+        for (Relationship r : startNode.getRelationships(Direction.BOTH, rtype))
+            if (r.getOtherNode(startNode).equals(endNode))
+                found.add(r);
         return found;
     }
 
@@ -80,8 +113,8 @@ public class DatabaseService {
     public static boolean userExists(String userId, GraphDatabaseService db) {
         Node extantUser;
         try (Transaction tx = db.beginTx()) {
-            extantUser = db.findNode(Nodes.USER, "id", userId);
-            tx.success();
+            extantUser = tx.findNode(Nodes.USER, "id", userId);
+            tx.close();
         }
         return extantUser != null;
     }
@@ -92,7 +125,7 @@ public class DatabaseService {
      * @param original - the entity from which to copy
      * @param copy - the entity to which to copy
      */
-    public static void copyProperties(PropertyContainer original, PropertyContainer copy) {
+    public static void copyProperties(Entity original, Entity copy) {
         for (String p : original.getPropertyKeys())
             copy.setProperty(p, original.getProperty(p));
     }

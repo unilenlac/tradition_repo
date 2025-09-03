@@ -4,29 +4,37 @@ import com.opencsv.CSVParser;
 import com.opencsv.CSVParserBuilder;
 import com.opencsv.CSVReader;
 import com.opencsv.CSVReaderBuilder;
+import net.stemmaweb.model.ReadingModel;
+import net.stemmaweb.model.RelationModel;
+import net.stemmaweb.model.RelationTypeModel;
 import net.stemmaweb.rest.ERelations;
 import net.stemmaweb.rest.Nodes;
-import net.stemmaweb.services.DatabaseService;
+import net.stemmaweb.rest.Relation;
+import net.stemmaweb.rest.RelationType;
+import net.stemmaweb.services.Database;
 import net.stemmaweb.services.GraphDatabaseServiceProvider;
+import net.stemmaweb.services.VariantGraphService;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
-import org.json.JSONObject;
 import org.neo4j.graphdb.*;
 
 import javax.ws.rs.core.Response;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.util.*;
+import java.util.stream.Collectors;
+
+import static net.stemmaweb.Util.*;
 
 /**
  * Reads a variety of tabular formats (TSV, CSV, XLS, XLSX) and parses the data
  * into a tradition.
  */
 public class TabularParser {
-    private GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+    private final GraphDatabaseService db = Database.getInstance().session;
 
     /**
      * Parse a comma- or tab-separated file stream into a graph.
@@ -37,7 +45,7 @@ public class TabularParser {
      *
      * @return Response
      */
-    public Response parseCSV(InputStream fileData, Node sectionNode, char sepChar) {
+    public Response parseCSV(InputStream fileData, Node sectionNode, char sepChar, Transaction tx) {
         // Parse the CSV file
         ArrayList<String[]> csvRows = new ArrayList<>();
         try {
@@ -50,9 +58,9 @@ public class TabularParser {
                 csvRows.add(nextLine);
         } catch (Exception e) {
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-                .entity(Util.jsonerror(e.getMessage())).build();
+                .entity(jsonerror(e.getMessage())).build();
         }
-        return parseTableToCollation(csvRows, sectionNode);
+        return parseTableToCollation(csvRows, sectionNode, tx);
     }
 
     /**
@@ -64,7 +72,7 @@ public class TabularParser {
      *
      * @return Response
      */
-    public Response parseExcel(InputStream fileData, Node sectionNode, String excelType) {
+    public Response parseExcel(InputStream fileData, Node sectionNode, String excelType, Transaction tx) {
         ArrayList<String[]> excelRows;
         try {
             Workbook workbook;
@@ -76,9 +84,9 @@ public class TabularParser {
             excelRows = getTableFromWorkbook(workbook);
         } catch (Exception e) {
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-                    .entity(Util.jsonerror(e.getMessage())).build();
+                    .entity(jsonerror(e.getMessage())).build();
         }
-        return parseTableToCollation(excelRows, sectionNode);
+        return parseTableToCollation(excelRows, sectionNode, tx);
     }
 
     // Extract a table from the first sheet of an Excel workbook.
@@ -103,16 +111,25 @@ public class TabularParser {
         return excelRows;
     }
 
-    private Response parseTableToCollation(ArrayList<String[]> tableData, Node parentNode) {
+    private Response parseTableToCollation(ArrayList<String[]> tableData, Node parentNode, Transaction tx) {
         String response;
         Response.Status result = Response.Status.OK;
-        Node traditionNode = DatabaseService.getRelated(parentNode, ERelations.PART).get(0);
-
-        try (Transaction tx = db.beginTx()) {
+        Node traditionNode;
+        try {
+            traditionNode = VariantGraphService.getSectionTraditionNode(parentNode, tx);
             // Make the start node
-            Node startNode = Util.createStartNode(parentNode);
-            Node endNode = Util.createEndNode(parentNode);
-            endNode.setProperty("rank", (long) tableData.size());
+            Node startNode = Util.createStartNode(parentNode, tx);
+            Node endNode = Util.createEndNode(parentNode, (long) tableData.size(), tx);
+            // endNode.setProperty("rank", (long) tableData.size());
+
+            // Make the COLLATED relation type
+            RelationTypeModel rtm = new RelationTypeModel();
+            rtm.setName("collated");
+            rtm.setDefaultsettings(true);
+            Response rtResult = new RelationType(traditionNode.getProperty("id").toString(),
+                    rtm.getName()).create(rtm);
+            if (rtResult.getStatus() == Response.Status.INTERNAL_SERVER_ERROR.getStatusCode())
+                return rtResult;
 
             // Get the witnesses from the first row of the table
             String[] witnessList = tableData.get(0);
@@ -124,12 +141,12 @@ public class TabularParser {
                 // See if it is a layered witness, of the form XX (YY)
                 String[] sigilParts = sigil.split("\\s+\\(");  // now we have ["XX", "YY)"]
                 if (sigilParts.length == 1) // it is not a layered witness
-                    Util.findOrCreateExtant(traditionNode, sigil);
+                    Util.findOrCreateExtant(traditionNode, sigil, tx);
                 else if (sigilParts.length == 2) // it is a layered witness; store a ref to its base
                     layerWitnesses.put(sigil, sigilParts);
                 else   // what is this i don't even
                     return Response.status(Response.Status.BAD_REQUEST)
-                        .entity(Util.jsonerror("Malformed sigil " + sigil)).build();
+                        .entity(jsonerror("Malformed sigil " + sigil)).build();
 
                 lastReading.put(sigil, startNode);
             }
@@ -157,8 +174,8 @@ public class TabularParser {
                     // Does the reading exist?
                     Node readingNode = createdReadings.getOrDefault(reading, null);
                     if (readingNode == null) {
-                        readingNode = db.createNode(Nodes.READING);
-                        readingNode.setProperty("section_id", parentNode.getId());
+                        readingNode = tx.createNode(Nodes.READING);
+                        readingNode.setProperty("section_id", parentNode.getElementId());
                         readingNode.setProperty("rank", (long) idx);
                         readingNode.setProperty("text", reading);
                         if (reading.equals("#LACUNA#"))
@@ -209,6 +226,30 @@ public class TabularParser {
                     // Finally, set the properties for each layer label
                     layerMap.forEach((x, y) -> r.setProperty(x, y.toArray(new String[0])));
                 }
+                // Create a COLLATED link between all non-meta readings created at the same rank, to preserve
+                // the collation as it was uploaded.
+                List<ReadingModel> collatedReadings = createdReadings.values().stream().map(n -> new ReadingModel(n, tx))
+                        .filter(x -> !x.isMeta()).collect(Collectors.toList());
+                int i = collatedReadings.size();
+                // Relation relRest = new Relation(traditionNode.getProperty("id").toString(), getTraditionNode(traditionNode.getProperty("id").toString()));
+                RelationModel rm = new RelationModel();
+                rm.setType("collated");
+                rm.setAnnotation("Aligned in tabular input");
+                while (i > 1) {
+                    ReadingModel srdg = collatedReadings.get(i-1);
+                    ReadingModel trdg = collatedReadings.get(i-2);
+                    // Make sure the readings aren't the same and aren't linked yet
+                    if (srdg.equals(trdg))
+                        throw new Exception("Same reading twice in createdReadings?!");
+                    rm.setSource(srdg.getId());
+                    rm.setTarget(trdg.getId());
+                    Response resp = Relation.create_relation_model(rm, traditionNode, tx);
+                    if (resp.getStatus() > 399)
+                        throw new Exception("Problem collating aligned readings: " + resp.getEntity().toString());
+                    i--;
+                }
+
+
             }
 
             // Tie all the last readings to the end node.
@@ -227,15 +268,14 @@ public class TabularParser {
 
             // We are done!
             result = Response.Status.CREATED;
-            response = Util.jsonresp("parentId", parentNode.getId());
-            tx.success();
+            response = jsonresp("parentId", parentNode.getElementId());
         } catch (IllegalArgumentException e) {
-            return Response.status(Response.Status.BAD_REQUEST).entity(Util.jsonerror(e.getMessage())).build();
+            return Response.status(Response.Status.BAD_REQUEST).entity(jsonerror(e.getMessage())).build();
         } catch (Exception e) {
             e.printStackTrace();
             if (result.equals(Response.Status.OK))
                 result = Response.Status.INTERNAL_SERVER_ERROR;
-            response = Util.jsonerror(e.getMessage());
+            response = jsonerror(e.getMessage());
         }
 
         return Response.status(result).entity(response).build();

@@ -31,7 +31,7 @@
   <key attr.name="scope" attr.type="string" for="edge" id="de7"/>
   <key attr.name="type" attr.type="string" for="edge" id="de8"/>
   <key attr.name="witness" attr.type="string" for="edge" id="de9"/>
-  <graph edgedefault="directed" id="Legend_of_Bishop_Henry" parse.edgeids="canonical" parse.edges="701" parse.nodeids="canonical" parse.nodes="48" parse.order="nodesfirst">
+  <graph edgedefault="directed" id="Legend_of_Bishop_Henry" parse.edgeids="canonical" parse.edges="701" parse.nodeids="canonical" parse.nodes="47" parse.order="nodesfirst">
     <data key="dg0"> (a.c.)</data>
     <data key="dg1">base text</data>
     <data key="dg2">Latin</data>

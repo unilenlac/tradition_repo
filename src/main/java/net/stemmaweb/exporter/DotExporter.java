@@ -1,32 +1,50 @@
 package net.stemmaweb.exporter;
 
+import static net.stemmaweb.Util.getTraditionNode;
+import static net.stemmaweb.Util.jsonerror;
+import static net.stemmaweb.parser.Util.getExpander;
+import static org.apache.commons.text.StringEscapeUtils.escapeHtml4;
+
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.text.DecimalFormat;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 
+import org.neo4j.graphdb.Direction;
+import org.neo4j.graphdb.GraphDatabaseService;
+import org.neo4j.graphdb.Label;
+import org.neo4j.graphdb.Node;
+import org.neo4j.graphdb.Path;
+import org.neo4j.graphdb.PathExpander;
+import org.neo4j.graphdb.Relationship;
+import org.neo4j.graphdb.RelationshipType;
+import org.neo4j.graphdb.Result;
+import org.neo4j.graphdb.Transaction;
+import org.neo4j.graphdb.traversal.Uniqueness;
+
 import net.stemmaweb.model.DisplayOptionModel;
 import net.stemmaweb.printer.GraphViz;
 import net.stemmaweb.rest.ERelations;
-
 import net.stemmaweb.rest.Nodes;
 import net.stemmaweb.rest.Section;
-
-import static net.stemmaweb.parser.Util.getExpander;
-import static org.apache.commons.text.StringEscapeUtils.escapeHtml4;
-
 import net.stemmaweb.services.DatabaseService;
 import net.stemmaweb.services.VariantGraphService;
-import org.neo4j.graphdb.*;
-import org.neo4j.graphdb.traversal.Uniqueness;
 
 
 /**
@@ -36,11 +54,11 @@ import org.neo4j.graphdb.traversal.Uniqueness;
  */
 public class DotExporter
 {
-    private GraphDatabaseService db;
+    private final GraphDatabaseService db;
 
     private OutputStream out = null;
 
-    private static DecimalFormat df2 = new DecimalFormat(".##");
+    private static final DecimalFormat df2 = new DecimalFormat(".##");
 
     public DotExporter(GraphDatabaseService db){
         this.db = db;
@@ -52,33 +70,34 @@ public class DotExporter
 
     public Response writeNeo4J(String tradId, String sectionId, DisplayOptionModel dm)
     {
-        // Get the start and end node of the whole tradition
-        Node traditionNode = VariantGraphService.getTraditionNode(tradId, db);
-        Node startNode = VariantGraphService.getStartNode(tradId, db);
-        Node endNode = VariantGraphService.getEndNode(tradId, db);
-        if(startNode==null || endNode==null) {
-            return Response.status(Status.NOT_FOUND).build();
-        }
+    	ArrayList<Node> sections;
+    	File output;
+    	String result;
 
-        // Get the list of section nodes
-        ArrayList<Node> sections = VariantGraphService.getSectionNodes(tradId, db);
-        if (sections == null) {
-            return Response.status(Status.NOT_FOUND).build();
-        }
+    	try(Transaction tx = db.beginTx()) {
+    		// Get the start and end node of the whole tradition
+    		Node traditionNode = VariantGraphService.getTraditionNode(tradId, tx);
+    		Node startNode = VariantGraphService.getStartNode(tradId, tx);
+    		Node endNode = VariantGraphService.getEndNode(tradId, tx);
+    		if(startNode==null || endNode==null || traditionNode==null) {
+    			return Response.status(Status.NOT_FOUND).build();
+    		}
 
-        File output;
-        String result;
-        try (Transaction tx = db.beginTx()) {
+    		// Get the list of section nodes
+        	sections = VariantGraphService.getSectionNodes(traditionNode, tx);
+        	// traditionNode = VariantGraphService.getTraditionNode(tradId, tx);
+        	startNode = VariantGraphService.getStartNode(tradId, tx);
+        	endNode = VariantGraphService.getEndNode(tradId, tx);
             output = File.createTempFile("graph_", ".dot");
             out = new FileOutputStream(output);
 
             Node requestedSection = null;
             if (sectionId != null)
-                requestedSection = db.getNodeById(Long.valueOf(sectionId));
+                requestedSection = tx.getNodeByElementId(sectionId);
             if (requestedSection != null) {
                 if (!sections.contains(requestedSection))
                     return Response.status(Status.BAD_REQUEST)
-                            .entity(String.format("Section %s not found in tradition %s", sectionId, tradId))
+                            .entity(jsonerror(String.format("Section %s not found in tradition %s", sectionId, tradId)))
                             .build();
                 sections.clear();
                 sections.add(requestedSection);
@@ -100,8 +119,7 @@ public class DotExporter
             // Set node and edge visual defaults
             write("\tnode [fillcolor=\"white\", fontsize=\"14\", shape=\"ellipse\", style=\"filled\"];\n");
             write("\tedge [arrowhead=\"open\", color=\"#000000\", fontcolor=\"#000000\"];\n");
-            long edgeId = 0;
-            Long lastSectionEndId = null;
+            String lastSectionEndId = "";
             boolean subgraphWritten = false;
 
             // Keep track of which nodes were written out (modulo witness filter) and which
@@ -111,14 +129,14 @@ public class DotExporter
 
             for (Node sectionNode: sections) {
                 // Get the number of witnesses we have
-                ArrayList<Node> sectionWits = new Section(tradId, String.valueOf(sectionNode.getId()))
+                ArrayList<Node> sectionWits = new Section(tradId, sectionNode.getElementId(), getTraditionNode(tradId))
                         .collectSectionWitnesses();
                 int numWits = sectionWits.size();
                 if (dm.getExcludeWitnesses().size() > 0) {
                     numWits -= dm.getExcludeWitnesses().size();
                 }
-                Node sectionStartNode = VariantGraphService.getStartNode(String.valueOf(sectionNode.getId()), db);
-                Node sectionEndNode = VariantGraphService.getEndNode(String.valueOf(sectionNode.getId()), db);
+                Node sectionStartNode = VariantGraphService.getStartNode(sectionNode.getElementId(), tx);
+                Node sectionEndNode = VariantGraphService.getEndNode(sectionNode.getElementId(), tx);
                 // If we have requested a section, then that section's start and end are "the" start and end
                 // for the whole graph.
                 if (sectionId != null) {
@@ -127,15 +145,17 @@ public class DotExporter
                 }
                 // HACK - now that we know which nodes are functioning as the start and end nodes, set the
                 // subgraph and the silent node that keeps the graph straight. Make sure we only do this once.
+                Map<String, Object> props = startNode.getAllProperties();
+
                 if (!subgraphWritten) {
-                    write("\tsubgraph { rank=same " + startNode.getId() + " \"#SILENT#\" }\n");
+                    write(String.format("\tsubgraph { rank=same \"%s\" \"#SILENT#\" }\n", startNode.getElementId()));
                     write("\t\"#SILENT#\" [shape=diamond,color=white,penwidth=0,label=\"\"];\n");
-                    write("\t" + endNode.getId() + "->\"#SILENT#\" [color=white,penwidth=0];\n");
+                    write(String.format("\t\"%s\"->\"#SILENT#\" [color=white,penwidth=0];\n", endNode.getElementId()));
                     subgraphWritten = true;
                 }
 
                 // Remove existing 'token-normal-form' relations (to avoid adding them each time the graph is displayed)
-                db.traversalDescription().breadthFirst()
+                tx.traversalDescription().breadthFirst()
                         .relationships(ERelations.RELATED,Direction.OUTGOING)
                         .uniqueness(Uniqueness.NODE_GLOBAL)
                         .traverse(sectionStartNode).relationships()
@@ -146,53 +166,63 @@ public class DotExporter
                         });
 
                 // Add specific relation ('token-normal-form') for collated readings sharing the same normal_form
-                for (Node node :  db.traversalDescription().breadthFirst()
+                for (Node node :  tx.traversalDescription().breadthFirst()
                         .relationships(ERelations.SEQUENCE,Direction.OUTGOING)
                         .relationships(ERelations.LEMMA_TEXT,Direction.OUTGOING)
                         .uniqueness(Uniqueness.NODE_GLOBAL)
                         .traverse(sectionStartNode)
                         .nodes()) {
-                            for (Node collatedNode :  db.traversalDescription().breadthFirst()
-                              .relationships(ERelations.COLLATED,Direction.OUTGOING)
-                              .uniqueness(Uniqueness.NODE_GLOBAL)
-                              .traverse(node)
-                              .nodes()) {
-                                  if ((node == collatedNode) ||
-                                      (! node.hasRelationship(ERelations.COLLATED,Direction.OUTGOING)) ||
-                                      (node.getId() > collatedNode.getId())) { // avoid double
-                                      continue;
-                                  }
-                                  if (node.getProperty("normal_form").equals(collatedNode.getProperty("normal_form"))) {
-                                      Relationship newRelation = node.createRelationshipTo(collatedNode, ERelations.RELATED);
-                                      newRelation.setProperty("type", "token-normal-form");
-                                      newRelation.setProperty("scope", "local");
-                                  }
-                                  //delete COLLATED relation, no longer needed
-                                  for ( Relationship r: node.getRelationships(ERelations.COLLATED,Direction.OUTGOING) ) {
-                                      if ( r.getEndNode().getId() == collatedNode.getId() ) {
-                                        r.delete();
-                                      }
-                                  }
+                    for (Node collatedNode :  tx.traversalDescription().breadthFirst()
+                            .relationships(ERelations.COLLATED,Direction.OUTGOING)
+                            .uniqueness(Uniqueness.NODE_GLOBAL)
+                            .traverse(node)
+                            .nodes()) {
+                        if ((node == collatedNode) ||
+                                (! node.hasRelationship(Direction.OUTGOING))) { // avoid double
+                            continue;
+                        }
+                        if (node.getProperty("normal_form").equals(collatedNode.getProperty("normal_form"))) {
+                            Relationship newRelation = node.createRelationshipTo(collatedNode, ERelations.RELATED);
+                            newRelation.setProperty("type", "token-normal-form");
+                            newRelation.setProperty("scope", "local");
+                        }
+                        //delete COLLATED relation, no longer needed
+                        for ( Relationship r: node.getRelationships(Direction.OUTGOING) ) {
+                            if ( r.getEndNode().getElementId() == collatedNode.getElementId() ) {
+                                r.delete();
                             }
+                        }
+                    }
                 }
-                tx.success();
 
                 // Find our representative nodes, in case we are producing a normalised form of the graph
-                HashMap<Node, Node> representatives = getRepresentatives(sectionNode, dm.getNormaliseOn());
-                RelationshipType seqLabel = dm.getNormaliseOn() == null ? ERelations.SEQUENCE : ERelations.NSEQUENCE;
+                HashMap<Node, Node> representatives = getRepresentatives(sectionNode, dm.getNormaliseOn(), tx);
+                RelationshipType seqLabel = dm.getNormaliseOn().size() == 0 ? ERelations.SEQUENCE : ERelations.NSEQUENCE;
 
-                // Collect any lemma edge pairs
-                HashMap<Node, Node> lemmaLinks = new HashMap<>();
-                db.traversalDescription().breadthFirst()
+                // Collect any lemma edge pairs. We need to be able to search by start node, but want to note
+                // both the end node and the link ID.
+                HashMap<Node, LemmaLink> lemmaLinks = new HashMap<>();
+                tx.traversalDescription().breadthFirst()
                         .relationships(ERelations.LEMMA_TEXT,Direction.OUTGOING)
                         .uniqueness(Uniqueness.NODE_GLOBAL)
                         .traverse(sectionStartNode).relationships()
                         .forEach(r -> {
-                            // We don't display lemma edges to emendations, for now; emendations are not in
-                            // the representatives list.
-                            if (representatives.containsKey(r.getStartNode()) && representatives.containsKey(r.getEndNode()))
-                                lemmaLinks.put(representatives.get(r.getStartNode()), representatives.get(r.getEndNode()));
+                            if (representatives.containsKey(r.getStartNode()) && representatives.containsKey(r.getEndNode())) {
+                                LemmaLink ll = new LemmaLink(r, representatives);
+                                lemmaLinks.put(representatives.get(r.getStartNode()), ll);
+                            }
                         });
+
+                // Collect any emendation anchors
+                ArrayList<Relationship> emendationAnchors = new ArrayList<>();
+                representatives.values().stream().filter(x -> x.hasLabel(Nodes.EMENDATION)).forEach(e ->
+                        e.getRelationships(Direction.BOTH, ERelations.EMENDED)
+                                .forEach(x ->
+                                {
+                                    if (representatives.get(x.getOtherNode(e)).equals(x.getOtherNode(e)))
+                                        emendationAnchors.add(x);
+                                })
+                );
 
                 // Now start writing some dot.
                 for (Node node : new HashSet<>(representatives.values())) {
@@ -204,7 +234,7 @@ public class DotExporter
                     // will be tied to "section" i.e. section end nodes instead.
                     // Intermediate section end nodes should be displayed as a "section" node.
                     if (node.equals(sectionEndNode) && !node.equals(endNode)) {
-                        nodeSpec = nodeSpec(node, dm).replace("END", "SECTION_" + sectionNode.getId());
+                        nodeSpec = nodeSpec(node, dm).replace("END", "SECTION_" + sectionNode.getElementId());
                     } else if (node.equals(sectionStartNode) && !node.equals(startNode))
                         continue;
 
@@ -217,7 +247,7 @@ public class DotExporter
                         if (rel == null)
                             continue;
                         Node relStartNode = rel.getStartNode();
-                        Long relStartNodeId = relStartNode.getId();
+                        String relStartNodeId = relStartNode.getElementId();
 
                         boolean witnessLink = false; // Does the witness filter need this sequence?
                         if (node.equals(sectionStartNode) || dm.getExcludeWitnesses().size() == 0)
@@ -225,8 +255,10 @@ public class DotExporter
                         else
                             for (Object v : rel.getAllProperties().values())
                                 for (String s : (String[]) v)
-                                    if (!dm.getExcludeWitnesses().contains(s))
+                                    if (!dm.getExcludeWitnesses().contains(s)) {
                                         witnessLink = true;
+                                        break;
+                                    }
 
                         if (witnessLink)
                             inRequestedWitness = true;
@@ -239,14 +271,18 @@ public class DotExporter
 
                         // Does this edge coincide with a lemma edge?
                         boolean edge_is_lemma = false;
-                        if (lemmaLinks.containsKey(relStartNode) && lemmaLinks.get(relStartNode).equals(node)) {
+                        if (lemmaLinks.containsKey(relStartNode) && lemmaLinks.get(relStartNode).end.equals(node)) {
                             edge_is_lemma = true;
                             lemmaLinks.remove(relStartNode);
                         }
                         // Get the label
                         String label = sequenceLabel(convertProps(rel), numWits, dm);
-                        Long rankDiff = (Long) node.getProperty("rank") - (Long) relStartNode.getProperty("rank");
-                        seqSpecs.add(relshipText(relStartNodeId, node.getId(), label, edgeId++,
+                        Long startRank = 0L;
+                        if (relStartNode.hasProperty("rank")) {
+                            startRank = (Long) relStartNode.getProperty("rank");
+                        }
+                        Long rankDiff = (Long) node.getProperty("rank") - startRank;
+                        seqSpecs.add(relshipText(relStartNodeId, node.getElementId(), label, rel.getElementId(),
                                 calcPenWidth(convertProps(rel)), rankDiff, edge_is_lemma));
 
                     }
@@ -275,28 +311,30 @@ public class DotExporter
                 }
 
                 // Now that all the nodes are processed, set this section's end node as the last one seen
-                lastSectionEndId = sectionEndNode.getId();
+                lastSectionEndId = sectionEndNode.getElementId();
 
                 // Write out reading relationships that survived the node filter
                 if (dm.getIncludeRelated())
                     for (Relationship relatedRel : relsToWrite) {
                         if (writtenNodes.contains(relatedRel.getStartNode())
                                 && writtenNodes.contains(relatedRel.getEndNode()))
-                            write("\t" + relatedRel.getStartNode().getId() + "->" +
-                                    relatedRel.getEndNode().getId() + " [style=dotted, constraint=false, arrowhead=none, " +
-                                    "label=\"" + relatedRel.getProperty("type").toString() + "\", id=\"e" +
-                                    edgeId++ + "\"];\n");
+                            write(String.format("\t\"%s\"->\"%s\" [style=dotted, constraint=false, arrowhead=none, label=\"%s\", id=\"e%s\"];\n", relatedRel.getStartNode().getElementId(), relatedRel.getEndNode().getElementId(), relatedRel.getProperty("type").toString(), relatedRel.getElementId()));
                     }
 
                 // Write any remaining lemma links
                 for (Node n : lemmaLinks.keySet()) {
-                    write(String.format("\t%d->%d [ id=l%d ];\n",
-                            n.getId(), lemmaLinks.get(n).getId(), edgeId++));
+                    LemmaLink ll = lemmaLinks.get(n);
+                    write(String.format("\t\"%s\"->\"%s\" [id=\"%s\"];\n",
+                            n.getElementId(), ll.end.getElementId(), ll.id));
                 }
+                // Write any emendation links
+                for (Relationship r : emendationAnchors)
+					write(String.format("\t\"%s\"->\"%s\" [color=white,penwidth=0,arrowhead=none];\n",
+							r.getStartNode().getElementId(), r.getEndNode().getElementId()));
 
                 // Clean up after ourselves
                 if (seqLabel.equals(ERelations.NSEQUENCE))
-                    VariantGraphService.clearNormalization(sectionNode);
+                    VariantGraphService.clearNormalization(sectionNode, tx);
             }
 
             write("}\n");
@@ -306,36 +344,50 @@ public class DotExporter
 
             // Now pull the string back out of the output file.
             byte[] encDot = Files.readAllBytes(output.toPath());
-            result = new String(encDot, Charset.forName("utf-8"));
-
+            result = new String(encDot, StandardCharsets.UTF_8);
             // Remove the following line, if you want to keep the created file
-            Files.deleteIfExists(output.toPath());
-
-            tx.success();
+            // Files.deleteIfExists(output.toPath());
         } catch (IOException e) {
             e.printStackTrace();
-            return Response.serverError().entity("Could not write file for export").build();
+            return Response.serverError().entity(jsonerror("Could not write file for export")).build();
         } catch (Exception e) {
             e.printStackTrace();
-            return Response.serverError().entity(e.getMessage()).build();
+            return Response.serverError().entity(jsonerror(e.getMessage())).build();
         }
 
         // Here is where to generate pictures from the file for debugging.
-        // writeFromDot(output, "svg");
+        writeFromDot(output.getAbsolutePath());
 
         return Response.ok().entity(result).build();
+    }
+
+    // A private class to represent the information we need for lemma links
+    private static class LemmaLink {
+        public final Node start;
+        public final Node end;
+        public final String id;
+        public LemmaLink(Relationship r, Map<Node,Node> representatives) {
+            this.start = representatives.containsKey(r.getStartNode())
+                    ? representatives.get(r.getStartNode()) : r.getStartNode();
+            this.end = representatives.containsKey(r.getEndNode())
+                    ? representatives.get(r.getEndNode()) : r.getEndNode();
+            this.id = r.getElementId();
+        }
     }
 
     /*
      * Helper functions for variant graph production
      */
 
-    private static HashMap<Node, Node> getRepresentatives(Node sectionNode, List<String> normaliseOn)
+    private static HashMap<Node, Node> getRepresentatives(Node sectionNode, List<String> normaliseOn, Transaction tx)
             throws Exception {
-        if (normaliseOn == null) {
+        if (normaliseOn.size() == 0) {
             HashMap<Node, Node> representatives = new HashMap<>();
-            List<Node> sectionNodes = VariantGraphService.returnTraditionSection(sectionNode).nodes().stream()
-                    .filter(x -> x.hasLabel(Label.label("READING")))
+            // List<Node> sectionNodes = VariantGraphService.returnTraditionSection(sectionNode).nodes().stream()
+            //         .filter(x -> x.hasLabel(Label.label("READING"))).collect(Collectors.toList());
+			List<Node> sectionNodes = StreamSupport
+					.stream(VariantGraphService.returnTraditionSection(sectionNode.getElementId(), tx).nodes().spliterator(), false)
+					.filter(x -> x.hasLabel(Label.label("READING")))
                     .filter(x -> ! x.hasLabel(Label.label("HYPERREADING")))
                     .collect(Collectors.toList());
             for (Node n: sectionNodes) {
@@ -343,13 +395,18 @@ public class DotExporter
             }
             return representatives;
         } else {
-            return VariantGraphService.normalizeGraph(sectionNode, normaliseOn);
+            return VariantGraphService.normalizeGraph(sectionNode, normaliseOn, tx);
         }
     }
 
     private static String nodeSpec(Node node, DisplayOptionModel dm) {
+
+        // todo: this method has a quick fix (line 427) but should be refactored
+        // todo: the hasHtml check lacks of logic and was not used efficiently in the following code
+
         // Get the proper node ID
-        String nodeDotId = "n" + node.getId();
+        String nodeDotId = node.hasLabel(Nodes.EMENDATION) ? "ne" : "n";
+        nodeDotId+= node.getElementId();
         if (node.getProperty("is_end", false).equals(true)) nodeDotId = "__END__";
         else if (node.getProperty("is_start", false).equals(true)) nodeDotId = "__START__";
 
@@ -357,6 +414,7 @@ public class DotExporter
         // brackets, because if we are also showing normal forms, we have to wedge more into the
         // HTML specification.
         boolean hasHTML = node.hasProperty("display");
+
         String nodeLabel = hasHTML ? node.getProperty("display").toString()
                 : node.getProperty("text").toString();
         if (node.getProperty("is_lacuna", false).equals(true)) {
@@ -367,11 +425,11 @@ public class DotExporter
             nodeLabel = String.format("%s%s(%s)", nodeLabel, hasHTML ? "&nbsp;" : " ", node.getProperty("rank").toString());
         if (dm.getShowNormalForm() && node.hasProperty("normal_form")
             && !node.getProperty("normal_form").toString().equals(node.getProperty("text").toString())) {
-            String labelExtra = "<BR ALIGN=\"LEFT\"/><FONT COLOR=\"grey\">"
+            String labelExtra = "<BR/><FONT COLOR=\"grey\">"
                     + escapeHtml4(node.getProperty("normal_form").toString()) + "</FONT>";
             if (hasHTML)
                 // We have to glom the normal_form HTML onto the existing HTML label
-                nodeLabel = String.format("<%s>", nodeLabel + labelExtra);
+                nodeLabel = String.format("<%s%s>", escapeHtml4(nodeLabel), labelExtra);
             else
                 // Do URL escaping of any labels
                 nodeLabel = String.format("<%s>", escapeHtml4(nodeLabel) + labelExtra);
@@ -383,39 +441,8 @@ public class DotExporter
             // Escape double quotes since we are wrapping in double quotes
             nodeLabel = "\"" + nodeLabel.replace("\"", "\\\"") + "\"";
 
-        if ( nodeLabel.startsWith("<") ) {
-            // first, delete extra tabs on last line of token before normal form
-            int tokenEndPos = nodeLabel.lastIndexOf("<BR");
-            if ( tokenEndPos > 0 ) { // we have a normal form
-                int lineStartPos = nodeLabel.lastIndexOf("\n", tokenEndPos);
-                if ( lineStartPos > 0 ) {
-                    String newLine = nodeLabel.substring(lineStartPos, tokenEndPos).replaceAll("\t", "");
-                    nodeLabel = nodeLabel.substring(0, lineStartPos) + newLine + nodeLabel.substring(tokenEndPos);
-                }
-            }
-            // preserve linebreaks and tabs; left-justify
-            nodeLabel = nodeLabel.replaceAll("\n", "<BR ALIGN=\"LEFT\"/>");
-            nodeLabel = nodeLabel.replaceAll("\t", "  ");
-            // add final alignement option to justify the last line too
-            nodeLabel = nodeLabel.substring(0, nodeLabel.length() - 1) + "<BR ALIGN=\"LEFT\"/>" + nodeLabel.substring(nodeLabel.length() - 1);
-        }
-
         // Put it all together
-        return("\t" + node.getId() + " [id=\"" + nodeDotId + "\", label=" + nodeLabel + "];\n");
-    }
-
-    private static String multiline(String inputStr, int maxLineSize, String separator) {
-        if ( inputStr.length() < maxLineSize ) {
-            return inputStr;
-        }
-        int splitPoint = inputStr.lastIndexOf(" ", maxLineSize);
-        if ( splitPoint == 0 ) {
-            splitPoint = inputStr.indexOf(" ", maxLineSize);
-        }
-        if ( splitPoint == 0 ) {
-            return inputStr;
-        }
-        return inputStr.substring(0, splitPoint) + separator + multiline(inputStr.substring(splitPoint + 1), maxLineSize, separator);
+        return(String.format("\t\"%s\" [id=\"" + nodeDotId + "\", label=" + nodeLabel + "];\n", node.getElementId()));
     }
 
     private static String sequenceLabel(Map<String, String[]> witnessInfo, int numWits, DisplayOptionModel dm) {
@@ -436,10 +463,10 @@ public class DotExporter
             while (it.hasNext()) {
                 lex_str.append(it.next());
                 if (it.hasNext()) {
-                    lex_str.append(" ");
+                    lex_str.append(", ");
                 }
             }
-            label = multiline(lex_str.toString(), 30, "<BR />");
+            label = lex_str.toString();
         }
         // Add on the layer witnesses where applicable
         lex_str = new StringBuilder();
@@ -457,7 +484,7 @@ public class DotExporter
                 lex_str.append(")");
             }
         }
-        label = lex_str.toString().replaceAll("\\s", ""); // remove blanks
+        label = lex_str.toString();
 
         return(label);
     }
@@ -467,17 +494,17 @@ public class DotExporter
         int hits = 0;
         for (String prop : witnessInfo.keySet())
             hits += (witnessInfo.get(prop)).length;
-        return df2.format(Math.max(1, Math.log(0.8 + 0.2 * hits)));
+        return df2.format(0.8 + 0.2 * hits / 3);
     }
 
-    private static String relshipText(Long sNodeId, Long eNodeId, String label, long edgeId, String pWidth, Long rankDiff, boolean isLemmaLink)
+    private static String relshipText(String sNodeId, String eNodeId, String label, String edgeId, String pWidth, Long rankDiff, boolean isLemmaLink)
     {
         String text;
         try {
             String idStr = isLemmaLink ? "l" : "e";
             idStr += edgeId;
-            text = "\t" + sNodeId + "->" + eNodeId + " [label=<" + label
-                    + ">, id=\"" + idStr + "\", penwidth=\"" + pWidth + "\"";
+            text = String.format("\t\"%s\"->\"%s\" [label=\"" + label
+                    + "\", id=\"" + idStr + "\", penwidth=\"" + pWidth + "\"", sNodeId, eNodeId);
             if (rankDiff > 1)
                 text += ", minlen=\"" + rankDiff + "\"";
             text += "];\n";
@@ -512,9 +539,9 @@ public class DotExporter
         ArrayList<String> outputLines = new ArrayList<>();
 
         try (Transaction tx = db.beginTx()) {
-            Node traditionNode = db.findNode(Nodes.TRADITION, "id", tradId);
+            Node traditionNode = tx.findNode(Nodes.TRADITION, "id", tradId);
             Node startNodeStemma = null;
-            for (Node stemma : DatabaseService.getRelated(traditionNode, ERelations.HAS_STEMMA)) {
+            for (Node stemma : DatabaseService.getRelated(traditionNode, ERelations.HAS_STEMMA, tx)) {
                 if (stemma.getProperty("name").equals(stemmaTitle)) {
                     startNodeStemma = stemma;
                     break;
@@ -529,7 +556,7 @@ public class DotExporter
             outputLines.add(String.format("%s \"%s\" {", stemmaType, stemmaTitle));
 
             // Output all the nodes associated with this stemma.
-            for (Node witness : DatabaseService.getRelated(startNodeStemma, ERelations.HAS_WITNESS)) {
+            for (Node witness : DatabaseService.getRelated(startNodeStemma, ERelations.HAS_WITNESS, tx)) {
                 String witnessSigil = sigilDotString(witness);
                 Boolean hypothetical = (Boolean) witness.getProperty("hypothetical");
 
@@ -544,11 +571,13 @@ public class DotExporter
 
             // Now output all the edges associated with this stemma, starting with the
             // archetype if we have one.
-            ArrayList<Node> foundRoots = DatabaseService.getRelated(startNodeStemma, ERelations.HAS_ARCHETYPE);
+            ArrayList<Node> foundRoots = DatabaseService.getRelated(startNodeStemma, ERelations.HAS_ARCHETYPE, tx);
             if (foundRoots.isEmpty()) {
-                // No archetype; just output the list of edges in any order.
-                Result txEdges = db.execute("MATCH (a:WITNESS)-[:TRANSMITTED {hypothesis:'" +
-                        stemmaTitle + "'}]->(b:WITNESS) RETURN a, b");
+                // No archetype, so we don't know where is okay to start traversal;
+                // just output the list of edges from this stemma in any order.
+                Result txEdges = tx.execute(String.format("MATCH (s)-[:HAS_WITNESS]->(a:WITNESS)-[:TRANSMITTED " +
+                        "{hypothesis:'%s'}]->(b:WITNESS) WHERE id(s) = %s RETURN a, b",
+                        stemmaTitle, startNodeStemma.getElementId()));
                 while (txEdges.hasNext()) {
                     Map<String, Object> vector = txEdges.next();
                     String source = sigilDotString((Node) vector.get("a"));
@@ -564,7 +593,7 @@ public class DotExporter
                 }
             }
             outputLines.add("}");
-            tx.success();
+            tx.close();
         }
 
         String joinString = singleLine ? "  " : "\n";
@@ -599,7 +628,7 @@ public class DotExporter
         try(Transaction tx = db.beginTx()) {
             //ExecutionEngine engine = new ExecutionEngine(db);
             // find all Stemmata associated with this tradition
-            Result result = db.execute("match (t:TRADITION {id:'"+ tradId +
+            Result result = tx.execute("match (t:TRADITION {id:'"+ tradId +
                     "'})-[:HAS_STEMMA]->(s:STEMMA) return s");
 
             Iterator<Node> stemmata = result.columnAs("s");
@@ -609,12 +638,13 @@ public class DotExporter
 
                 stemmaList.add(resp.getEntity().toString());
             }
-            tx.success();
+            tx.close();
         }
 
         return String.join("\n", stemmaList);
     }
 
+    @SuppressWarnings("rawtypes")
     private Set<String> traverseStemma(Node stemma, Node archetype) {
         String stemmaName = (String) stemma.getProperty("name");
         Set<String> allPaths = new HashSet<>();
@@ -625,19 +655,22 @@ public class DotExporter
 
         // We need to traverse only those paths that belong to this stemma.
         PathExpander e = getExpander(useDir, stemmaName);
-        for (Path nodePath: db.traversalDescription().breadthFirst()
-                .expand(e)
-                .uniqueness(Uniqueness.RELATIONSHIP_GLOBAL)
-                .traverse(archetype)) {
-            Iterator<Node> orderedNodes = nodePath.nodes().iterator();
-            Node sourceNode = orderedNodes.next();
-            while (orderedNodes.hasNext()) {
-                Node targetNode = orderedNodes.next();
-                String source = sigilDotString(sourceNode);
-                String target = sigilDotString(targetNode);
-                allPaths.add(String.format("%s : %s", source, target));
-                sourceNode = targetNode;
-            }
+        try (Transaction tx = db.beginTx()) {
+	        for (Path nodePath: tx.traversalDescription().breadthFirst()
+	                .expand(e)
+	                .uniqueness(Uniqueness.RELATIONSHIP_GLOBAL)
+	                .traverse(archetype)) {
+	            Iterator<Node> orderedNodes = nodePath.nodes().iterator();
+	            Node sourceNode = orderedNodes.next();
+	            while (orderedNodes.hasNext()) {
+	                Node targetNode = orderedNodes.next();
+	                String source = sigilDotString(sourceNode);
+	                String target = sigilDotString(targetNode);
+	                allPaths.add(String.format("%s : %s", source, target));
+	                sourceNode = targetNode;
+	            }
+	        }
+	        tx.close();
         }
         return allPaths;
     }
@@ -645,7 +678,7 @@ public class DotExporter
 
     private void write(String str) throws IOException
     {
-        out.write(str.getBytes());
+        out.write(str.getBytes(StandardCharsets.UTF_8));
     }
 
 

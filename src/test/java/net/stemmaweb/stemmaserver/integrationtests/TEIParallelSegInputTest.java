@@ -1,26 +1,35 @@
 package net.stemmaweb.stemmaserver.integrationtests;
 
 
-import net.stemmaweb.model.ReadingModel;
-import net.stemmaweb.model.TextSequenceModel;
-import net.stemmaweb.model.WitnessModel;
-import net.stemmaweb.rest.*;
-import net.stemmaweb.services.GraphDatabaseServiceProvider;
-import net.stemmaweb.stemmaserver.JerseyTestServerFactory;
-import net.stemmaweb.stemmaserver.Util;
-import org.junit.Before;
-import org.glassfish.jersey.test.JerseyTest;
-import org.junit.After;
-import org.junit.Test;
-import org.neo4j.graphdb.GraphDatabaseService;
-import org.neo4j.test.TestGraphDatabaseFactory;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
-import javax.ws.rs.core.Response;
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import javax.ws.rs.core.Response;
+
+import net.stemmaweb.services.GraphDatabaseServiceProvider;
+import org.glassfish.jersey.test.JerseyTest;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
+import org.neo4j.dbms.api.DatabaseManagementService;
+import org.neo4j.dbms.api.DatabaseManagementServiceBuilder;
+import org.neo4j.graphdb.GraphDatabaseService;
+
+import net.stemmaweb.model.ReadingModel;
+import net.stemmaweb.model.TextSequenceModel;
+import net.stemmaweb.model.WitnessModel;
+import net.stemmaweb.rest.Root;
+import net.stemmaweb.rest.Tradition;
+import net.stemmaweb.rest.Witness;
+import net.stemmaweb.stemmaserver.JerseyTestServerFactory;
+import net.stemmaweb.stemmaserver.Util;
+import org.neo4j.graphdb.Node;
+import org.neo4j.graphdb.Transaction;
 
 /**
  * Test TEI parallel segmentation input.
@@ -28,13 +37,17 @@ import static org.junit.Assert.assertTrue;
  * @author tla
  */
 public class TEIParallelSegInputTest {
-    private GraphDatabaseService db;
+    private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
+    private final GraphDatabaseService db = dbServiceProvider.getDatabase();
     private JerseyTest jerseyTest;
+
+    public TEIParallelSegInputTest() throws IOException {
+    }
 
     @Before
     public void setUp() throws Exception {
-        db = new GraphDatabaseServiceProvider(new TestGraphDatabaseFactory().newImpermanentDatabase()).getDatabase();
-        Util.setupTestDB(db, "1");
+
+        Util.setupTestDB(db);
 
         // Create a JerseyTestServer for the necessary REST API calls
         jerseyTest = JerseyTestServerFactory.newJerseyTestServer()
@@ -93,7 +106,8 @@ public class TEIParallelSegInputTest {
         assertEquals(Response.Status.CREATED.getStatusCode(), cResult.getStatus());
 
         String tradId = Util.getValueFromJson(cResult, "tradId");
-        Tradition tradition = new Tradition(tradId);
+        net.stemmaweb.Util.GetTraditionFunction<Transaction, Node> getTraditionFunction = net.stemmaweb.Util.getTraditionNode(tradId);
+        Tradition tradition = new Tradition(tradId, getTraditionFunction);
 
         // Basic statistics
         Response result = tradition.getAllWitnesses();
@@ -113,10 +127,10 @@ public class TEIParallelSegInputTest {
 
 
         // Get a witness text
-        TextSequenceModel tm = (TextSequenceModel) new Witness(tradId, "T").getWitnessAsText().getEntity();
+        TextSequenceModel tm = (TextSequenceModel) new Witness(tradId, "T", net.stemmaweb.Util.getTraditionNode(tradId)).getWitnessAsText().getEntity();
         assertEquals(tText, tm.getText());
         // Get a layered witness text
-        Witness q = new Witness(tradId, "Q");
+        Witness q = new Witness(tradId, "Q", net.stemmaweb.Util.getTraditionNode(tradId));
         List<String> layers = new ArrayList<>();
         layers.add("a.c.");
         TextSequenceModel ltm = (TextSequenceModel) q.getWitnessAsTextWithLayer(layers, "0", "E").getEntity();
@@ -137,7 +151,12 @@ public class TEIParallelSegInputTest {
 
     @After
     public void tearDown() throws Exception {
-        db.shutdown();
+        DatabaseManagementService service = dbServiceProvider.getManagementService();
+
+        if (service != null) {
+            service.shutdownDatabase(db.databaseName());
+        }
+
         jerseyTest.tearDown();
     }
 }

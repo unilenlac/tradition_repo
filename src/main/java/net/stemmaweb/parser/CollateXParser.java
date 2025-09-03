@@ -1,8 +1,10 @@
 package net.stemmaweb.parser;
 
+import net.stemmaweb.model.RelationTypeModel;
 import net.stemmaweb.rest.ERelations;
 import net.stemmaweb.rest.Nodes;
 import net.stemmaweb.rest.RelationType;
+import net.stemmaweb.services.Database;
 import net.stemmaweb.services.GraphDatabaseServiceProvider;
 import net.stemmaweb.services.VariantGraphService;
 import org.neo4j.graphdb.*;
@@ -20,16 +22,26 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Optional;
 
+import static net.stemmaweb.Util.*;
+import static net.stemmaweb.services.VariantGraphService.getSectionTraditionNode;
+
 /**
  * Parser for CollateX-collated traditions.
  *
  * @author tla
  */
 public class CollateXParser {
-    private GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
-    private GraphDatabaseService db = dbServiceProvider.getDatabase();
+    // private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
+    private final GraphDatabaseService db = Database.getInstance().session;
 
-    public Response parseCollateX(InputStream filestream, Node parentNode)
+    /**
+     * Parse a CollateX XML input stream and attach it to the given (section) parentNode.
+     *
+     * @param filestream - The data to parse
+     * @param parentNode - The section node that will carry the parsed data
+     * @return a Response to indicate the result
+     */
+    public Response parseCollateX(InputStream filestream, Node parentNode, Transaction tx)
     {
         // Try this the DOM parsing way
         Document doc;
@@ -49,18 +61,19 @@ public class CollateXParser {
             NamedNodeMap keyAttrs = keyNodes.item(i).getAttributes();
             dataKeys.put(keyAttrs.getNamedItem("id").getNodeValue(), keyAttrs.getNamedItem("attr.name").getNodeValue());
         }
-        Node traditionNode = VariantGraphService.getTraditionNode(parentNode);
-        try (Transaction tx = db.beginTx()) {
+        try {
+
+            Node traditionNode = getSectionTraditionNode(parentNode, tx);
             // Create all the nodes from the graphml nodes
             NodeList readingNodes = rootEl.getElementsByTagName("node");
             HashMap<String,Node> createdReadings = new HashMap<>();
-            Long highestRank = 0L;
+            long highestRank = 0L;
             boolean transpositionSeen = false;
             for (int i = 0; i < readingNodes.getLength(); i++) {
                 NamedNodeMap rdgAttrs = readingNodes.item(i).getAttributes();
                 String cxId = rdgAttrs.getNamedItem("id").getNodeValue();
-                Node reading = db.createNode(Nodes.READING);
-                reading.setProperty("section_id", parentNode.getId());
+                Node reading = tx.createNode(Nodes.READING);
+                reading.setProperty("section_id", parentNode.getElementId());
 
                 NodeList dataNodes = ((Element) readingNodes.item(i)).getElementsByTagName("data");
                 for (int j = 0; j < dataNodes.getLength(); j++) {
@@ -68,9 +81,9 @@ public class CollateXParser {
                     String keyId = dataAttrs.getNamedItem("key").getNodeValue();
                     String keyVal = dataNodes.item(j).getTextContent();
                     if (dataKeys.get(keyId).equals("rank")) {
-                        Long rankVal = Long.valueOf(keyVal);
+                        long rankVal = Long.parseLong(keyVal);
                         reading.setProperty("rank", rankVal);
-                        highestRank = rankVal > highestRank ? rankVal : highestRank;
+                        highestRank = Math.max(rankVal, highestRank);
                         // Detect start node
                         if (rankVal == 0) {
                             parentNode.createRelationshipTo(reading, ERelations.COLLATION);
@@ -86,8 +99,8 @@ public class CollateXParser {
             Optional<Node> endNodeOpt = createdReadings.values().stream()
                     .filter(x -> x.getProperty("rank").equals(hr))
                     .findFirst();
-            if (!endNodeOpt.isPresent())
-                return Response.serverError().entity(Util.jsonerror("No end node found")).build();
+            if (endNodeOpt.isEmpty())
+                return Response.serverError().entity(jsonerror("No end node found")).build();
             Node endNode = endNodeOpt.get();
             endNode.setProperty("is_end", true);
             parentNode.createRelationshipTo(endNode, ERelations.HAS_END);
@@ -121,8 +134,8 @@ public class CollateXParser {
                 Relationship relation = source.createRelationshipTo(target, rtype);
                 if (rtype != null && rtype.equals(ERelations.RELATED)) {
                     transpositionSeen = true;
-                    relation.setProperty("source", source.getId());
-                    relation.setProperty("target", target.getId());
+                    relation.setProperty("source", source.getElementId());
+                    relation.setProperty("target", target.getElementId());
                     relation.setProperty("type", "transposition");
                     relation.setProperty("reading_a", source.getProperty("text"));
                     relation.setProperty("reading_b", target.getProperty("text"));
@@ -133,19 +146,20 @@ public class CollateXParser {
 
             }
             // Create all the witnesses
-            seenWitnesses.forEach(x -> Util.findOrCreateExtant(traditionNode, x));
+            seenWitnesses.forEach(x -> Util.findOrCreateExtant(traditionNode, x, tx));
             // Calculate the common readings
-            VariantGraphService.calculateCommon(parentNode);
+            VariantGraphService.calculateCommon(parentNode, tx);
 
             // Create the 'transposition' relation type if it occurred in the data
             if (transpositionSeen) {
-                Response rtResult = new RelationType(traditionNode.getProperty("id").toString(), "transposition")
-                        .makeDefaultType();
+                RelationTypeModel rtm = new RelationTypeModel();
+                rtm.setName("transposition");
+                rtm.setDefaultsettings(true);
+                Response rtResult = new RelationType(traditionNode.getProperty("id").toString(),
+                        rtm.getName()).create(rtm);
                 if (rtResult.getStatus() == Response.Status.INTERNAL_SERVER_ERROR.getStatusCode())
                     return rtResult;
             }
-
-            tx.success();
         } catch (IllegalArgumentException e) {
             return Response.status(Response.Status.BAD_REQUEST).entity(e.getMessage()).build();
         } catch (Exception e) {
@@ -153,7 +167,7 @@ public class CollateXParser {
             return Response.serverError().build();
         }
 
-        return Response.status(Response.Status.CREATED).entity(Util.jsonresp("parentId", parentNode.getId())).build();
+        return Response.status(Response.Status.CREATED).entity(jsonresp("parentId", parentNode.getElementId())).build();
     }
 
 }

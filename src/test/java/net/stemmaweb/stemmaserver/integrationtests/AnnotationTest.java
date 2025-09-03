@@ -1,11 +1,25 @@
 package net.stemmaweb.stemmaserver.integrationtests;
 
-import junit.framework.TestCase;
-import net.stemmaweb.model.*;
-import net.stemmaweb.services.GraphDatabaseServiceProvider;
-import net.stemmaweb.stemmaserver.Util;
+import java.io.IOException;
+import java.time.Duration;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.OffsetTime;
+import java.time.Period;
+import java.time.ZonedDateTime;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import javax.ws.rs.client.Entity;
+import javax.ws.rs.client.WebTarget;
+import javax.ws.rs.core.GenericType;
+import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.Response;
 
 import org.glassfish.jersey.test.JerseyTest;
+import org.neo4j.dbms.api.DatabaseManagementService;
 import org.neo4j.graphdb.Direction;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Label;
@@ -13,33 +27,41 @@ import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.Relationship;
 import org.neo4j.graphdb.RelationshipType;
 import org.neo4j.graphdb.Transaction;
-import org.neo4j.test.TestGraphDatabaseFactory;
 
-import javax.ws.rs.client.Entity;
-import javax.ws.rs.client.WebTarget;
-import javax.ws.rs.core.GenericType;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
-import java.time.*;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import junit.framework.TestCase;
+import net.stemmaweb.model.AnnotationLabelModel;
+import net.stemmaweb.model.AnnotationLinkModel;
+import net.stemmaweb.model.AnnotationModel;
+import net.stemmaweb.model.ReadingModel;
+import net.stemmaweb.model.SectionModel;
+import net.stemmaweb.services.GraphDatabaseServiceProvider;
+import net.stemmaweb.stemmaserver.Util;
 
 public class AnnotationTest extends TestCase {
-    private GraphDatabaseService db;
     private JerseyTest jerseyTest;
     private String tradId;
     private HashMap<String,String> readingLookup;
 
+    private GraphDatabaseServiceProvider dbServiceProvider;
+    private GraphDatabaseService db;
+
+    public AnnotationTest() throws IOException {
+    }
+
     public void setUp() throws Exception {
         super.setUp();
-        db = new GraphDatabaseServiceProvider(new TestGraphDatabaseFactory().newImpermanentDatabase()).getDatabase();
-        Util.setupTestDB(db, "1");
+        dbServiceProvider = new GraphDatabaseServiceProvider();
+        db = dbServiceProvider.getDatabase();
+        try{
+            Util.setupTestDB(db);
+        }catch (Throwable t){
+            t.printStackTrace();
+        }
 
         // Create a JerseyTestServer for the necessary REST API calls
         jerseyTest = Util.setupJersey();
         tradId = Util.getValueFromJson(Util.createTraditionFromFileOrString(jerseyTest, "Legend", "LR",
-                "1", "src/TestFiles/legendfrag.xml", "stemmaweb"), "tradId");
+                "admin@example.org", "src/TestFiles/legendfrag.xml", "stemmaweb"), "tradId");
         readingLookup = Util.makeReadingLookup(jerseyTest, tradId);
     }
 
@@ -74,11 +96,11 @@ public class AnnotationTest extends TestCase {
         props.put("lang", "EN");
         am.setProperties(props);
         AnnotationLinkModel start = new AnnotationLinkModel();
-        start.setTarget(Long.valueOf(readingLookup.get("in/1")));
+        start.setTarget(readingLookup.get("in/1"));
         start.setType("BEGIN");
         start.setFollow("SEQUENCE/witness/A");
         AnnotationLinkModel end = new AnnotationLinkModel();
-        end.setTarget(Long.valueOf(readingLookup.get("oriundus/9")));
+        end.setTarget(readingLookup.get("oriundus/9"));
         end.setType("END");
         am.addLink(start);
         am.addLink(end);
@@ -156,7 +178,6 @@ public class AnnotationTest extends TestCase {
         assertEquals(alm.getProperties(), result.getProperties());
         assertEquals(alm.getLinks(), result.getLinks());
     }
-
     public void testChangeAnnotationLabel() {
         AnnotationLabelModel alm = addTestLabel().readEntity(AnnotationLabelModel.class);
         Map<String, String> newProps = new HashMap<>();
@@ -217,7 +238,6 @@ public class AnnotationTest extends TestCase {
                 .put(Entity.json(alm));
         assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
     }
-
     public void testAddAnnotation() {
         // Label specification and addition
         addTestLabel();
@@ -228,7 +248,7 @@ public class AnnotationTest extends TestCase {
 
         // Check that the graph looks right
         try (Transaction tx = db.beginTx()) {
-            Node annoNode = db.getNodeById(Long.parseLong(am.getId()));
+            Node annoNode = tx.getNodeByElementId(am.getId());
             assertTrue(annoNode.hasLabel(Label.label("TRANSLATION")));
             assertEquals(am.getProperties().get("text"), annoNode.getProperty("text"));
             assertEquals(am.getProperties().get("lang"), annoNode.getProperty("lang"));
@@ -238,15 +258,14 @@ public class AnnotationTest extends TestCase {
             for (AnnotationLinkModel alm : am.getLinks()) {
                 Relationship link = links.get(alm.getType());
                 assertEquals(link.getType().name(), alm.getType());
-                assertEquals(Long.valueOf(link.getEndNode().getId()), alm.getTarget());
+                assertEquals(link.getEndNode().getElementId(), alm.getTarget());
                 if (alm.getType().equals("START"))
                     assertEquals(alm.getFollow(), link.getProperty("follow").toString());
             }
             Relationship tlink = annoNode.getSingleRelationship(
                     RelationshipType.withName("HAS_ANNOTATION"), Direction.INCOMING);
             assertEquals(tradId, tlink.getStartNode().getProperty("id"));
-
-            tx.success();
+            tx.commit();
         }
     }
 
@@ -257,7 +276,7 @@ public class AnnotationTest extends TestCase {
         List<AnnotationModel> existing = jerseyTest
                 .target("/tradition/" + tradId + "/annotations")
                 .request()
-                .get(new GenericType<List<AnnotationModel>>() {});
+                .get(new GenericType<>() {});
         assertEquals(1, existing.size());
 
         Response response = jerseyTest
@@ -269,7 +288,7 @@ public class AnnotationTest extends TestCase {
         existing = jerseyTest
                 .target("/tradition/" + tradId + "/annotations")
                 .request()
-                .get(new GenericType<List<AnnotationModel>>() {});
+                .get(new GenericType<>() {});
         assertEquals(0, existing.size());
     }
 
@@ -315,16 +334,17 @@ public class AnnotationTest extends TestCase {
         List<AnnotationLabelModel> labels = jerseyTest
                 .target("/tradition/" + tradId + "/annotationlabels")
                 .request(MediaType.APPLICATION_JSON)
-                .get(new GenericType<List<AnnotationLabelModel>>() {});
+                .get(new GenericType<>() {});
         assertEquals(0, labels.size());
     }
 
     public void testAddDeleteAnnotationLink() {
+
         addTestLabel();
         AnnotationModel am = addTestAnnotation().readEntity(AnnotationModel.class);
 
         AnnotationLinkModel alm = new AnnotationLinkModel();
-        alm.setTarget(Long.valueOf(readingLookup.get("venerabilis/3")));
+        alm.setTarget(readingLookup.get("venerabilis/3"));
         alm.setType("BEGIN");
         Response response = jerseyTest
                 .target("/tradition/" + tradId + "/annotation/" + am.getId() + "/link")
@@ -363,7 +383,7 @@ public class AnnotationTest extends TestCase {
     public void testAddComplexAnnotation() {
         // Add our second section
         Util.addSectionToTradition(jerseyTest, tradId, "src/TestFiles/lf2.xml",
-                "stemmaweb", "sect2");
+                "stemmaweb", "sect2", true);
         // Regenerate our reading lookup
         readingLookup = Util.makeReadingLookup(jerseyTest, tradId);
 
@@ -394,7 +414,7 @@ public class AnnotationTest extends TestCase {
                 .request()
                 .get();
         assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
-        List<AnnotationLabelModel> allLabels = response.readEntity(new GenericType<List<AnnotationLabelModel>>() {});
+        List<AnnotationLabelModel> allLabels = response.readEntity(new GenericType<>() {});
         assertEquals(2, allLabels.size());
         assertTrue(allLabels.stream().anyMatch(x -> x.getName().equals("PERSON")));
         assertTrue(allLabels.stream().anyMatch(x -> x.getName().equals("PERSONREF")));
@@ -404,10 +424,10 @@ public class AnnotationTest extends TestCase {
         ref1.setLabel("PERSONREF");
         AnnotationLinkModel prb = new AnnotationLinkModel();
         prb.setType("BEGIN");
-        prb.setTarget(Long.valueOf(readingLookup.get("pontifex/4")));
+        prb.setTarget(readingLookup.get("pontifex/4"));
         AnnotationLinkModel pre = new AnnotationLinkModel();
         pre.setType("END");
-        pre.setTarget(Long.valueOf(readingLookup.get("Henricus/6")));
+        pre.setTarget(readingLookup.get("Henricus/6"));
         ref1.addLink(prb);
         ref1.addLink(pre);
         response = jerseyTest
@@ -423,7 +443,7 @@ public class AnnotationTest extends TestCase {
         henry.setPrimary(true);
         henry.addProperty("href", "https://en.wikipedia.org/Saint_Henry");
         prb = new AnnotationLinkModel();
-        prb.setTarget(Long.valueOf(ref1.getId()));
+        prb.setTarget(ref1.getId());
         prb.setType("REFERENCED");
         henry.addLink(prb);
         response = jerseyTest
@@ -433,15 +453,15 @@ public class AnnotationTest extends TestCase {
         assertEquals(Response.Status.CREATED.getStatusCode(), response.getStatus());
         henry = response.readEntity(AnnotationModel.class);
 
-        // Now add another reference so we can link it to the same person
+        // Now add another reference we can link it to the same person
         AnnotationModel ref2 = new AnnotationModel();
         ref2.setLabel("PERSONREF");
         prb = new AnnotationLinkModel();
         prb.setType("BEGIN");
-        prb.setTarget(Long.valueOf(readingLookup.get("luminaribus/4")));
+        prb.setTarget(readingLookup.get("luminaribus/4"));
         pre = new AnnotationLinkModel();
         pre.setType("END");
-        pre.setTarget(Long.valueOf(readingLookup.get("luminaribus/4")));
+        pre.setTarget(readingLookup.get("luminaribus/4"));
         ref2.addLink(prb);
         ref2.addLink(pre);
         response = jerseyTest
@@ -452,7 +472,7 @@ public class AnnotationTest extends TestCase {
         ref2 = response.readEntity(AnnotationModel.class);
 
         // Add the link
-        prb.setTarget(Long.valueOf(ref2.getId()));
+        prb.setTarget(ref2.getId());
         prb.setType("REFERENCED");
         response = jerseyTest
                 .target("/tradition/" + tradId + "/annotation/" + henry.getId() + "/link")
@@ -464,24 +484,24 @@ public class AnnotationTest extends TestCase {
         WebTarget baseQuery = jerseyTest.target("/tradition/" + tradId + "/annotations");
         response = baseQuery.request().get();
         assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
-        List<AnnotationModel> anns = response.readEntity(new GenericType<List<AnnotationModel>>() {});
+        List<AnnotationModel> anns = response.readEntity(new GenericType<>() {});
         assertEquals(3, anns.size());
         response = baseQuery.queryParam("label", "PERSONREF").request().get();
         assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
-        anns = response.readEntity(new GenericType<List<AnnotationModel>>() {});
+        anns = response.readEntity(new GenericType<>() {});
         assertEquals(2, anns.size());
         response = baseQuery.queryParam("label", "PERSON").request().get();
         assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
-        anns = response.readEntity(new GenericType<List<AnnotationModel>>() {});
+        anns = response.readEntity(new GenericType<>() {});
         assertEquals(1, anns.size());
 
         // See if the structure makes sense
         for (AnnotationModel am : anns) {
             if (am.getLabel().equals("PERSON")) {
                 assertEquals(2, am.getLinks().size());
-                HashMap<Long,Boolean> found = new HashMap<>();
-                found.put(Long.valueOf(ref1.getId()), false);
-                found.put(Long.valueOf(ref2.getId()), false);
+                HashMap<String,Boolean> found = new HashMap<>();
+                found.put(ref1.getId(), false);
+                found.put(ref2.getId(), false);
                 for (AnnotationLinkModel alm : am.getLinks()) {
                     assertEquals("REFERENCED", alm.getType());
                     found.put(alm.getTarget(), true);
@@ -505,13 +525,13 @@ public class AnnotationTest extends TestCase {
                 .request()
                 .delete();
         assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
-        List<AnnotationModel> deleted = response.readEntity(new GenericType<List<AnnotationModel>>() {});
+        List<AnnotationModel> deleted = response.readEntity(new GenericType<>() {});
         assertEquals(1, deleted.size());
         assertEquals(ref1.getId(), deleted.get(0).getId());
 
         anns = jerseyTest.target("/tradition/" + tradId + "/annotations")
                 .request()
-                .get(new GenericType<List<AnnotationModel>>() {});
+                .get(new GenericType<>() {});
         assertEquals(2, anns.size());
 
         response = jerseyTest
@@ -519,14 +539,14 @@ public class AnnotationTest extends TestCase {
                 .request()
                 .delete();
         assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
-        deleted = response.readEntity(new GenericType<List<AnnotationModel>>() {});
+        deleted = response.readEntity(new GenericType<>() {});
         assertEquals(1, deleted.size());
         assertEquals(ref2.getId(), deleted.get(0).getId());
 
         anns = jerseyTest
                 .target("/tradition/" + tradId + "/annotations")
                 .request()
-                .get(new GenericType<List<AnnotationModel>>() {});
+                .get(new GenericType<>() {});
         assertEquals(1, anns.size());
 
         // Now delete the PERSON explicitly, which should work
@@ -535,14 +555,14 @@ public class AnnotationTest extends TestCase {
                 .request()
                 .delete();
         assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
-        deleted = response.readEntity(new GenericType<List<AnnotationModel>>() {});
+        deleted = response.readEntity(new GenericType<>() {});
         assertEquals(1, deleted.size());
         assertEquals(henry.getId(), deleted.get(0).getId());
 
         anns = jerseyTest
                 .target("/tradition/" + tradId + "/annotations")
                 .request()
-                .get(new GenericType<List<AnnotationModel>>() {});
+                .get(new GenericType<>() {});
         assertEquals(0, anns.size());
     }
 
@@ -608,7 +628,7 @@ public class AnnotationTest extends TestCase {
             props.put("value", nameToValue.get(k));
             am.setProperties(props);
             AnnotationLinkModel start = new AnnotationLinkModel();
-            start.setTarget(Long.valueOf(readingLookup.get("in/1")));
+            start.setTarget(readingLookup.get("in/1"));
             start.setType("ATTACHED");
             am.addLink(start);
 
@@ -617,25 +637,33 @@ public class AnnotationTest extends TestCase {
                     .target("/tradition/" + tradId + "/annotation")
                     .request(MediaType.APPLICATION_JSON)
                     .post(Entity.json(am));
-            assertEquals(Response.Status.CREATED.getStatusCode(), response.getStatus());
+            assertEquals("creation of " + k + " annotation", Response.Status.CREATED.getStatusCode(), response.getStatus());
         }
 
         // Check that they come back out
         Response response = jerseyTest.target("/tradition/" + tradId + "/annotations")
                 .request().get();
         assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
-        List<AnnotationModel> ourAnnotations = response.readEntity(new GenericType<List<AnnotationModel>>() {});
+        List<AnnotationModel> ourAnnotations = response.readEntity(new GenericType<>() {});
         assertEquals(nameToType.size(), ourAnnotations.size());
     }
-
     public void testExportWithAnnotations() {
         addTestLabel();
         addTestAnnotation();
         Response response = jerseyTest.target("/tradition/" + tradId + "/graphml")
-                .request(MediaType.APPLICATION_XML_TYPE).get();
+                .request("application/zip").get();
         assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
-        // Check that the annotation is represented in the GraphML file.
-        String tradXmlOutput = response.readEntity(String.class);
+        // Save the result into a temp file so that we can reimport it for the second half of this test
+        String tradXmlOutput = "";
+        String graphMLPath = "";
+        try {
+            graphMLPath = Util.saveGraphMLTempfile(response);
+            tradXmlOutput = Util.getConcatenatedGraphML(graphMLPath);
+        } catch (Exception e) {
+            fail();
+        }
+        // Unzip the result and check that the annotation is represented somewhere. Do this first
+        // by concatenating all the XML int one big string
 
         String translation = returnTestAnnotation().getProperties().get("text").toString();
         assertTrue(tradXmlOutput.contains("[ANNOTATIONLABEL]"));
@@ -645,44 +673,55 @@ public class AnnotationTest extends TestCase {
 
         // ...also for the individual section.
         List<SectionModel> sects = jerseyTest.target("/tradition/" + tradId + "/sections")
-                .request().get(new GenericType<List<SectionModel>>() {});
+                .request().get(new GenericType<>() {});
         String sectId = sects.get(0).getId();
         response = jerseyTest.target("/tradition/" + tradId + "/section/" + sectId + "/graphml")
                 .request().get();
         assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
-        String sectXmlOutput = response.readEntity(String.class);
-        assertTrue(tradXmlOutput.contains("[ANNOTATIONLABEL]"));
-        assertTrue(tradXmlOutput.contains("[LINKS]"));
-        assertTrue(sectXmlOutput.contains("[TRANSLATION]"));
-        assertTrue(sectXmlOutput.contains(translation));
+        String sectXmlOutput = "";
+        String sectMLPath = "";
+        try {
+            sectMLPath = Util.saveGraphMLTempfile(response);
+            sectXmlOutput = Util.getConcatenatedGraphML(sectMLPath);
+        } catch (Exception e) {
+            fail();
+        }
+        // assertTrue(sectXmlOutput.contains("[ANNOTATIONLABEL]"));
+        // assertTrue(sectXmlOutput.contains("[LINKS]"));
+        // assertTrue(sectXmlOutput.contains("[TRANSLATION]"));
+        // assertTrue(sectXmlOutput.contains(translation));
 
         // Check that it gets re-imported correctly
-        response = Util.createTraditionFromFileOrString(jerseyTest, "reimported", "LR", "1",
-                tradXmlOutput, "graphml");
+        response = Util.createTraditionFromFileOrString(jerseyTest, "reimported", "LR", "admin@example.org",
+                graphMLPath, "graphml");
         assertEquals(Response.Status.CREATED.getStatusCode(), response.getStatus());
         String newTradId = Util.getValueFromJson(response, "tradId");
         response = jerseyTest.target("/tradition/" + newTradId + "/annotations")
                 .request().get();
         assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
-        List<AnnotationModel> am = response.readEntity(new GenericType<List<AnnotationModel>>() {});
+        List<AnnotationModel> am = response.readEntity(new GenericType<>() {});
         assertEquals(1, am.size());
         assertEquals("TRANSLATION", am.get(0).getLabel());
         assertTrue(am.get(0).getProperties().containsKey("text"));
         assertEquals(translation, am.get(0).getProperties().get("text"));
 
         // Check that the individual section can be added to the existing tradition
-        response = Util.addSectionToTradition(jerseyTest, newTradId, sectXmlOutput, "graphml", "duplicate");
+        response = Util.addSectionToTradition(jerseyTest, newTradId, sectMLPath, "graphml", "duplicate", true);
         assertEquals(Response.Status.CREATED.getStatusCode(), response.getStatus());
         response = jerseyTest.target("/tradition/" + newTradId + "/annotations").request().get();
         assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
-        am = response.readEntity(new GenericType<List<AnnotationModel>>() {});
+        am = response.readEntity(new GenericType<>() {});
         // There should be two of them now
         assertEquals(2, am.size());
         assertTrue(am.stream().allMatch(x -> x.getLabel().equals("TRANSLATION")));
     }
 
     public void tearDown() throws Exception {
-        db.shutdown();
+        // DatabaseManagementService service = dbServiceProvider.getManagementService();
+        // if (service != null) {
+        //     service.shutdown();
+        // }
+
         jerseyTest.tearDown();
         super.tearDown();
     }

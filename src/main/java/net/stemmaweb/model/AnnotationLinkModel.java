@@ -4,6 +4,8 @@ import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Relationship;
 import org.neo4j.graphdb.Transaction;
 
+import net.stemmaweb.services.GraphDatabaseServiceProvider;
+
 /**
  * A model for an outbound link (relationship) from an annotation to some target node.
  */
@@ -21,18 +23,20 @@ public class AnnotationLinkModel {
     /**
      * The ID of the target node for this annotation link.
      */
-    private Long target;
+    private String target;
 
     public AnnotationLinkModel() {}
 
-    public AnnotationLinkModel(Relationship r) {
-        GraphDatabaseService db = r.getGraphDatabase();
-        try (Transaction tx = db.beginTx()) {
+    public AnnotationLinkModel(Relationship r, Transaction tx) {
+        // GraphDatabaseService db = r.getGraphDatabase();
+        // GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+        try {
             setType(r.getType().name());
-            setTarget(r.getEndNodeId());
+            setTarget(r.getEndNode().getElementId());
             if (r.hasProperty("follow"))
                 setFollow(r.getProperty("follow").toString());
-            tx.success();
+        } catch (Exception e){
+            e.printStackTrace();
         }
     }
 
@@ -52,11 +56,11 @@ public class AnnotationLinkModel {
         this.follow = follow;
     }
 
-    public Long getTarget() {
+    public String getTarget() {
         return target;
     }
 
-    public void setTarget(Long target) {
+    public void setTarget(String target) {
         this.target = target;
     }
 }

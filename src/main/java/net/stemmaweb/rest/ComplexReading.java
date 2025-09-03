@@ -9,6 +9,7 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.qmino.miredot.annotations.ReturnType;
 import net.stemmaweb.model.*;
 import net.stemmaweb.services.*;
@@ -17,7 +18,7 @@ import org.neo4j.graphdb.*;
 import org.neo4j.graphdb.NotFoundException;
 import org.neo4j.graphdb.traversal.Uniqueness;
 
-import static net.stemmaweb.rest.Util.jsonerror;
+import static net.stemmaweb.Util.jsonerror;
 
 /**
  * Comprises all Rest API calls related to a complex reading. Can be called via
@@ -34,13 +35,12 @@ public class ComplexReading {
     /**
      * The ID of the reading to query
      */
-    private final Long readId;
+    private final String readId;
 
     public ComplexReading(String requestedId) {
-        GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
-        db = dbServiceProvider.getDatabase();
-        // The requested ID might have an 'n' prepended, if it was taken from the SVG output.
-        readId = Long.valueOf(requestedId.replaceAll("n", ""));
+
+        db = Database.getInstance().session;
+        readId = requestedId;
     }
 
     /**
@@ -58,8 +58,7 @@ public class ComplexReading {
     public Response getComplexReading() {
         ComplexReadingModel reading;
         try (Transaction tx = db.beginTx()) {
-            reading = new ComplexReadingModel(db.getNodeById(readId));
-            tx.success();
+            reading = new ComplexReadingModel(tx.getNodeByElementId(String.valueOf(readId)), tx);
         } catch (NotFoundException e) {
             return Response.noContent().build();
         } catch (Exception e) {
@@ -80,10 +79,10 @@ public class ComplexReading {
     @ReturnType(clazz = GraphModel.class)
     public Response deleteUserComplexReading() {
       try (Transaction tx = db.beginTx()) {
-          Node removableNode = db.getNodeById(readId);
+          Node removableNode = tx.getNodeByElementId(readId.toString());
           removableNode.getRelationships().forEach(Relationship::delete);
           removableNode.delete();
-          tx.success();
+          tx.commit();
       } catch (Exception e) {
           e.printStackTrace();
           return Response.serverError().entity(jsonerror(e.getMessage())).build();
@@ -91,7 +90,59 @@ public class ComplexReading {
       return Response.ok().build();
     }
 
+    // POST request json object parser
+    public static class ComplexReadingUpdateModel{
 
+        @JsonProperty("id")
+        String id;
+
+        @JsonProperty("islemma")
+        Boolean islemma;
+
+        @JsonProperty("source")
+        String source;
+
+
+        @JsonProperty("note")
+        String note;
+
+        @JsonProperty("weight")
+        int weight;
+
+        public ComplexReadingUpdateModel(){
+
+        }
+        public ComplexReadingUpdateModel(String id,
+                                         Boolean islemma,
+                                         String source,
+                                         String note,
+                                         int weight){
+            this.id = id;
+            this.islemma = islemma;
+            this.source = source;
+            this.note = note;
+            this.weight = weight;
+        }
+    }
+
+    @POST
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces("application/json; charset=utf-8")
+    public Response saveComplex(ComplexReadingUpdateModel cr){
+
+        try(Transaction tx = db.beginTx()){
+            Node complex_reading = tx.getNodeByElementId(cr.id);
+            complex_reading.setProperty("is_lemma", cr.islemma);
+            complex_reading.setProperty("weight", cr.weight);
+            complex_reading.setProperty("note", cr.note);
+            complex_reading.setProperty("source", cr.source);
+            tx.commit();
+        }catch(Exception e){
+            e.printStackTrace();
+            return Response.serverError().entity(jsonerror(e.getMessage())).build();
+        }
+        return Response.ok().build();
+    }
 
     // Class-level utility function to encapsulate the instance-wide error message
     private Response errorResponse (Status status) {

@@ -1,6 +1,18 @@
 package net.stemmaweb.stemmaserver.integrationtests;
 
-import java.util.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 
 import javax.ws.rs.client.Entity;
 import javax.ws.rs.core.GenericType;
@@ -8,25 +20,27 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 
-import net.stemmaweb.model.*;
-import net.stemmaweb.rest.*;
 import net.stemmaweb.services.GraphDatabaseServiceProvider;
-
-import net.stemmaweb.stemmaserver.Util;
-
 import org.glassfish.jersey.client.ClientProperties;
 import org.glassfish.jersey.media.multipart.FormDataMultiPart;
 import org.glassfish.jersey.test.JerseyTest;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.neo4j.dbms.api.DatabaseManagementService;
+import org.neo4j.dbms.api.DatabaseManagementServiceBuilder;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.Relationship;
 import org.neo4j.graphdb.Transaction;
-import org.neo4j.test.TestGraphDatabaseFactory;
 
-import static org.junit.Assert.*;
+import net.stemmaweb.model.GraphModel;
+import net.stemmaweb.model.ReadingBoundaryModel;
+import net.stemmaweb.model.ReadingModel;
+import net.stemmaweb.model.RelationModel;
+import net.stemmaweb.model.WitnessModel;
+import net.stemmaweb.rest.Nodes;
+import net.stemmaweb.stemmaserver.Util;
 
 /*
  * Contains all tests for the api calls related to the tradition.
@@ -35,19 +49,24 @@ import static org.junit.Assert.*;
  */
 public class StemmawebLegacyTest {
 
-    private GraphDatabaseService db;
+    private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
+    private final GraphDatabaseService db = dbServiceProvider.getDatabase();
 
     /*
      * JerseyTest is the test environment to Test api calls it provides a
      * grizzly http service
      */
     private JerseyTest jerseyTest;
+
+    public StemmawebLegacyTest() throws IOException {
+    }
+
     // private String rootNodeId;
 
     @Before
     public void setUp() throws Exception {
-        db = new GraphDatabaseServiceProvider(new TestGraphDatabaseFactory().newImpermanentDatabase()).getDatabase();
-        Util.setupTestDB(db, "1");
+
+        Util.setupTestDB(db);
 
         /*
          * Create a JersyTestServer serving the Resource under test
@@ -90,7 +109,7 @@ public class StemmawebLegacyTest {
         String tradId = Util.getValueFromJson(response, "tradId");
 
         try (Transaction tx = db.beginTx()) {
-            Node tradNode = db.findNode(Nodes.TRADITION, "id", tradId);
+            Node tradNode = tx.findNode(Nodes.TRADITION, "id", tradId);
             assertNotNull(tradNode);
             assertEquals(TRADNAME, tradNode.getProperty("name"));
             assertTrue(tradNode.hasRelationship());
@@ -114,7 +133,7 @@ public class StemmawebLegacyTest {
                         .toString());
             }
             assertEquals(1, rel_count);
-            tx.success();
+            tx.close();
         }
         response = jerseyTest.target("/tradition/" + tradId + "/readings")
                 .request()
@@ -1284,7 +1303,12 @@ public class StemmawebLegacyTest {
      */
     @After
     public void tearDown() throws Exception {
-        db.shutdown();
+        DatabaseManagementService service = dbServiceProvider.getManagementService();
+
+        if (service != null) {
+            service.shutdownDatabase(db.databaseName());
+        }
+
         jerseyTest.tearDown();
     }
 }

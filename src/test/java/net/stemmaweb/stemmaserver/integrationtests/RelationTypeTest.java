@@ -1,38 +1,49 @@
 package net.stemmaweb.stemmaserver.integrationtests;
 
-import junit.framework.TestCase;
-import net.stemmaweb.model.*;
-import net.stemmaweb.services.GraphDatabaseServiceProvider;
-import net.stemmaweb.stemmaserver.Util;
-
-import org.glassfish.jersey.test.JerseyTest;
-import org.neo4j.graphdb.GraphDatabaseService;
-import org.neo4j.graphdb.Node;
-import org.neo4j.graphdb.Relationship;
-import org.neo4j.graphdb.Transaction;
-import org.neo4j.test.TestGraphDatabaseFactory;
-
-import javax.ws.rs.client.Entity;
-import javax.ws.rs.core.GenericType;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 
-public class RelationTypeTest extends TestCase {
-    private GraphDatabaseService db;
-    private JerseyTest jerseyTest;
+import javax.ws.rs.client.Entity;
+import javax.ws.rs.core.GenericType;
+import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.Response;
 
+import net.stemmaweb.services.GraphDatabaseServiceProvider;
+import org.glassfish.jersey.test.JerseyTest;
+import org.neo4j.dbms.api.DatabaseManagementService;
+import org.neo4j.dbms.api.DatabaseManagementServiceBuilder;
+import org.neo4j.graphdb.GraphDatabaseService;
+import org.neo4j.graphdb.Node;
+import org.neo4j.graphdb.Relationship;
+import org.neo4j.graphdb.Transaction;
+
+import junit.framework.TestCase;
+import net.stemmaweb.model.GraphModel;
+import net.stemmaweb.model.KeyPropertyModel;
+import net.stemmaweb.model.ReadingChangePropertyModel;
+import net.stemmaweb.model.ReadingModel;
+import net.stemmaweb.model.RelationModel;
+import net.stemmaweb.model.RelationTypeModel;
+import net.stemmaweb.stemmaserver.Util;
+
+public class RelationTypeTest extends TestCase {
+    private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
+    private final GraphDatabaseService db = dbServiceProvider.getDatabase();
+    private JerseyTest jerseyTest;
     private String tradId;
     private HashMap<String,String> readingLookup;
+
+    public RelationTypeTest() throws IOException {
+    }
 
 
     public void setUp() throws Exception {
         super.setUp();
-        db = new GraphDatabaseServiceProvider(new TestGraphDatabaseFactory().newImpermanentDatabase()).getDatabase();
-        Util.setupTestDB(db, "1");
+        Util.setupTestDB(db);
 
         // Create a JerseyTestServer for the necessary REST API calls
         jerseyTest = Util.setupJersey();
@@ -44,14 +55,15 @@ public class RelationTypeTest extends TestCase {
         readingLookup = Util.makeReadingLookup(jerseyTest, tradId);
     }
 
-    public void testNoRelationTypes() {
-        // Initially, no relationship types should be defined.
+    public void testInitialRelationTypes() {
+        // Initially, the only defined relation type should be the "collated" one for the CSV input.
         Response jerseyResult = jerseyTest.target("/tradition/" + tradId + "/relationtypes")
                 .request()
                 .get();
         assertEquals(Response.Status.OK.getStatusCode(), jerseyResult.getStatus());
-        List<RelationTypeModel> allRelTypes = jerseyResult.readEntity(new GenericType<List<RelationTypeModel>>() {});
-        assertEquals(0, allRelTypes.size());
+        List<RelationTypeModel> allRelTypes = jerseyResult.readEntity(new GenericType<>() {});
+        assertEquals(1, allRelTypes.size());
+        assertEquals("collated", allRelTypes.get(0).getName());
     }
 
     public void testCreateRelationAddType() {
@@ -78,25 +90,28 @@ public class RelationTypeTest extends TestCase {
         // Now check that the spelling relation type has been created
         List<RelationTypeModel> allRelTypes = jerseyTest.target("/tradition/" + tradId + "/relationtypes")
                 .request()
-                .get(new GenericType<List<RelationTypeModel>>() {});
-        assertEquals(1, allRelTypes.size());
-        assertEquals("spelling", allRelTypes.get(0).getName());
-        assertEquals(1, allRelTypes.get(0).getBindlevel());
+                .get(new GenericType<>() {});
+        assertEquals(2, allRelTypes.size());
+        RelationTypeModel rtm = jerseyTest.target("/tradition/" + tradId + "/relationtype/spelling")
+                .request().get(RelationTypeModel.class);
+        assertEquals("spelling", rtm.getName());
+        assertEquals(1, rtm.getBindlevel());
+        assertTrue(rtm.getIs_colocation());
     }
 
     private void checkExpectedRelations(HashSet<String> createdRels, HashSet<String> expectedLinks) {
         try (Transaction tx = db.beginTx()) {
             for (String rid : createdRels) {
-                Relationship link = db.getRelationshipById(Long.valueOf(rid));
+                Relationship link = tx.getRelationshipByElementId(rid);
                 String lookfor = String.format("%s -> %s: %s",
-                        link.getStartNode().getId(), link.getEndNode().getId(), link.getProperty("type"));
+                        link.getStartNode().getElementId(), link.getEndNode().getElementId(), link.getProperty("type"));
                 String lookrev = String.format("%s -> %s: %s",
-                        link.getEndNode().getId(), link.getStartNode().getId(), link.getProperty("type"));
+                        link.getEndNode().getElementId(), link.getStartNode().getElementId(), link.getProperty("type"));
                 String message = String.format("looking for %s in %s", lookfor,
                         java.util.Arrays.toString(expectedLinks.toArray()));
                 assertTrue(message,expectedLinks.remove(lookfor) ^ expectedLinks.remove(lookrev));
             }
-            tx.success();
+            tx.close();
         }
         assertTrue(expectedLinks.isEmpty());
     }
@@ -133,11 +148,35 @@ public class RelationTypeTest extends TestCase {
         // Check that our relation type hasn't changed
         List<RelationTypeModel> allRelTypes = jerseyTest.target("/tradition/" + tradId + "/relationtypes")
                 .request()
-                .get(new GenericType<List<RelationTypeModel>>() {});
-        assertEquals(1, allRelTypes.size());
-        assertEquals("spelling", allRelTypes.get(0).getName());
-        assertEquals("A weaker version of the spelling relationship", allRelTypes.get(0).getDescription());
-        assertEquals(10, allRelTypes.get(0).getBindlevel());
+                .get(new GenericType<>() {});
+        assertEquals(2, allRelTypes.size());
+        RelationTypeModel spel = jerseyTest.target("/tradition/" + tradId + "/relationtype/spelling")
+                .request().get(RelationTypeModel.class);
+        assertEquals("spelling", spel.getName());
+        assertEquals("A weaker version of the spelling relationship", spel.getDescription());
+        assertEquals(10, spel.getBindlevel());
+    }
+
+    public void testAddDefaultType() {
+        RelationTypeModel rtm = new RelationTypeModel();
+        rtm.setName("spelling");
+        rtm.setDefaultsettings(true);
+
+        Response jerseyResult = jerseyTest.target("/tradition/" + tradId + "/relationtype/spelling")
+                .request(MediaType.APPLICATION_JSON).put(Entity.json(rtm));
+        assertEquals(Response.Status.CREATED.getStatusCode(), jerseyResult.getStatus());
+        RelationTypeModel created = jerseyResult.readEntity(RelationTypeModel.class);
+        assertEquals("spelling", created.getName());
+        assertNull(created.getDefaultsettings());
+        assertEquals("These are the same reading, spelled differently.", created.getDescription());
+        assertEquals(1, created.getBindlevel());
+        assertTrue(created.getIs_colocation());
+        assertTrue(created.getIs_transitive());
+
+        // Now try setting the same default relation again, which should fail
+        jerseyResult = jerseyTest.target("/tradition/" + tradId + "/relationtype/spelling")
+                .request(MediaType.APPLICATION_JSON).put(Entity.json(rtm));
+        assertEquals(Response.Status.CONFLICT.getStatusCode(), jerseyResult.getStatus());
     }
 
     public void testNonGeneralizable() {
@@ -330,8 +369,15 @@ public class RelationTypeTest extends TestCase {
 
         HashSet<String> testReadings = new HashSet<>();
 
-        // Re-rank the whole thing according to relations or lack thereof
-        // LATER maybe implement the 'collated' relation
+        // Remove all the 'collated' relations and then re-rank from the beginning.
+        for (RelationModel rm : jerseyTest.target("/tradition/" + tradId + "/relations")
+                .request().get(new GenericType<List<RelationModel>>() {})) {
+            if (rm.getType().equals("collated")) {
+                Response rd = jerseyTest.target("/tradition/" + tradId + "/relation/remove")
+                        .request(MediaType.APPLICATION_JSON).post(Entity.json(rm));
+                assertEquals(Response.Status.OK.getStatusCode(), rd.getStatus());
+            }
+        }
         Response jerseyResult = jerseyTest.target("/tradition/" + tradId + "/initRanks")
                 .request()
                 .get();
@@ -355,10 +401,10 @@ public class RelationTypeTest extends TestCase {
 
         try (Transaction tx = db.beginTx()) {
             for (String nid : testReadings) {
-                Node n = db.getNodeById(Long.valueOf(nid));
+                Node n = tx.getNodeByElementId(nid);
                 assertEquals(22L, n.getProperty("rank"));
             }
-            tx.success();
+            tx.close();
         }
 
         newRel.setSource(euricko24);
@@ -387,10 +433,10 @@ public class RelationTypeTest extends TestCase {
 
         try (Transaction tx = db.beginTx()) {
             for (String nid : testReadings) {
-                Node n = db.getNodeById(Long.valueOf(nid));
+                Node n = tx.getNodeByElementId(nid);
                 assertEquals(24L, n.getProperty("rank"));
             }
-            tx.success();
+            tx.close();
         }
 
         // Now add in an "other" relation, which is *not* transitive, to make sure the ranks still update.
@@ -412,10 +458,10 @@ public class RelationTypeTest extends TestCase {
 
         try (Transaction tx = db.beginTx()) {
             for (String nid : testReadings) {
-                Node n = db.getNodeById(Long.valueOf(nid));
+                Node n = tx.getNodeByElementId(nid);
                 assertEquals(25L, n.getProperty("rank"));
             }
-            tx.success();
+            tx.close();
         }
     }
 
@@ -476,7 +522,12 @@ public class RelationTypeTest extends TestCase {
     }
 
     public void tearDown() throws Exception {
-        db.shutdown();
+        DatabaseManagementService service = dbServiceProvider.getManagementService();
+
+        if (service != null) {
+            service.shutdownDatabase(db.databaseName());
+        }
+
         jerseyTest.tearDown();
         super.tearDown();
     }

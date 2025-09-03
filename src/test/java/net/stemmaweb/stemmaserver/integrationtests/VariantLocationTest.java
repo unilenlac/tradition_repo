@@ -1,29 +1,50 @@
 package net.stemmaweb.stemmaserver.integrationtests;
 
-import junit.framework.TestCase;
-import net.stemmaweb.model.*;
-import net.stemmaweb.services.GraphDatabaseServiceProvider;
-import net.stemmaweb.stemmaserver.Util;
-import org.glassfish.jersey.test.JerseyTest;
-import org.neo4j.graphdb.GraphDatabaseService;
-import org.neo4j.test.TestGraphDatabaseFactory;
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import javax.ws.rs.client.Entity;
 import javax.ws.rs.core.GenericType;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
-import java.util.*;
-import java.util.stream.Collectors;
+
+import net.stemmaweb.services.GraphDatabaseServiceProvider;
+import org.glassfish.jersey.test.JerseyTest;
+import org.neo4j.dbms.api.DatabaseManagementService;
+import org.neo4j.dbms.api.DatabaseManagementServiceBuilder;
+import org.neo4j.graphdb.GraphDatabaseService;
+// import org.neo4j.test.TestDatabaseManagementServiceBuilder;
+
+import junit.framework.TestCase;
+import net.stemmaweb.model.GraphModel;
+import net.stemmaweb.model.ReadingBoundaryModel;
+import net.stemmaweb.model.ReadingModel;
+import net.stemmaweb.model.RelationModel;
+import net.stemmaweb.model.SectionModel;
+import net.stemmaweb.model.VariantListModel;
+import net.stemmaweb.model.VariantLocationModel;
+import net.stemmaweb.model.VariantModel;
+import net.stemmaweb.stemmaserver.Util;
 
 public class VariantLocationTest extends TestCase {
 
     private JerseyTest jerseyTest;
-    private GraphDatabaseService db;
+    private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
+    private final GraphDatabaseService db = dbServiceProvider.getDatabase();
+
+    public VariantLocationTest() throws IOException {
+    }
 
     public void setUp() throws Exception {
         super.setUp();
-        db = new GraphDatabaseServiceProvider(new TestGraphDatabaseFactory().newImpermanentDatabase()).getDatabase();
-        Util.setupTestDB(db, "1");
+
+        Util.setupTestDB(db);
 
         // Create a JerseyTestServer for the necessary REST API calls
         jerseyTest = Util.setupJersey();
@@ -222,7 +243,7 @@ public class VariantLocationTest extends TestCase {
     }
 
     public void testMatthew() {
-        Map<String,String> textinfo = setupText("milestone-401-related.xml", "graphml");
+        Map<String,String> textinfo = setupText("milestone-401-related.xml", "graphmlsingle");
         String restPath = String.format("/tradition/%s/section/%s/", textinfo.get("tradId"), textinfo.get("sectId"));
 
         // First normalized, no suppression, no combination
@@ -276,7 +297,7 @@ public class VariantLocationTest extends TestCase {
                 "104: և քրիստոնեայք] \tքրիստոնէիցն: F (a.c.); ",
                 "106: քրիստոնեայք անթիւք] \tքրիստոնեայքն անթիւ: M8232; ",
                 "107: անթիւք] \tանթիւ: Bz644 K W (a.c.); ",
-                "122: գաւառին] \tգաւառի: A; \tգաւառէն: C D E F G H I J M2855 M3380 M6605 W W243 W246 Y Z; ",
+                "122: գաւառին] \tգաւառէն: C D E F G H I J M2855 M3380 M6605 W W243 W246 Y Z; \tգաւառի: A; ",
                 "128: և] \t(om.): Bz644 W246 X; ",
                 "139: զառաւել] \tզառաւելն: E F G M2855 M3380 M8232 V W243 W246 Y; ",
                 "174: անասնոց] \tանասնցն: E F G M2855 M3380 M8232 W243 W246 Y; \tաւանաց և գիւղից: Bz644 K; ",
@@ -371,9 +392,11 @@ public class VariantLocationTest extends TestCase {
     }
 
     public void tearDown() throws Exception {
-        db.shutdown();
-        jerseyTest.tearDown();
-        super.tearDown();
+        DatabaseManagementService service = dbServiceProvider.getManagementService();
+
+        if (service != null) {
+            service.shutdownDatabase(db.databaseName());
+        }
     }
 
 }

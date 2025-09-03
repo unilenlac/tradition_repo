@@ -1,15 +1,31 @@
 package net.stemmaweb.stemmaserver;
 
-import com.alexmerz.graphviz.ParseException;
-import com.alexmerz.graphviz.Parser;
-import com.alexmerz.graphviz.objects.Edge;
-import com.alexmerz.graphviz.objects.Graph;
-import net.stemmaweb.model.ReadingModel;
-import net.stemmaweb.model.SectionModel;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
+import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.function.Consumer;
+
+import javax.ws.rs.client.Entity;
+import javax.ws.rs.core.Form;
+import javax.ws.rs.core.GenericType;
+import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.Response;
+
 import net.stemmaweb.rest.ERelations;
-import net.stemmaweb.rest.Nodes;
-import net.stemmaweb.rest.Root;
-import net.stemmaweb.services.DatabaseService;
 import org.apache.commons.io.IOUtils;
 import org.glassfish.jersey.client.ClientResponse;
 import org.glassfish.jersey.media.multipart.FormDataBodyPart;
@@ -18,22 +34,21 @@ import org.glassfish.jersey.media.multipart.FormDataMultiPart;
 import org.glassfish.jersey.test.JerseyTest;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.neo4j.exceptions.KernelException;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.Transaction;
 
-import javax.ws.rs.client.Entity;
-import javax.ws.rs.core.GenericType;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
-import java.io.*;
-import java.nio.charset.StandardCharsets;
-import java.util.*;
-import java.util.function.Consumer;
+import com.alexmerz.graphviz.ParseException;
+import com.alexmerz.graphviz.Parser;
+import com.alexmerz.graphviz.objects.Edge;
+import com.alexmerz.graphviz.objects.Graph;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import net.stemmaweb.model.ReadingModel;
+import net.stemmaweb.model.SectionModel;
+import net.stemmaweb.rest.Nodes;
+import net.stemmaweb.rest.Root;
+import net.stemmaweb.services.DatabaseService;
 
 /**
  * A collection of testing utility functions that are useful in multiple tests.
@@ -170,7 +185,7 @@ public class Util {
         List<ReadingModel> allReadings = jerseyTest
                 .target("/tradition/" + tradId + "/section/" + sectId + "/readings")
                 .request()
-                .get(new GenericType<List<ReadingModel>>() {});
+                .get(new GenericType<>() {});
         for (ReadingModel r : allReadings) {
             if (r.getText().equals(reading) && r.getRank().equals(rank))
                 return r.getId();
@@ -178,17 +193,22 @@ public class Util {
         return null;
     }
 
-    public static void setupTestDB(GraphDatabaseService db, String userId) {
+    public static void setupTestDB(GraphDatabaseService db) {
         // Populate the test database with the root node and a user with id 1
         DatabaseService.createRootNode(db);
-        try(Transaction tx = db.beginTx()) {
-            Node rootNode = db.findNode(Nodes.ROOT, "name", "Root node");
-            Node node = db.createNode(Nodes.USER);
-            node.setProperty("id", userId);
-            node.setProperty("role", "admin");
 
-            rootNode.createRelationshipTo(node, ERelations.SEQUENCE);
-            tx.success();
+        try (Transaction tx = db.beginTx()) {
+            if(!DatabaseService.userExists("admin@example.org", db)) {
+                Node rootNode = tx.findNode(Nodes.ROOT, "name", "Root node");
+                Node node = tx.createNode(Nodes.USER);
+                node.setProperty("id", "admin@example.org");
+                node.setProperty("role", "admin");
+                node.setProperty("passphrase", "BdSWkrdV+ZxFBLUQQY7+7uv9RmiSVA8nrPmjGjJtZQQ"); // = userpass
+                node.setProperty("email", "admin@example.org");
+
+                rootNode.createRelationshipTo(node, ERelations.SYSTEMUSER);
+                tx.commit();
+            }
         }
     }
 
@@ -202,20 +222,21 @@ public class Util {
     }
 
     public static Response createTraditionDirectly(String tName, String tDir,
-                                                   String userId, String fName, String fType) {
+                                                   String userId, String fName, String fType) throws KernelException {
         Root appRest = new Root();
         InputStream input = null;
-        FormDataContentDisposition fdcd = null;
+        FormDataMultiPart fdcd = new FormDataMultiPart();
         String empty = "true";
         if (fName != null) {
             empty = null;
             input = getFileOrStringContent(fName);
-            fdcd = new FormDataBodyPart("file", input,
-                    MediaType.APPLICATION_OCTET_STREAM_TYPE).getFormDataContentDisposition();
+            FormDataBodyPart body_part = new FormDataBodyPart("file", input,
+                    MediaType.APPLICATION_OCTET_STREAM_TYPE);
+            fdcd.bodyPart(body_part);
         }
-
         return appRest.importGraphMl(tName, userId, "false", "Default",
                 tDir, empty, fType, input, fdcd);
+
     }
 
     public static Response createTraditionFromFileOrString(JerseyTest jerseyTest, String tName, String tDir,
@@ -226,24 +247,25 @@ public class Util {
         if (tDir != null) form.field("direction", tDir);
         if (userId != null) form.field("userId", userId);
         if (fName != null) {
-            // It could be a filename or it could be a content string. Try one and then
+            // It could be a filename it could be a content string. Try one and then
             // the other.
             InputStream input = getFileOrStringContent(fName);
             FormDataBodyPart fdp = new FormDataBodyPart("file", input,
                     MediaType.APPLICATION_OCTET_STREAM_TYPE);
             form.bodyPart(fdp);
         }
-        return  jerseyTest
+        return jerseyTest
                 .target("/tradition")
                 .request()
                 .post(Entity.entity(form, MediaType.MULTIPART_FORM_DATA));
     }
 
     public static Response addSectionToTradition(JerseyTest jerseyTest, String traditionId, String fileName,
-                                                        String fileType, String sectionName) {
+                                                        String fileType, String sectionName, Boolean addSingleSection) {
         FormDataMultiPart form = new FormDataMultiPart();
         form.field("filetype", fileType);
         form.field("name", sectionName);
+        form.field("addSingleSection", String.valueOf(addSingleSection));
         InputStream input = getFileOrStringContent(fileName);
         FormDataBodyPart fdp = new FormDataBodyPart("file", input,
                 MediaType.APPLICATION_OCTET_STREAM_TYPE);
@@ -252,6 +274,32 @@ public class Util {
                 .request()
                 .post(Entity.entity(form, MediaType.MULTIPART_FORM_DATA_TYPE));
     }
+
+    public static List<String> importFlorilegium (JerseyTest jerseyTest) {
+        List<String> florIds = new ArrayList<>();
+        Response jerseyResult = Util.createTraditionFromFileOrString(jerseyTest, "Florilegium", "LR",
+                "admin@example.org", "src/TestFiles/florilegium_w.csv", "csv");
+        assertEquals(Response.Status.CREATED.getStatusCode(), jerseyResult.getStatus());
+        String florId = Util.getValueFromJson(jerseyResult, "tradId");
+        florIds.add(florId);
+        // Get the existing single section ID
+        SectionModel firstSection = jerseyTest.target("/tradition/" + florId + "/sections")
+                .request()
+                .get(new GenericType<List<SectionModel>>() {}).get(0);
+        if (firstSection == null) fail();
+        florIds.add(firstSection.getId());
+
+        // Add the other three sections
+        int i = 0;
+        while (i < 3) {
+            String fileName = String.format("src/TestFiles/florilegium_%c.csv", 120 + i++);
+            jerseyResult = Util.addSectionToTradition(jerseyTest, florId, fileName, "csv", String.format("part %d", i), true);
+            florIds.add(Util.getValueFromJson(jerseyResult, "sectionId"));
+        }
+        return florIds;
+    }
+
+
 
     private static InputStream getFileOrStringContent(String content) {
         InputStream result;
@@ -263,12 +311,51 @@ public class Util {
         return result;
     }
 
+    // Save a GraphML zip file to a temporary location
+    public static String saveGraphMLTempfile(Response r) {
+        try {
+            File ourTemp = File.createTempFile("testGraphML", "");
+            ourTemp.deleteOnExit();
+            FileOutputStream fo = new FileOutputStream(ourTemp);
+            IOUtils.copy(r.readEntity(InputStream.class), fo);
+            fo.close();
+            return ourTemp.getAbsolutePath();
+        } catch (IOException e) {
+            fail();
+            return null;
+        }
+    }
+
+    public static String getConcatenatedGraphML(String zipFilePath) {
+        try {
+            InputStream is = new FileInputStream(zipFilePath);
+            return getConcatentatedGraphML(is);
+        } catch (Exception e) {
+            fail();
+            return null;
+        }
+    }
+    public static String getConcatentatedGraphML(InputStream is) {
+        StringBuilder output = new StringBuilder();
+        try {
+            for (File f : net.stemmaweb.parser.Util.extractGraphMLZip(is).values()) {
+                FileInputStream fi = new FileInputStream(f.getAbsolutePath());
+                String content = new String(fi.readAllBytes(), StandardCharsets.UTF_8);
+                output.append(content);
+                fi.close();
+            }
+        } catch (IOException e) {
+            fail();
+        }
+        return output.toString();
+    }
+
     public static HashMap<String, String> makeReadingLookup (JerseyTest jerseyTest, String tradId) {
         HashMap<String, String> result = new HashMap<>();
         List<ReadingModel> readings = jerseyTest
                 .target("/tradition/" + tradId + "/readings")
                 .request()
-                .get(new GenericType<List<ReadingModel>>() {});
+                .get(new GenericType<>() {});
         for (ReadingModel r : readings) {
             String key = String.format("%s/%d", r.getText(), r.getRank());
             result.put(key, r.getId());
@@ -278,7 +365,7 @@ public class Util {
 
     public static SectionModel getSingleSection(JerseyTest jerseyTest, String tradId) {
         List<SectionModel> sections = jerseyTest.target("/tradition/" + tradId + "/sections")
-                .request().get(new GenericType<List<SectionModel>>() {});
+                .request().get(new GenericType<>() {});
         if (sections.size() != 1)
             throw new RuntimeException("Tradition does not have a single section");
         return sections.get(0);

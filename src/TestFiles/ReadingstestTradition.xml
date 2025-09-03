@@ -40,7 +40,7 @@
     <data key="dg3"/>
     <data key="dg0">Default</data>
     <data key="dg6">3.2</data>
-    <data key="dg1">Tradition</data>
+    <data key="dg1">Reading Test Tradition</data>
     <data key="dg2">0</data>
     <node id="n0">
       <data key="dn15">#END#</data>
@@ -390,7 +390,7 @@
       <data key="de12">B</data>
     </edge>
   </graph>
-  <graph edgedefault="directed" id="relationships" parse.edgeids="canonical" parse.edges="3" parse.nodeids="canonical" parse.nodes="29" parse.order="nodesfirst">
+  <graph edgedefault="directed" id="relationships" parse.edgeids="canonical" parse.edges="5" parse.nodeids="canonical" parse.nodes="29" parse.order="nodesfirst">
     <node id="n0">
       <data key="dn1">__END__</data>
     </node>

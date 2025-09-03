@@ -3,12 +3,15 @@ package net.stemmaweb.model;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import net.stemmaweb.rest.ERelations;
 import net.stemmaweb.rest.Nodes;
+import net.stemmaweb.services.GraphDatabaseServiceProvider;
+
 import org.checkerframework.checker.nullness.qual.NonNull;
 import javax.xml.bind.annotation.XmlRootElement;
 
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.neo4j.graphdb.Direction;
+import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Node;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -128,11 +131,14 @@ public class ReadingModel implements Comparable<ReadingModel> {
      * Generates a model from a Neo4j Node
      * @param node - The node with label READING from which the model should take its values
      */
-    public ReadingModel(Node node) {
-        try (Transaction tx = node.getGraphDatabase().beginTx()) {
+    /*
+    public ReadingModel(Node n, GraphDatabaseService db) {
+        //GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+        try (Transaction tx = db.beginTx()) {
+            Node node = tx.getNodeByElementId(n.getElementId());
             if (node.hasProperty("grammar_invalid"))
                 this.setGrammar_invalid((Boolean) node.getProperty("grammar_invalid"));
-            this.setId(String.valueOf(node.getId()));
+            this.setId(node.getElementId());
             this.setSection(node.getProperty("section_id").toString());
             // If there is an "ncommon" property, use this in preference to "is_common"
             // because it means we are in normalized mode
@@ -189,8 +195,8 @@ public class ReadingModel implements Comparable<ReadingModel> {
             // If we are operating under normalization, we need to look at the NSEQUENCE links rather than
             // the SEQUENCE links, but in this case the SEQUENCE links will be redundant so there is no
             // harm in looking at them anyway.
-            node.getRelationships(ERelations.SEQUENCE, Direction.BOTH).forEach(seq::add);
-            node.getRelationships(ERelations.NSEQUENCE, Direction.BOTH).forEach(seq::add);
+            node.getRelationships(Direction.BOTH, ERelations.SEQUENCE).forEach(seq::add);
+            node.getRelationships(Direction.BOTH, ERelations.NSEQUENCE).forEach(seq::add);
             for (Relationship r : seq) {
                 for (String prop : r.getPropertyKeys()) {
                     String[] sigla = (String[]) r.getProperty(prop);
@@ -204,14 +210,180 @@ public class ReadingModel implements Comparable<ReadingModel> {
             this.witnesses = new ArrayList<>(collectedWits);
             this.witnesses.sort(String::compareTo);
             // Get any represented readings
-            for (Relationship r : node.getRelationships(ERelations.REPRESENTS, Direction.OUTGOING)) {
-                this.addRepresented(new ReadingModel(r.getEndNode()));
+            for (Relationship r : node.getRelationships(Direction.OUTGOING, ERelations.REPRESENTS)) {
+                this.addRepresented(new ReadingModel(r.getEndNode(), tx));
             }
-            tx.success();
+            tx.commit();
+        }
+    }
+    */
+    public ReadingModel(Node node, Transaction tx) {
+
+        if (node.hasProperty("grammar_invalid"))
+            this.setGrammar_invalid((Boolean) node.getProperty("grammar_invalid"));
+        this.setId(node.getElementId());
+        if (node.hasProperty("section_id")){
+            this.setSection(node.getProperty("section_id").toString());
+        }
+        // If there is an "ncommon" property, use this in preference to "is_common"
+        // because it means we are in normalized mode
+        this.setIs_common(node.getProperty("ncommon", node.getProperty("is_common", false)).equals(true));
+        if (node.hasProperty("is_end"))
+            this.setIs_end((Boolean) node.getProperty("is_end"));
+        if (node.hasProperty("is_lacuna"))
+            this.setIs_lacuna((Boolean) node.getProperty("is_lacuna"));
+        if (node.hasProperty("is_lemma"))
+            this.setIs_lemma((Boolean) node.getProperty("is_lemma"));
+        if (node.hasProperty("is_nonsense"))
+            this.setIs_nonsense((Boolean) node.getProperty("is_nonsense"));
+        if (node.hasProperty("is_ph"))
+            this.setIs_ph((Boolean) node.getProperty("is_ph"));
+        if (node.hasProperty("is_start"))
+            this.setIs_start((Boolean) node.getProperty("is_start"));
+        if (node.hasProperty("join_next"))
+            this.setJoin_next((Boolean) node.getProperty("join_next"));
+        if (node.hasProperty("join_prior"))
+            this.setJoin_prior((Boolean) node.getProperty("join_prior"));
+        if (node.hasProperty("language"))
+            this.setLanguage(node.getProperty("language").toString());
+        if (node.hasProperty("lexemes"))
+            this.setLexemes(node.getProperty("lexemes").toString());
+        if (node.hasProperty("normal_form"))
+            this.setNormal_form(node.getProperty("normal_form").toString());
+        if (node.hasProperty("rank"))
+            this.setRank(Long.parseLong(node.getProperty("rank").toString()));
+        if (node.hasProperty("text"))
+            this.setText(node.getProperty("text").toString());
+        if (node.hasProperty("display"))
+            this.setDisplay(node.getProperty("display").toString());
+        if (node.hasProperty("annotation"))
+            this.setAnnotation(node.getProperty("annotation").toString());
+        if (node.hasProperty("extra")) {
+            String jsonData = node.getProperty("extra").toString();
+            try {
+                // Try to parse it, before we actually attempt to use it
+                new JSONObject(jsonData);
+                this.setExtra(jsonData);
+            } catch (JSONException e) {
+                // Emit a warning, but carry on
+                System.err.println("Invalid JSON string in reading extra parameter: " + jsonData);
+            }
+        }
+        if (node.hasLabel(Nodes.EMENDATION)) {
+            this.setIs_emendation(true);
+            // We don't check whether this property exists, because it darn well should
+            this.setAuthority(node.getProperty("authority").toString());
+        }
+        // Get the witnesses
+        HashSet<String> collectedWits = new HashSet<>();
+        List<Relationship> seq = new ArrayList<>();
+        // If we are operating under normalization, we need to look at the NSEQUENCE links rather than
+        // the SEQUENCE links, but in this case the SEQUENCE links will be redundant so there is no
+        // harm in looking at them anyway.
+        node.getRelationships(Direction.BOTH, ERelations.SEQUENCE).forEach(seq::add);
+        node.getRelationships(Direction.BOTH, ERelations.NSEQUENCE).forEach(seq::add);
+        for (Relationship r : seq) {
+            for (String prop : r.getPropertyKeys()) {
+                String[] sigla = (String[]) r.getProperty(prop);
+                if (prop.equals("witnesses")) {
+                    collectedWits.addAll(Arrays.asList(sigla));
+                } else {
+                    Arrays.stream(sigla).forEach(x -> collectedWits.add(String.format("%s (%s)", x, prop)));
+                }
+            }
+        }
+        this.witnesses = new ArrayList<>(collectedWits);
+        this.witnesses.sort(String::compareTo);
+        // Get any represented readings
+        for (Relationship r : node.getRelationships(Direction.OUTGOING, ERelations.REPRESENTS)) {
+            this.addRepresented(new ReadingModel(r.getEndNode(), tx));
+        }
+    }
+
+    public ReadingModel(Node node) {
+        if (node.hasProperty("grammar_invalid"))
+            this.setGrammar_invalid((Boolean) node.getProperty("grammar_invalid"));
+        this.setId(node.getElementId());
+        if (node.hasProperty("is_end")){
+            this.setSection(node.getProperty("section_id").toString());
+        }
+        // If there is an "ncommon" property, use this in preference to "is_common"
+        // because it means we are in normalized mode
+        this.setIs_common(node.getProperty("ncommon", node.getProperty("is_common", false)).equals(true));
+        if (node.hasProperty("is_end"))
+            this.setIs_end((Boolean) node.getProperty("is_end"));
+        if (node.hasProperty("is_lacuna"))
+            this.setIs_lacuna((Boolean) node.getProperty("is_lacuna"));
+        if (node.hasProperty("is_lemma"))
+            this.setIs_lemma((Boolean) node.getProperty("is_lemma"));
+        if (node.hasProperty("is_nonsense"))
+            this.setIs_nonsense((Boolean) node.getProperty("is_nonsense"));
+        if (node.hasProperty("is_ph"))
+            this.setIs_ph((Boolean) node.getProperty("is_ph"));
+        if (node.hasProperty("is_start"))
+            this.setIs_start((Boolean) node.getProperty("is_start"));
+        if (node.hasProperty("join_next"))
+            this.setJoin_next((Boolean) node.getProperty("join_next"));
+        if (node.hasProperty("join_prior"))
+            this.setJoin_prior((Boolean) node.getProperty("join_prior"));
+        if (node.hasProperty("language"))
+            this.setLanguage(node.getProperty("language").toString());
+        if (node.hasProperty("lexemes"))
+            this.setLexemes(node.getProperty("lexemes").toString());
+        if (node.hasProperty("normal_form"))
+            this.setNormal_form(node.getProperty("normal_form").toString());
+        if (node.hasProperty("rank"))
+            this.setRank(Long.parseLong(node.getProperty("rank").toString()));
+        if (node.hasProperty("text"))
+            this.setText(node.getProperty("text").toString());
+        if (node.hasProperty("display"))
+            this.setDisplay(node.getProperty("display").toString());
+        if (node.hasProperty("annotation"))
+            this.setAnnotation(node.getProperty("annotation").toString());
+        if (node.hasProperty("extra")) {
+            String jsonData = node.getProperty("extra").toString();
+            try {
+                // Try to parse it, before we actually attempt to use it
+                new JSONObject(jsonData);
+                this.setExtra(jsonData);
+            } catch (JSONException e) {
+                // Emit a warning, but carry on
+                System.err.println("Invalid JSON string in reading extra parameter: " + jsonData);
+            }
+        }
+        if (node.hasLabel(Nodes.EMENDATION)) {
+            this.setIs_emendation(true);
+            // We don't check whether this property exists, because it darn well should
+            this.setAuthority(node.getProperty("authority").toString());
+        }
+        // Get the witnesses
+        HashSet<String> collectedWits = new HashSet<>();
+        List<Relationship> seq = new ArrayList<>();
+        // If we are operating under normalization, we need to look at the NSEQUENCE links rather than
+        // the SEQUENCE links, but in this case the SEQUENCE links will be redundant so there is no
+        // harm in looking at them anyway.
+        node.getRelationships(Direction.BOTH, ERelations.SEQUENCE).forEach(seq::add);
+        node.getRelationships(Direction.BOTH, ERelations.NSEQUENCE).forEach(seq::add);
+        for (Relationship r : seq) {
+            for (String prop : r.getPropertyKeys()) {
+                String[] sigla = (String[]) r.getProperty(prop);
+                if (prop.equals("witnesses")) {
+                    collectedWits.addAll(Arrays.asList(sigla));
+                } else {
+                    Arrays.stream(sigla).forEach(x -> collectedWits.add(String.format("%s (%s)", x, prop)));
+                }
+            }
+        }
+        this.witnesses = new ArrayList<>(collectedWits);
+        this.witnesses.sort(String::compareTo);
+        // Get any represented readings
+        for (Relationship r : node.getRelationships(Direction.OUTGOING, ERelations.REPRESENTS)) {
+            this.addRepresented(new ReadingModel(r.getEndNode()));
         }
     }
 
     public ReadingModel() {
+
     }
 
     public Boolean getGrammar_invalid() {
@@ -401,6 +573,9 @@ public class ReadingModel implements Comparable<ReadingModel> {
 
     @JsonIgnore
     public String normalized() { return normal_form == null ? text : normal_form; }
+
+    @JsonIgnore
+    public Boolean isMeta() { return is_start || is_end || is_lacuna || is_ph; }
 
     public String getExtra() {
         return extra;

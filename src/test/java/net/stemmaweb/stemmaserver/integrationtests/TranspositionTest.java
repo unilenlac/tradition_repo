@@ -2,29 +2,32 @@ package net.stemmaweb.stemmaserver.integrationtests;
 
 
 
-import net.stemmaweb.model.GraphModel;
-import net.stemmaweb.model.RelationModel;
-import net.stemmaweb.rest.Root;
-import net.stemmaweb.services.GraphDatabaseServiceProvider;
-import net.stemmaweb.stemmaserver.JerseyTestServerFactory;
-import net.stemmaweb.stemmaserver.Util;
+import static org.junit.Assert.assertEquals;
 
-import org.glassfish.jersey.client.ClientProperties;
-import org.glassfish.jersey.test.JerseyTest;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-import org.neo4j.graphdb.GraphDatabaseService;
-import org.neo4j.graphdb.Relationship;
-import org.neo4j.graphdb.Transaction;
-import org.neo4j.test.TestGraphDatabaseFactory;
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.HashMap;
 
 import javax.ws.rs.client.Entity;
 import javax.ws.rs.core.GenericType;
 import javax.ws.rs.core.Response;
-import java.util.HashMap;
 
-import static org.junit.Assert.*;
+import net.stemmaweb.services.GraphDatabaseServiceProvider;
+import org.glassfish.jersey.test.JerseyTest;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
+import org.neo4j.dbms.api.DatabaseManagementService;
+import org.neo4j.dbms.api.DatabaseManagementServiceBuilder;
+import org.neo4j.graphdb.GraphDatabaseService;
+import org.neo4j.graphdb.Relationship;
+import org.neo4j.graphdb.Transaction;
+
+import net.stemmaweb.model.GraphModel;
+import net.stemmaweb.model.RelationModel;
+import net.stemmaweb.rest.Root;
+import net.stemmaweb.stemmaserver.JerseyTestServerFactory;
+import net.stemmaweb.stemmaserver.Util;
 
 /**
  * 
@@ -35,12 +38,12 @@ import static org.junit.Assert.*;
  */
 public class TranspositionTest {
     private String tradId;
-    private Long rootId;
-    private Long roodId;
-    private Long theId;
-    private Long tehId;
-
-    private GraphDatabaseService db;
+    private String rootId;
+    private String roodId;
+    private String theId;
+    private String tehId;
+    private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
+    private final GraphDatabaseService db = dbServiceProvider.getDatabase();
 
     /*
      * JerseyTest is the test environment to Test api calls it provides a
@@ -48,11 +51,14 @@ public class TranspositionTest {
      */
     private JerseyTest jerseyTest;
 
+    public TranspositionTest() throws IOException {
+    }
+
 
     @Before
     public void setUp() throws Exception {
-        db = new GraphDatabaseServiceProvider(new TestGraphDatabaseFactory().newImpermanentDatabase()).getDatabase();
-        Util.setupTestDB(db, "1");
+
+        Util.setupTestDB(db);
 
         // Create a JerseyTestServer for the necessary REST API calls
         jerseyTest = JerseyTestServerFactory.newJerseyTestServer()
@@ -71,10 +77,10 @@ public class TranspositionTest {
          * gets the generated ids that we need for our tests
          */
         HashMap<String, String> readingLookup = Util.makeReadingLookup(jerseyTest, tradId);
-        rootId = Long.valueOf(readingLookup.get("root/18"));
-        roodId = Long.valueOf(readingLookup.get("rood/17"));
-        tehId = Long.valueOf(readingLookup.get("teh/16"));
-        theId = Long.valueOf(readingLookup.get("the/17"));
+        rootId = readingLookup.get("root/18");
+        roodId = readingLookup.get("rood/17");
+        tehId = readingLookup.get("teh/16");
+        theId = readingLookup.get("the/17");
     }
 
     /**
@@ -86,8 +92,8 @@ public class TranspositionTest {
         // First make sure that the pivot relationship does not exist
         /*
          * RelationModel shouldnotexist = new RelationModel();
-         * shouldnotexist.setSource(tehId.toString());
-         * shouldnotexist.setTarget(rootId.toString());
+         * shouldnotexist.setSource(tehId);
+         * shouldnotexist.setTarget(rootId);
          * shouldnotexist.setScope("local");
          * 
          * jerseyTest.client().property(ClientProperties.
@@ -102,8 +108,8 @@ public class TranspositionTest {
 
         // Now set up the relationship to be created
         RelationModel relationship = new RelationModel();
-        relationship.setSource(tehId.toString());
-        relationship.setTarget(rootId.toString());
+        relationship.setSource(tehId);
+        relationship.setTarget(rootId);
         relationship.setType("transposition");
         relationship.setAlters_meaning(0L);
         relationship.setIs_significant("yes");
@@ -126,8 +132,8 @@ public class TranspositionTest {
         RelationModel relationship = new RelationModel();
         String relationshipId;
 
-        relationship.setSource(theId.toString());
-        relationship.setTarget(roodId.toString());
+        relationship.setSource(theId);
+        relationship.setTarget(roodId);
         relationship.setType("uncertain");
         relationship.setAlters_meaning(0L);
         relationship.setIs_significant("yes");
@@ -142,22 +148,22 @@ public class TranspositionTest {
         try (Transaction tx = db.beginTx()) {
             GraphModel readingsAndRelationships = actualResponse.readEntity(new GenericType<GraphModel>(){});
             relationshipId = ((RelationModel) readingsAndRelationships.getRelations().toArray()[0]).getId();
-            Relationship loadedRelationship = db.getRelationshipById(Long.parseLong(relationshipId));
+            Relationship loadedRelationship = tx.getRelationshipByElementId(relationshipId);
 
-            assertEquals(theId, (Long) loadedRelationship.getStartNode().getId());
-            assertEquals(roodId, (Long) loadedRelationship.getEndNode().getId());
+            assertEquals(theId, loadedRelationship.getStartNode().getElementId());
+            assertEquals(roodId, loadedRelationship.getEndNode().getElementId());
             assertEquals("uncertain", loadedRelationship.getProperty("type"));
             assertEquals(0L, loadedRelationship.getProperty("alters_meaning"));
             assertEquals("yes", loadedRelationship.getProperty("is_significant"));
             assertEquals("the", loadedRelationship.getProperty("reading_a"));
             assertEquals("rood", loadedRelationship.getProperty("reading_b"));
-            tx.success();
+            tx.close();
         }
 
         // Now create the transposition, which should work this time
         relationship = new RelationModel();
-        relationship.setSource(tehId.toString());
-        relationship.setTarget(rootId.toString());
+        relationship.setSource(tehId);
+        relationship.setTarget(rootId);
         relationship.setType("transposition");
         relationship.setAlters_meaning(0L);
         relationship.setIs_significant("yes");
@@ -172,16 +178,16 @@ public class TranspositionTest {
         try (Transaction tx = db.beginTx()) {
             GraphModel readingsAndRelationships = actualResponse.readEntity(new GenericType<GraphModel>(){});
             relationshipId = ((RelationModel) readingsAndRelationships.getRelations().toArray()[0]).getId();
-            Relationship loadedRelationship = db.getRelationshipById(Long.parseLong(relationshipId));
+            Relationship loadedRelationship = tx.getRelationshipByElementId(relationshipId);
 
-            assertEquals(tehId, (Long) loadedRelationship.getStartNode().getId());
-            assertEquals(rootId, (Long) loadedRelationship.getEndNode().getId());
+            assertEquals(tehId, loadedRelationship.getStartNode().getElementId());
+            assertEquals(rootId, loadedRelationship.getEndNode().getElementId());
             assertEquals("transposition", loadedRelationship.getProperty("type"));
             assertEquals(0L, loadedRelationship.getProperty("alters_meaning"));
             assertEquals("yes", loadedRelationship.getProperty("is_significant"));
             assertEquals("teh", loadedRelationship.getProperty("reading_a"));
             assertEquals("root", loadedRelationship.getProperty("reading_b"));
-            tx.success();
+            tx.close();
         }
     }
 
@@ -191,7 +197,12 @@ public class TranspositionTest {
      */
     @After
     public void tearDown() throws Exception {
-        db.shutdown();
+        DatabaseManagementService service = dbServiceProvider.getManagementService();
+
+        if (service != null) {
+            service.shutdownDatabase(db.databaseName());
+        }
+
         jerseyTest.tearDown();
     }
 }

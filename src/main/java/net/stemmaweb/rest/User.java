@@ -6,10 +6,12 @@ import javax.ws.rs.*;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
+import javax.xml.crypto.Data;
 
 import com.qmino.miredot.annotations.ReturnType;
 import net.stemmaweb.model.TraditionModel;
 import net.stemmaweb.model.UserModel;
+import net.stemmaweb.services.Database;
 import net.stemmaweb.services.DatabaseService;
 import net.stemmaweb.services.GraphDatabaseServiceProvider;
 
@@ -18,7 +20,7 @@ import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.Relationship;
 import org.neo4j.graphdb.Transaction;
 
-import static net.stemmaweb.rest.Util.jsonerror;
+import static net.stemmaweb.Util.jsonerror;
 
 /**
  * Comprises all the API calls related to a user.
@@ -27,22 +29,22 @@ import static net.stemmaweb.rest.Util.jsonerror;
  */
 
 public class User {
-    private GraphDatabaseService db;
+    private final GraphDatabaseService db;
     /**
      * The ID of a stemmarest user; this is usually either an email address or a Google ID token.
      */
-    private String userId;
+    private final String userId;
 
     public User (String requestedId) {
-        GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
-        db = dbServiceProvider.getDatabase();
+        // GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
+        db = Database.getInstance().session;
         userId = requestedId;
     }
 
     /**
      * Gets the information for the given user ID.
      *
-     * @summary Get user
+     * @title Get user
      *
      * @return A JSON UserModel or a JSON error message
      * @statuscode 200 on success
@@ -50,17 +52,17 @@ public class User {
      */
     @GET
     @Produces(MediaType.APPLICATION_JSON + "; charset=utf-8")
-    @ReturnType("net.stemmaweb.model.UserModel")
+    @ReturnType(clazz = UserModel.class)
     public Response getUserById() {
         UserModel userModel;
         try (Transaction tx = db.beginTx()) {
-            Node foundUser = db.findNode(Nodes.USER, "id", userId);
+            Node foundUser = tx.findNode(Nodes.USER, "id", userId);
             if (foundUser != null) {
-                userModel = new UserModel(foundUser);
+                userModel = new UserModel(foundUser, tx);
             } else {
                 return Response.noContent().build();
             }
-            tx.success();
+            tx.close();
         } catch (Exception e) {
             return Response.serverError().entity(jsonerror(e.getMessage())).build();
         }
@@ -70,7 +72,7 @@ public class User {
     /**
      * Creates or updates a user according to the specification given.
      *
-     * @summary Create / update user
+     * @title Create / update user
      *
      * @param userModel - a user specification
      * @return A JSON UserModel or a JSON error message
@@ -86,8 +88,7 @@ public class User {
         // Find any existing user
         Node extantUser;
         try (Transaction tx = db.beginTx()) {
-            extantUser = db.findNode(Nodes.USER, "id", userId);
-            tx.success();
+            extantUser = tx.findNode(Nodes.USER, "id", userId);
         }
 
         Status returnedStatus;
@@ -102,7 +103,7 @@ public class User {
                     extantUser.setProperty("email", userModel.getEmail());
                 if (extantUser.getProperty("active") != userModel.getActive())
                     extantUser.setProperty("active", userModel.getActive());
-                tx.success();
+                tx.commit();
             } catch (Exception e) {
                 return Response.serverError().entity(jsonerror(e.getMessage())).build();
             }
@@ -110,9 +111,9 @@ public class User {
         } else {
             // Create it if it doesn't exist
             try (Transaction tx = db.beginTx()) {
-                Node rootNode = db.findNode(Nodes.ROOT, "name", "Root node");
+                Node rootNode = tx.findNode(Nodes.ROOT, "name", "Root node");
 
-                extantUser = db.createNode(Nodes.USER);
+                extantUser = tx.createNode(Nodes.USER);
                 extantUser.setProperty("id", userId);
                 extantUser.setProperty("passphrase", userModel.getPassphrase());
                 extantUser.setProperty("role", userModel.getRole());
@@ -121,14 +122,18 @@ public class User {
 
                 rootNode.createRelationshipTo(extantUser, ERelations.SYSTEMUSER);
 
-                tx.success();
+                tx.commit();
             } catch (Exception e) {
                 return Response.serverError().entity(jsonerror(e.getMessage())).build();
             }
             returnedStatus = Response.Status.CREATED;
         }
-        UserModel returnedModel = new UserModel(extantUser);
-        return Response.status(returnedStatus).entity(returnedModel).build();
+        try (Transaction tx = db.beginTx()) {
+            extantUser = tx.findNode(Nodes.USER, "id", userId);
+            UserModel returnedModel = new UserModel(extantUser, tx);
+            tx.close();
+            return Response.status(returnedStatus).entity(returnedModel).build();
+        }
     }
 
 
@@ -136,7 +141,7 @@ public class User {
     /**
      * Removes a user. This may only be used when the user's traditions have already been deleted.
      *
-     * @summary Delete user
+     * @title Delete user
      *
      * @statuscode 200 on success
      * @statuscode 404 if the requested user doesn't exist
@@ -144,15 +149,18 @@ public class User {
      * @statuscode 500 on failure, with an error report in JSON format
      */
     @DELETE
-    @ReturnType("java.lang.Void")
+    @Produces(MediaType.APPLICATION_JSON + "; charset=utf-8")
+    @ReturnType(clazz = UserModel.class)
     public Response deleteUser() {
         Node foundUser;
+        UserModel removed;
         try (Transaction tx = db.beginTx()) {
-            foundUser = db.findNode(Nodes.USER, "id", userId);
+            foundUser = tx.findNode(Nodes.USER, "id", userId);
 
             if (foundUser != null) {
+                removed = new UserModel(foundUser, tx);
                 // See if the user owns any traditions
-                ArrayList<Node> userTraditions = DatabaseService.getRelated(foundUser, ERelations.OWNS_TRADITION);
+                ArrayList<Node> userTraditions = DatabaseService.getRelated(foundUser, ERelations.OWNS_TRADITION, tx);
                 if (userTraditions.size() > 0)
                     return Response.status(Status.PRECONDITION_FAILED)
                             .entity("User's traditions must be deleted first")
@@ -161,20 +169,20 @@ public class User {
                 // Otherwise, do the deed.
                 foundUser.getRelationships().forEach(Relationship::delete);
                 foundUser.delete();
-                tx.success();
+                tx.commit();
             } else {
                 return Response.status(Status.NOT_FOUND)
                         .entity("A user with this ID was not found")
                         .build();
             }
         }
-        return Response.status(Response.Status.OK).build();
+        return Response.ok(removed).build();
     }
 
     /**
      * Get a list of the traditions belong to the user.
      *
-     * @summary List user traditions
+     * @title List user traditions
      *
      * @return A JSON list of tradition metadata objects
      */
@@ -188,10 +196,10 @@ public class User {
         }
 
         ArrayList<TraditionModel> traditions = new ArrayList<>();
-        try {
+        try (Transaction tx = db.beginTx()) {
             Node thisUser = getUserNode();
-            DatabaseService.getRelated(thisUser, ERelations.OWNS_TRADITION)
-                    .forEach(x -> traditions.add(new TraditionModel(x)));
+            DatabaseService.getRelated(thisUser, ERelations.OWNS_TRADITION, tx)
+                    .forEach(x -> traditions.add(new TraditionModel(x, tx)));
         } catch (Exception e) {
             return Response.serverError().entity(jsonerror(e.getMessage())).build();
         }
@@ -201,8 +209,8 @@ public class User {
     private Node getUserNode() {
         Node foundUser;
         try (Transaction tx = db.beginTx()) {
-            foundUser = db.findNode(Nodes.USER, "id", userId);
-            tx.success();
+            foundUser = tx.findNode(Nodes.USER, "id", userId);
+            //tx.close();
         }
         return foundUser;
     }

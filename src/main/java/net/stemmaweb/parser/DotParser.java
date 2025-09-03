@@ -20,6 +20,8 @@ import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.traversal.Evaluators;
 import org.neo4j.graphdb.traversal.Uniqueness;
 
+import static net.stemmaweb.Util.jsonresp;
+
 /**
  * This class provides methods for exporting Dot File from Neo4J
  * @author PSE FS 2015 Team2
@@ -39,7 +41,7 @@ public class DotParser {
      * @param stemmaSpec - A StemmaModel containing the specification for the stemma
      * @return a Response whose entity is a JSON response, either {'name':stemmaName} or {'error':errorMessage}
      */
-    public Response importStemmaFromDot(String tradId, StemmaModel stemmaSpec) {
+    public Response importStemmaFromDot(String tradId, StemmaModel stemmaSpec, Transaction tx) {
         Status result = null;
         Graph stemma = null;
         try {
@@ -62,25 +64,25 @@ public class DotParser {
 
         // Save the graph into Neo4J.
         if (result == null)
-            result = saveToNeo(stemma, tradId, stemmaSpec.getIdentifier());
+            result = saveToNeo(stemma, tradId, stemmaSpec.getIdentifier(), tx);
 
         // Return our answer.
         String returnKey = result == Status.CREATED ? "name" : "error";
         return Response.status(result)
-                .entity(Util.jsonresp(returnKey, messageValue))
+                .entity(jsonresp(returnKey, messageValue))
                 .build();
     }
 
-    private Status saveToNeo(Graph stemma, String tradId, String stemmaName) {
+    private Status saveToNeo(Graph stemma, String tradId, String stemmaName, Transaction tx) {
         // Check for the existence of the tradition
-        Node traditionNode = VariantGraphService.getTraditionNode(tradId, db);
-        if (traditionNode == null)
-            return Status.NOT_FOUND;
 
-        try (Transaction tx = db.beginTx()) {
+        try {
+            Node traditionNode = VariantGraphService.getTraditionNode(tradId, tx);
+            if (traditionNode == null)
+                return Status.NOT_FOUND;
             // First check that no stemma with this name already exists for this tradition,
             // unless we intend to replace it.
-            for (Node priorStemma : DatabaseService.getRelated(traditionNode, ERelations.HAS_STEMMA)) {
+            for (Node priorStemma : DatabaseService.getRelated(traditionNode, ERelations.HAS_STEMMA, tx)) {
                 if (priorStemma.getProperty("name").equals(stemmaName)) {
                     messageValue = "A stemma by this name already exists for this tradition.";
                     return Status.CONFLICT;
@@ -88,11 +90,11 @@ public class DotParser {
             }
             // Get a list of the existing (extant) tradition witnesses
             HashMap<String, Node> traditionWitnesses = new HashMap<>();
-            DatabaseService.getRelated(traditionNode, ERelations.HAS_WITNESS)
+            DatabaseService.getRelated(traditionNode, ERelations.HAS_WITNESS, tx)
                     .forEach(x -> traditionWitnesses.put(x.getProperty("sigil").toString(), x));
 
             // Create the new stemma node
-            Node stemmaNode = db.createNode(Nodes.STEMMA);
+            Node stemmaNode = tx.createNode(Nodes.STEMMA);
             stemmaNode.setProperty("name", stemmaName);
             Boolean isDirected = stemma.getType() == 2;
             stemmaNode.setProperty("directed", isDirected);
@@ -118,7 +120,7 @@ public class DotParser {
                         return Status.CONFLICT;
                     }
                 } else {
-                    existingWitness = Util.createWitness(traditionNode, sigil, hypothetical);
+                    existingWitness = Util.createWitness(traditionNode, sigil, hypothetical, tx);
                     // Does it have a label separate from its ID?
                     String displayLabel = witness.getAttribute("label");
                     if (displayLabel != null) {
@@ -144,20 +146,21 @@ public class DotParser {
             // Traverse the stemma looking for a cycle.
             boolean contaminated = false;
             for (Node witness : witnessesVisited.keySet()) {
-                ResourceIterator<Node> pathNodes = db.traversalDescription()
+                Iterator<Node> pathNodes = tx.traversalDescription()
                         .depthFirst()
                         .expand(Util.getExpander(Direction.BOTH, stemmaName))
                         .uniqueness(Uniqueness.RELATIONSHIP_PATH)
                         .evaluator(Evaluators.all())
                         .traverse(witness).nodes().iterator();
                 @SuppressWarnings("UnusedAssignment")
-                Node chainpoint = pathNodes.next();
+                Node chainpoint;
                 while(pathNodes.hasNext()) {
                     chainpoint = pathNodes.next();
                     if (chainpoint.equals(witness)) {
-                        contaminated = true;
+                        // contaminated = true;
                         break;
                     }
+                    contaminated = true;
                 }
             }
 
@@ -174,7 +177,7 @@ public class DotParser {
                     // If this witness has already been visited in another traversal, skip it.
                     if (witnessesVisited.get(witness))
                         continue;
-                    ResourceIterable<Node> pathNodes = db.traversalDescription().depthFirst()
+                    Iterable<Node> pathNodes = tx.traversalDescription().depthFirst()
                             .expand(Util.getExpander(Direction.INCOMING, stemmaName))
                             .traverse(witness).nodes();
                     Node pathEnd = null;
@@ -203,7 +206,7 @@ public class DotParser {
             // Save the stemma to the tradition.
             traditionNode.createRelationshipTo(stemmaNode, ERelations.HAS_STEMMA);
 
-            tx.success();
+            // tx.commit();
         } catch (Exception e) {
             e.printStackTrace();
             messageValue = e.toString();

@@ -1,5 +1,12 @@
 package net.stemmaweb.stemmaserver.integrationtests;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -9,21 +16,13 @@ import javax.ws.rs.core.GenericType;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 
-import net.stemmaweb.model.*;
-import net.stemmaweb.rest.ERelations;
-import net.stemmaweb.rest.Nodes;
-import net.stemmaweb.rest.Root;
 import net.stemmaweb.services.GraphDatabaseServiceProvider;
-import net.stemmaweb.services.VariantGraphService;
-import net.stemmaweb.exporter.StemmawebExporter;
-
-import net.stemmaweb.stemmaserver.JerseyTestServerFactory;
-import net.stemmaweb.stemmaserver.Util;
-
 import org.glassfish.jersey.test.JerseyTest;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.neo4j.dbms.api.DatabaseManagementService;
+import org.neo4j.dbms.api.DatabaseManagementServiceBuilder;
 import org.neo4j.graphdb.Direction;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Node;
@@ -32,9 +31,19 @@ import org.neo4j.graphdb.Result;
 import org.neo4j.graphdb.Transaction;
 import org.neo4j.graphdb.traversal.Evaluators;
 import org.neo4j.graphdb.traversal.Uniqueness;
-import org.neo4j.test.TestGraphDatabaseFactory;
 
-import static org.junit.Assert.*;
+import net.stemmaweb.exporter.StemmawebExporter;
+import net.stemmaweb.model.ReadingBoundaryModel;
+import net.stemmaweb.model.ReadingModel;
+import net.stemmaweb.model.RelationModel;
+import net.stemmaweb.model.StemmaModel;
+import net.stemmaweb.model.WitnessModel;
+import net.stemmaweb.rest.ERelations;
+import net.stemmaweb.rest.Nodes;
+import net.stemmaweb.rest.Root;
+import net.stemmaweb.services.VariantGraphService;
+import net.stemmaweb.stemmaserver.JerseyTestServerFactory;
+import net.stemmaweb.stemmaserver.Util;
 
 /**
  *
@@ -43,16 +52,18 @@ import static org.junit.Assert.*;
  */
 public class StemmawebInputOutputTest {
 
-    private GraphDatabaseService db;
+    private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
+    private final GraphDatabaseService db = dbServiceProvider.getDatabase();
     private StemmawebExporter exportStemmawebResource;
-
     private JerseyTest jerseyTest;
+
+    public StemmawebInputOutputTest() throws IOException {
+    }
 
     @Before
     public void setUp() throws Exception {
 
-        db = new GraphDatabaseServiceProvider(new TestGraphDatabaseFactory().newImpermanentDatabase()).getDatabase();
-        Util.setupTestDB(db, "1");
+        Util.setupTestDB(db);
 
         exportStemmawebResource = new StemmawebExporter();
 
@@ -106,9 +117,9 @@ public class StemmawebInputOutputTest {
     private boolean traditionNodeExists(){
         boolean answer;
         try(Transaction tx = db.beginTx()) {
-            ResourceIterator<Node> tradNodesIt = db.findNodes(Nodes.TRADITION, "name", "Tradition");
+            ResourceIterator<Node> tradNodesIt = tx.findNodes(Nodes.TRADITION, "name", "Tradition");
             answer = tradNodesIt.hasNext();
-            tx.success();
+            tx.close();
         }
         return answer;
     }
@@ -155,11 +166,11 @@ public class StemmawebInputOutputTest {
         // Check that we have witness α
         Node alpha;
         try (Transaction tx = db.beginTx()) {
-            alpha = db.findNode(Nodes.WITNESS, "sigil", "α");
+            alpha = tx.findNode(Nodes.WITNESS, "sigil", "α");
             assertNotNull(alpha);
             // Check that witness α is marked as needing quotes
             assertTrue((Boolean) alpha.getProperty("quotesigil"));
-            tx.success();
+            tx.close();
         }
     }
 
@@ -188,15 +199,15 @@ public class StemmawebInputOutputTest {
 
         // Check for the correct number of sequence paths. Do this with a traversal.
         AtomicInteger sequenceCount = new AtomicInteger(0);
-        Node startNode = VariantGraphService.getStartNode(traditionId, db);
-        assertNotNull(startNode);
         try (Transaction tx = db.beginTx()) {
-            db.traversalDescription().depthFirst()
+        	Node startNode = VariantGraphService.getStartNode(traditionId, tx);
+        	assertNotNull(startNode);
+            tx.traversalDescription().depthFirst()
                     .relationships(ERelations.SEQUENCE, Direction.OUTGOING)
                     .evaluator(Evaluators.all())
                     .uniqueness(Uniqueness.RELATIONSHIP_GLOBAL).traverse(startNode)
                     .relationships().forEach(x -> sequenceCount.getAndIncrement());
-            tx.success();
+            tx.close();
         }
         assertEquals(376, sequenceCount.get()); // should be 376
 
@@ -219,10 +230,10 @@ public class StemmawebInputOutputTest {
         try(Transaction tx = db.beginTx()) {
             // With this query we are working around some obnoxious problems with divergent
             // Unicode renderings of some Greek letters.
-            Result result = db.execute("match (q:READING {text:'πνεύματος'})-->(bs:READING {text:'βλασφημίας'})-->(a:READING {text:'ἀπορία'}), " +
+            Result result = tx.execute("match (q:READING {text:'πνεύματος'})-->(bs:READING {text:'βλασφημίας'})-->(a:READING {text:'ἀπορία'}), " +
                     "(q)-->(b:READING {text:'βλασφημία'}) return bs, a, b");
             assertTrue(result.hasNext());
-            tx.success();
+            tx.close();
         }
 
     }
@@ -316,31 +327,31 @@ public class StemmawebInputOutputTest {
         try(Transaction tx = db.beginTx()) {
             // With this query we are working around some obnoxious problems with divergent
             // Unicode renderings of some Greek letters.
-            Result result = db.execute("match (q:READING {text:'πνεύματος'})-->(bs:READING {text:'βλασφημίας'})-->(a:READING {text:'ἀπορία'}), " +
+            Result result = tx.execute("match (q:READING {text:'πνεύματος'})-->(bs:READING {text:'βλασφημίας'})-->(a:READING {text:'ἀπορία'}), " +
                     "(q)-->(b:READING {text:'βλασφημία'}) return bs, a, b");
             assertTrue (result.hasNext());
             Map<String, Object> row = result.next();
             blasphemias = (Node) row.get("bs");
             aporia = (Node) row.get("a");
             blasphemia = (Node) row.get("b");
-            tx.success();
+            tx.close();
         }
 
         ReadingBoundaryModel readingBoundaryModel = new ReadingBoundaryModel(); // take all the defaults
         jerseyResponse = jerseyTest
-                .target("/reading/" + blasphemias.getId() + "/concatenate/" + aporia.getId())
+                .target("/reading/" + blasphemias.getElementId() + "/concatenate/" + aporia.getElementId())
                 .request(MediaType.APPLICATION_JSON)
                 .post(Entity.json(readingBoundaryModel));
         assertEquals(Response.Status.OK.getStatusCode(), jerseyResponse.getStatus());
         try(Transaction tx = db.beginTx()) {
             assertEquals("βλασφημίας ἀπορία", blasphemias.getProperty("text"));
-            tx.success();
+            tx.close();
         }
 
         // Add a new
         RelationModel relationship = new RelationModel();
-        relationship.setSource(String.valueOf(blasphemias.getId()));
-        relationship.setTarget(String.valueOf(blasphemia.getId()));
+        relationship.setSource(blasphemias.getElementId());
+        relationship.setTarget(blasphemia.getElementId());
         relationship.setType("lexical");
         relationship.setAlters_meaning(0L);
         relationship.setIs_significant("yes");
@@ -372,15 +383,15 @@ public class StemmawebInputOutputTest {
 
         // Check for the correct number of sequence paths. Do this with a traversal.
         AtomicInteger sequenceCount = new AtomicInteger(0);
-        Node startNode = VariantGraphService.getStartNode(traditionId, db);
-        assertNotNull(startNode);
         try (Transaction tx = db.beginTx()) {
-            db.traversalDescription().depthFirst()
+        	Node startNode = VariantGraphService.getStartNode(traditionId, tx);
+        	assertNotNull(startNode);
+            tx.traversalDescription().depthFirst()
                     .relationships(ERelations.SEQUENCE, Direction.OUTGOING)
                     .evaluator(Evaluators.all())
                     .uniqueness(Uniqueness.RELATIONSHIP_GLOBAL).traverse(startNode)
                     .relationships().forEach(x -> sequenceCount.getAndIncrement());
-            tx.success();
+            tx.close();
         }
         assertEquals(375, sequenceCount.get());
 
@@ -420,7 +431,12 @@ public class StemmawebInputOutputTest {
      */
     @After
     public void tearDown() throws Exception {
-        db.shutdown();
+        DatabaseManagementService service = dbServiceProvider.getManagementService();
+
+        if (service != null) {
+            service.shutdownDatabase(db.databaseName());
+        }
+
         jerseyTest.tearDown();
     }
 }

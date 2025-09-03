@@ -1,5 +1,6 @@
 package net.stemmaweb.rest;
 
+import java.io.IOException;
 import java.lang.reflect.Field;
 import java.util.*;
 import java.util.regex.Matcher;
@@ -20,8 +21,10 @@ import net.stemmaweb.services.*;
 import org.neo4j.graphdb.*;
 import org.neo4j.graphdb.NotFoundException;
 import org.neo4j.graphdb.traversal.Uniqueness;
+import org.neo4j.internal.batchimport.stats.Stat;
 
-import static net.stemmaweb.rest.Util.jsonerror;
+import static net.stemmaweb.Util.getTraditionNode;
+import static net.stemmaweb.Util.jsonerror;
 
 /**
  * Comprises all Rest API calls related to a reading. Can be called via
@@ -38,19 +41,18 @@ public class Reading {
     /**
      * The ID of the reading to query
      */
-    private final Long readId;
+    private final String readId;
 
     public Reading(String requestedId) {
-        GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
-        db = dbServiceProvider.getDatabase();
-        // The requested ID might have an 'n' prepended, if it was taken from the SVG output.
-        readId = Long.valueOf(requestedId.replaceAll("n", ""));
+        db = Database.getInstance().session;
+        readId = requestedId; // This might be set to -1 if the reading was requested
+                              // via a tradition it doesn't belong to
     }
 
     /**
      * Returns the metadata for a single reading.
      *
-     * @summary Get a reading
+     * @title Get a reading
      * @return The reading information as a JSON structure.
      * @statuscode 200 - on success
      * @statuscode 204 - if the reading doesn't exist
@@ -60,10 +62,11 @@ public class Reading {
     @Produces("application/json; charset=utf-8")
     @ReturnType(clazz = ReadingModel.class)
     public Response getReading() {
+        if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
         ReadingModel reading;
         try (Transaction tx = db.beginTx()) {
-            reading = new ReadingModel(db.getNodeById(readId));
-            tx.success();
+            reading = new ReadingModel(tx.getNodeByElementId(readId), tx);
+            tx.close();
         } catch (NotFoundException e) {
             return Response.noContent().build();
         } catch (Exception e) {
@@ -78,7 +81,7 @@ public class Reading {
      * potential knock-on effects on other readings, such as "is_lemma", cannot be
      * set using this method.
      *
-     * @summary Update an existing reading
+     * @title Update an existing reading
      * @param changeModels
      *            an array of named key/value property pairs. For example, a request to
      *            change the reading's language to German will look like this:
@@ -93,11 +96,12 @@ public class Reading {
     @Produces("application/json; charset=utf-8")
     @ReturnType(clazz = ReadingModel.class)
     public Response changeReadingProperties(ReadingChangePropertyModel changeModels) {
+        if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
         ReadingModel modelToReturn = new ReadingModel();
         Node reading;
         String currentKey = "";
         try (Transaction tx = db.beginTx()) {
-            reading = db.getNodeById(readId);
+            reading = tx.getNodeByElementId(readId);
             for (KeyPropertyModel keyPropertyModel : changeModels.getProperties()) {
                 currentKey = keyPropertyModel.getKey();
                 if (currentKey.equals("id")) {
@@ -117,8 +121,8 @@ public class Reading {
                 else
                     reading.setProperty(currentKey, keyPropertyModel.getProperty());
             }
-            modelToReturn = new ReadingModel(reading);
-            tx.success();
+            modelToReturn = new ReadingModel(reading, tx);
+            tx.commit();
         } catch (NoSuchFieldException f) {
             errorMessage = "Reading has no such property '" + f.getMessage() + "'";
             return errorResponse(Status.BAD_REQUEST);
@@ -140,7 +144,7 @@ public class Reading {
      * Deletes a reading. This only makes sense if it is a user-addable reading, i.e. an emendation.
      * If the lemma path goes through the emendation, the lemma path will also be removed.
      *
-     * @summary Delete a user-addable reading
+     * @title Delete a user-addable reading
      * @return  A GraphModel containing the deleted content (readings and sequences)
      * @statuscode 200 - on success
      * @statuscode 403 - if deletion of a non-user reading is requested
@@ -151,9 +155,10 @@ public class Reading {
     @Produces("application/json; charset=utf-8")
     @ReturnType(clazz = GraphModel.class)
     public Response deleteUserReading() {
+        if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
         GraphModel deletedElements = new GraphModel();
         try (Transaction tx = db.beginTx()) {
-            Node reading = db.getNodeById(readId);
+            Node reading = tx.getNodeByElementId(readId);
             // Can we delete the reading?
             if (!reading.hasLabel(Nodes.EMENDATION)) {
                 errorMessage = "Only emendation readings can be deleted";
@@ -174,13 +179,13 @@ public class Reading {
             }
             if (onLemmaPath) {
                 // The entire lemma sequence text should be deleted; otherwise it will be broken here.
-                db.traversalDescription().depthFirst().relationships(ERelations.LEMMA_TEXT).traverse(reading)
+                tx.traversalDescription().depthFirst().relationships(ERelations.LEMMA_TEXT).traverse(reading)
                         .relationships().forEach(x -> {deletedSeqs.add(new SequenceModel(x)); x.delete();});
             }
             deletedElements.setSequences(deletedSeqs);
-            deletedElements.setReadings(Collections.singletonList(new ReadingModel(reading)));
+            deletedElements.setReadings(Collections.singletonList(new ReadingModel(reading, tx)));
             reading.delete();
-            tx.success();
+            tx.close();
         } catch (NotFoundException e) {
             errorMessage = e.getMessage();
             return errorResponse(Status.NOT_FOUND);
@@ -207,27 +212,28 @@ public class Reading {
     @Produces("application/json; charset=utf-8")
     @ReturnType("java.util.List<net.stemmaweb.model.ReadingModel>")
     public Response setReadingAsLemma(@FormParam("value") @DefaultValue("false") String value) {
+        if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
         List<ReadingModel> changed = new ArrayList<>();
         try (Transaction tx = db.beginTx()) {
-            Node reading = db.getNodeById(readId);
+            Node reading = tx.getNodeByElementId(readId);
             if (value.equals("true")) {
                 if (!reading.hasProperty("is_lemma") || !reading.getProperty("is_lemma").equals(true)) {
                     Map<String, Object> criteria = new HashMap<>();
                     criteria.put("section_id", reading.getProperty("section_id"));
                     criteria.put("rank", reading.getProperty("rank"));
                     criteria.put("is_lemma", true);
-                    db.findNodes(Nodes.READING, criteria).forEachRemaining(x -> {
+                    tx.findNodes(Nodes.READING, criteria).forEachRemaining(x -> {
                         x.removeProperty("is_lemma");
-                        changed.add(new ReadingModel(x));
+                        changed.add(new ReadingModel(x, tx));
                     });
                     reading.setProperty("is_lemma", true);
-                    changed.add(new ReadingModel(reading));
+                    changed.add(new ReadingModel(reading, tx));
                 }
             } else if (reading.hasProperty("is_lemma")){
                 reading.removeProperty("is_lemma");
-                changed.add(new ReadingModel(reading));
+                changed.add(new ReadingModel(reading, tx));
             } // otherwise it's a no-op
-            tx.success();
+            tx.commit();
         } catch (NotFoundException e) {
             errorMessage = e.getMessage();
             return errorResponse(Status.NOT_FOUND);
@@ -245,7 +251,7 @@ public class Reading {
      * reading(s) in the sequence for that witness / those witnesses. Intended to indicate that
      * empty ranks are not a simple omission.
      *
-     * @summary Insert a lacuna
+     * @title Insert a lacuna
      * @param forWitnesses - one or more witnesses that should have the lacuna marked.
      * @return a GraphModel containing the lacuna and its associated SEQUENCE links.
      * @statuscode 200 - on success
@@ -257,13 +263,14 @@ public class Reading {
     @Produces("application/json; charset=utf-8")
     @ReturnType("net.stemmaweb.model.GraphModel")
     public Response addLacuna (@QueryParam("witness") List<String> forWitnesses) {
+        if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
         GraphModel result = new GraphModel();
         try (Transaction tx = db.beginTx()) {
-            // Get a reading model so we can easily check the witnesses
-            Node us = db.getNodeById(readId);
-            ReadingModel thisReading = new ReadingModel(us);
+            // Get a reading model, so we can easily check the witnesses
+            Node us = tx.getNodeByElementId(readId);
+            ReadingModel thisReading = new ReadingModel(us, tx);
             // Make our lacuna node
-            Node lacuna = db.createNode(Nodes.READING);
+            Node lacuna = tx.createNode(Nodes.READING);
             lacuna.setProperty("is_lacuna", true);
             lacuna.setProperty("rank", (Long) us.getProperty("rank") + 1);
             lacuna.setProperty("section_id", us.getProperty("section_id"));
@@ -280,7 +287,7 @@ public class Reading {
                 }
                 // Find the witness's following node
                 HashMap<String, String> wit = parseSigil(sigil);
-                Node next = this.getNeighbourReadingInSequence(wit.get("sigil"), wit.get("layer"), Direction.OUTGOING);
+                Node next = this.getNeighbourReadingInSequence(wit.get("sigil"), wit.get("layer"), Direction.OUTGOING, tx);
                 if (next == null) {
                     errorMessage = "Witness path " + sigil + " ends after requested reading";
                     return errorResponse(Status.INTERNAL_SERVER_ERROR);
@@ -290,15 +297,16 @@ public class Reading {
                     pushedReadings.add(next);
                 // Thread the lacuna between them
                 ReadingService.removeWitnessLink(us, next, wit.get("sigil"), wit.get("layer"), "none");
-                newSeqs.add(ReadingService.addWitnessLink(us, lacuna, wit.get("sigil"), wit.get("layer")));
-                newSeqs.add(ReadingService.addWitnessLink(lacuna, next, wit.get("sigil"), wit.get("layer")));
+                newSeqs.add(ReadingService.addWitnessLink(us, lacuna, wit.get("sigil"), wit.get("layer"), tx));
+                newSeqs.add(ReadingService.addWitnessLink(lacuna, next, wit.get("sigil"), wit.get("layer"), tx));
             }
+            Node tradNode = tx.getNodeByElementId(getTraditionId());
             for (Node pushed : pushedReadings) {
-                changedReadings.addAll(ReadingService.recalculateRank(pushed));
+                changedReadings.addAll(ReadingService.recalculateRank(tradNode, pushed, false, tx));
             }
-            result.setReadings(changedReadings.stream().map(ReadingModel::new).collect(Collectors.toList()));
+            result.setReadings(changedReadings.stream().map(n -> new ReadingModel(n, tx)).collect(Collectors.toList()));
             result.setSequences(newSeqs.stream().map(SequenceModel::new).collect(Collectors.toList()));
-            tx.success();
+
         } catch (NotFoundException e) {
             errorMessage = e.getMessage();
             return errorResponse(Status.NOT_FOUND);
@@ -313,7 +321,7 @@ public class Reading {
 
     /**
      * Gets all readings related to the given reading.
-     * @summary Get related readings
+     * @title Get related readings
      *
      * @param filterTypes - a list of relation types to filter by
      * @return a list of readings related via the given relation types.
@@ -326,9 +334,11 @@ public class Reading {
     @Produces("application/json; charset=utf-8")
     @ReturnType("java.util.List<net.stemmaweb.model.ReadingModel>")
     public Response getRelatedReadings(@QueryParam("types") List<String> filterTypes) {
-        try {
+
+        if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
+        try (Transaction tx = db.beginTx()) {
             List<Node> relatedReadings = collectRelatedReadings(filterTypes);
-            return Response.ok(relatedReadings.stream().map(ReadingModel::new).collect(Collectors.toList())).build();
+            return Response.ok(relatedReadings.stream().map(n -> new ReadingModel(n, tx)).collect(Collectors.toList())).build();
         } catch (NotFoundException e) {
             errorMessage = e.getMessage();
             return errorResponse(Status.NOT_FOUND);
@@ -343,7 +353,7 @@ public class Reading {
     /**
      * Propagates this reading's normal form to all other readings related by the given type.
      *
-     * @summary Propagate normal form along relations
+     * @title Propagate normal form along relations
      * @param onRelationType - the relation type to propagate along
      * @return a list of changed readings
      * @statuscode 200 - on success
@@ -355,21 +365,22 @@ public class Reading {
     @Produces("application/json; charset=utf-8")
     @ReturnType("java.util.List<net.stemmaweb.model.ReadingModel>")
     public Response normaliseRelated(@PathParam("reltype") String onRelationType) {
+        if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
         List<ReadingModel> changed = new ArrayList<>();
         try (Transaction tx = db.beginTx()) {
             List<Node> related = collectRelatedReadings(Collections.singletonList(onRelationType));
-            Node us = db.getNodeById(readId);
+            Node us = tx.getNodeByElementId(readId);
             String key = us.hasProperty("normal_form") ? "normal_form" : "text";
-            Object ourNormalForm = db.getNodeById(readId).getProperty(key);
+            Object ourNormalForm = tx.getNodeByElementId(readId).getProperty(key);
             // Set the normal form on this reading if it wasn't already there
             us.setProperty("normal_form", ourNormalForm);
             for (Node n : related) {
                 if (!n.getProperty("normal_form", "").equals(ourNormalForm)) {
                     n.setProperty("normal_form", ourNormalForm);
-                    changed.add(new ReadingModel(n));
+                    changed.add(new ReadingModel(n, tx));
                 }
             }
-            tx.success();
+            tx.close();
         } catch (NotFoundException e) {
             Status ret = Status.NOT_FOUND;    // Maybe it was the reading that wasn't found
             errorMessage = e.getMessage();
@@ -388,27 +399,27 @@ public class Reading {
     private List<Node> collectRelatedReadings(List<String> filterTypes) throws Exception {
         List<Node> allRelated = new ArrayList<>();
         try (Transaction tx = db.beginTx()) {
-            Node reading = db.getNodeById(readId);
+            Node reading = tx.getNodeByElementId(readId);
             RelationService.RelatedReadingsTraverser rt;
             if (filterTypes == null || filterTypes.size() == 0)
                 // Traverse all relations
-                rt = new RelationService.RelatedReadingsTraverser(reading);
+                rt = new RelationService.RelatedReadingsTraverser(reading, tx);
             else
                 // Traverse only the named relations
-                rt = new RelationService.RelatedReadingsTraverser(reading, x -> filterTypes.contains(x.getName()));
-            db.traversalDescription().depthFirst()
+                rt = new RelationService.RelatedReadingsTraverser(reading, x -> filterTypes.contains(x.getName()), tx);
+            tx.traversalDescription().depthFirst()
                     .relationships(ERelations.RELATED)
                     .evaluator(rt)
                     .uniqueness(Uniqueness.NODE_GLOBAL)
                     .traverse(reading).nodes().forEach(allRelated::add);
-            tx.success();
+            tx.close();
         }
         return allRelated;
     }
 
     /**
      * Deletes all relations associated with the given reading.
-     * @summary Delete all reading relations
+     * @title Delete all reading relations
      *
      * @return a list of the relations that were deleted.
      * @statuscode 200 - on success
@@ -419,14 +430,15 @@ public class Reading {
     @Produces("application/json; charset=utf-8")
     @ReturnType("java.util.List<net.stemmaweb.model.RelationModel")
     public Response deleteAllRelations() {
+        if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
         ArrayList<RelationModel> deleted = new ArrayList<>();
         try (Transaction tx = db.beginTx()) {
-            Node reading = db.getNodeById(readId);
+            Node reading = tx.getNodeByElementId(readId);
             for (Relationship rel : reading.getRelationships(ERelations.RELATED)) {
-                deleted.add(new RelationModel(rel));
+                deleted.add(new RelationModel(rel, tx));
                 rel.delete();
             }
-            tx.success();
+            tx.commit();
         } catch (NotFoundException e) {
             errorMessage = e.getMessage();
             return errorResponse(Status.NOT_FOUND);
@@ -441,7 +453,7 @@ public class Reading {
 
     /**
      * Gets the list of witnesses that carry the given reading.
-     * @summary Get reading witnesses
+     * @title Get reading witnesses
      *
      * @return the metadata of the witnesses to this reading.
      * @statuscode 200 - on success
@@ -452,6 +464,7 @@ public class Reading {
     @Produces("application/json; charset=utf-8")
     @ReturnType("java.util.List<net.stemmaweb.model.WitnessModel>")
     public Response getReadingWitnesses() {
+        if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
         try {
             return Response.ok(collectWitnesses(false)).build();
         } catch (NotFoundException e) {
@@ -469,7 +482,7 @@ public class Reading {
 
         // Look at all incoming SEQUENCE relationships to the reading
         try (Transaction tx = db.beginTx()) {
-            Node reading = db.getNodeById(readId);
+            Node reading = tx.getNodeByElementId(readId);
             // First get the "normal" witnesses
             Iterable<Relationship> readingSeqs = reading.getRelationships(Direction.BOTH, ERelations.SEQUENCE);
             for (Relationship r : readingSeqs)
@@ -488,7 +501,7 @@ public class Reading {
                     }
                 }
             }
-            tx.success();
+            tx.close();
         }
         return normalWitnesses;
     }
@@ -500,7 +513,7 @@ public class Reading {
      *
      * This is the opposite of the {@code merge} call.
      *
-     * @summary Duplicate a reading
+     * @title Duplicate a reading
      *
      * @param duplicateModel
      *            specifies the reading(s) to be duplicated, as well as the witnesses to which
@@ -515,8 +528,8 @@ public class Reading {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces("application/json; charset=utf-8")
     @ReturnType(clazz = GraphModel.class)
-    public Response duplicateReading(DuplicateModel duplicateModel) {
-
+    public Response duplicateReading(DuplicateModel duplicateModel) throws IOException {
+        if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
         ArrayList<ReadingModel> createdReadings = new ArrayList<>();
         ArrayList<RelationModel> tempDeleted = new ArrayList<>();
         ArrayList<SequenceModel> newSequences = new ArrayList<>();
@@ -524,21 +537,21 @@ public class Reading {
         Node originalReading;
 
         try (Transaction tx = db.beginTx()) {
-            List<Long> readings = duplicateModel.getReadings().stream().map(Long::valueOf).collect(Collectors.toList());
-            for (Long readId : readings) {
-                originalReading = db.getNodeById(readId);
+            List<String> readings = duplicateModel.getReadings().stream().map(String::valueOf).collect(Collectors.toList());
+            for (String readId : readings) {
+                originalReading = tx.getNodeByElementId(readId);
                 List<String> newWitnesses = duplicateModel.getWitnesses();
 
                 if (!canBeDuplicated(originalReading, newWitnesses)) {
                     return errorResponse(Status.INTERNAL_SERVER_ERROR);
                 }
 
-                Node newNode = db.createNode();
-                GraphModel localResult = duplicate(newWitnesses, originalReading, newNode);
+                Node newNode = tx.createNode();
+                GraphModel localResult = duplicate(newWitnesses, originalReading, newNode, tx);
                 tempDeleted.addAll(localResult.getRelations());
                 newSequences.addAll(localResult.getSequences());
-                ReadingModel newModel = new ReadingModel(newNode);
-                newModel.setOrig_reading(String.valueOf(readId));
+                ReadingModel newModel = new ReadingModel(newNode, tx); // seem a bit redundant with 545
+                newModel.setOrig_reading(readId);
                 createdReadings.add(newModel);
             }
 
@@ -547,13 +560,13 @@ public class Reading {
             ArrayList<SequenceModel> tempSequences = new ArrayList<>();
             for (SequenceModel sm : newSequences) {
                 try {
-                    db.getRelationshipById(Long.parseLong(sm.getId()));
+                    tx.getRelationshipByElementId(sm.getId());
                 } catch (NotFoundException e) {
                     tempSequences.add(sm);
                 }
             }
             newSequences.removeAll(tempSequences);
-            tx.success();
+            tx.commit();
         } catch (NotFoundException e) {
             errorMessage = e.getMessage();
             return errorResponse(Status.NOT_FOUND);
@@ -565,7 +578,7 @@ public class Reading {
 
         // Now outside our main transaction block, try to put back the deleted relations.
         ArrayList<RelationModel> deletedRelations = new ArrayList<>();
-        Relation relationRest = new Relation(getTraditionId());
+        Relation relationRest = new Relation(getTraditionId(), getTraditionNode(getTraditionId()));
         for (RelationModel rm : tempDeleted) {
             Response result = relationRest.create(rm);
             if (Status.CREATED.getStatusCode() != result.getStatus())
@@ -588,7 +601,7 @@ public class Reading {
      */
     private boolean canBeDuplicated(Node originalReading, List<String> newWitnesses) {
         // Make a new REST object for the given reading, to check its witnesses
-        Reading tocheck = new Reading(String.valueOf(originalReading.getId()));
+        Reading tocheck = new Reading(originalReading.getElementId());
         HashSet<String> allWitnesses = tocheck.collectWitnesses(true);
 
         if (newWitnesses.isEmpty()) {
@@ -624,28 +637,28 @@ public class Reading {
      * @return a GraphModel containing the new readings, new sequences and deleted relations.
      *         Note that this does NOT return deleted or modified sequences.
      */
-    private GraphModel duplicate(List<String> newWitnesses, Node originalReading, Node addedReading) throws Exception {
+    private GraphModel duplicate(List<String> newWitnesses, Node originalReading, Node addedReading, Transaction tx) throws Exception {
         // copy reading properties to newly added reading
         ReadingService.copyReadingProperties(originalReading, addedReading);
-        Reading rdgRest = new Reading(String.valueOf(originalReading.getId()));
+        Reading rdgRest = new Reading(originalReading.getElementId());
 
         // add witnesses to the correct sequence links
         HashSet<Relationship> newSequences = new HashSet<>();
         for (String wit : newWitnesses) {
             HashMap<String, String> witness = parseSigil(wit);
-            Node prior = rdgRest.getNeighbourReadingInSequence(witness.get("sigil"), witness.get("layer"), Direction.INCOMING);
-            Node next = rdgRest.getNeighbourReadingInSequence(witness.get("sigil"), witness.get("layer"), Direction.OUTGOING);
+            Node prior = rdgRest.getNeighbourReadingInSequence(witness.get("sigil"), witness.get("layer"), Direction.INCOMING, tx);
+            Node next = rdgRest.getNeighbourReadingInSequence(witness.get("sigil"), witness.get("layer"), Direction.OUTGOING, tx);
             if (prior == null || next == null) {
-                throw new Exception("No prior / next node found for reading " + originalReading.getId() + "!");
+                throw new Exception("No prior / next node found for reading " + originalReading.getElementId() + "!");
             }
-            try (Transaction tx = db.beginTx()) {
+            // try (Transaction tx = db.beginTx()) {
                 // Store the added/changed SEQUENCE links, so that they go into the new GraphModel
-                newSequences.add(ReadingService.addWitnessLink(prior, addedReading, witness.get("sigil"), witness.get("layer")));
-                newSequences.add(ReadingService.addWitnessLink(addedReading, next, witness.get("sigil"), witness.get("layer")));
+                newSequences.add(ReadingService.addWitnessLink(prior, addedReading, witness.get("sigil"), witness.get("layer"), tx));
+                newSequences.add(ReadingService.addWitnessLink(addedReading, next, witness.get("sigil"), witness.get("layer"), tx));
                 ReadingService.removeWitnessLink(prior, originalReading, witness.get("sigil"), witness.get("layer"), "end");
                 ReadingService.removeWitnessLink(originalReading, next, witness.get("sigil"), witness.get("layer"), "start");
-                tx.success();
-            }
+            //     tx.close();
+            // }
         }
         ArrayList<SequenceModel> sequenceModels = new ArrayList<>();
         newSequences.forEach(x -> sequenceModels.add(new SequenceModel(x)));
@@ -655,13 +668,14 @@ public class Reading {
         ArrayList<RelationModel> tempDeleted = new ArrayList<>();
         String sectId = originalReading.getProperty("section_id").toString();
         String tradId = getTraditionId();
-        Section sectionRest = new Section(tradId, sectId);
+        Section sectionRest = new Section(tradId, sectId, getTraditionNode(tradId));
         Long ourRank = (Long) originalReading.getProperty("rank");
+        // Transaction tx = db.beginTx();
         for (RelationModel rm : sectionRest.sectionRelations()) {
-            Relationship originalRel = db.getRelationshipById(Long.parseLong(rm.getId()));
+            Relationship originalRel = tx.getRelationshipByElementId(rm.getId());
             if (originalRel.hasProperty("colocation") && originalRel.getProperty("colocation").equals(true) &&
-                    (rm.getSource().equals(String.valueOf(originalReading.getId())) ||
-                     rm.getTarget().equals(String.valueOf(originalReading.getId())))) {
+                    (rm.getSource().equals(originalReading.getElementId()) ||
+                     rm.getTarget().equals(originalReading.getElementId()))) {
                 Relationship newRel = addedReading.createRelationshipTo(
                         originalRel.getOtherNode(originalReading),
                         ERelations.RELATED);
@@ -671,8 +685,8 @@ public class Reading {
             } else if (!(originalRel.hasProperty("colocation") &&
                     originalRel.getProperty("colocation").equals(true))){
                 // Get the related readings
-                ReadingModel relSource = new ReadingModel(db.getNodeById(Long.parseLong(rm.getSource())));
-                ReadingModel relTarget = new ReadingModel(db.getNodeById(Long.parseLong(rm.getTarget())));
+                ReadingModel relSource = new ReadingModel(tx.getNodeByElementId(rm.getSource()), tx);
+                ReadingModel relTarget = new ReadingModel(tx.getNodeByElementId(rm.getTarget()), tx);
                 if ((relSource.getRank() < ourRank && relTarget.getRank() > ourRank)
                     || (relSource.getRank() > ourRank && relTarget.getRank() < ourRank)) {
                     originalRel.delete();
@@ -690,9 +704,11 @@ public class Reading {
      *
      * This is the opposite of the {@code duplicate} call.
      *
-     * @summary Merge readings
+     * @title Merge readings
      *
      * @param secondReadId - the id of the second reading to be merged
+     * @return a GraphModel describing the newly-merged reading, and all sequences and relations
+     *         that were altered as a result
      * @statuscode 200 - on success
      * @statuscode 409 - if merging the readings would invalidate the graph.
      *                   This usually means that they are not in the same variant location.
@@ -700,18 +716,17 @@ public class Reading {
      */
     @POST
     @Path("merge/{secondReadId}")
-    @ReturnType("java.lang.Void")
-    public Response mergeReadings(@PathParam("secondReadId") long secondReadId) {
-
-        Node stayingReading;
-        Node deletingReading;
+    @Produces("application/json; charset=utf-8")
+    @ReturnType(clazz = GraphModel.class)
+    public Response mergeReadings(@PathParam("secondReadId") String secondReadId) {
+        if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
+        GraphModel result;
 
         try (Transaction tx = db.beginTx()) {
-            stayingReading = db.getNodeById(readId);
-            deletingReading = db.getNodeById(secondReadId);
+            Node stayingReading = tx.getNodeByElementId(readId);
+            Node deletingReading = tx.getNodeByElementId(String.valueOf(secondReadId));
 
-            // TEMPORARY sanity check: Find all witnesses of the reading to be merged.
-            ReadingModel drm = new ReadingModel(deletingReading);
+            ReadingModel drm = new ReadingModel(deletingReading, tx);
 
             if (!canBeMerged(stayingReading, deletingReading)) {
                 return errorResponse(Status.CONFLICT);
@@ -730,12 +745,12 @@ public class Reading {
             }
 
             // Do the deed
-            merge(stayingReading, deletingReading);
+            result = merge(stayingReading, deletingReading);
 
             // TEMPORARY: Check that all affected witnesses still have paths to the end node
             for (String sig : drm.getWitnesses()) {
                 HashMap<String, String> parts = parseSigil(sig);
-                Witness w = new Witness(getTraditionId(), stayingReading.getProperty("section_id").toString(), parts.get("sigil"));
+                Witness w = new Witness(getTraditionId(), stayingReading.getProperty("section_id").toString(), parts.get("sigil"), getTraditionNode(getTraditionId()));
                 Response r;
                 if (parts.get("layer").equals("witnesses"))
                     r = w.getWitnessAsText();
@@ -750,19 +765,23 @@ public class Reading {
             }
             // Re-rank nodes if necessary
             if (!samerank) {
-                ReadingService.recalculateRank(aPriorNode);
+                Node tradNode = tx.getNodeByElementId(getTraditionId());
+                ReadingService.recalculateRank(tradNode, aPriorNode, false, tx);
             }
 
-            tx.success();
+            tx.close();
         } catch (NotFoundException e) {
             errorMessage = e.getMessage();
             return errorResponse(Status.NOT_FOUND);
+        } catch (IllegalStateException e) {
+            errorMessage = e.getMessage();
+            return errorResponse(Status.CONFLICT);
         } catch (Exception e) {
             e.printStackTrace();
             errorMessage = e.getMessage();
             return errorResponse(Status.INTERNAL_SERVER_ERROR);
         }
-        return Response.ok().build();
+        return Response.ok().entity(result).build();
     }
 
     /**
@@ -788,9 +807,10 @@ public class Reading {
         }
         // If the two readings are aligned, there is no need to test for cycles.
         boolean aligned = false;
+        Transaction tx = db.beginTx();
         RelationService.RelatedReadingsTraverser rt = new RelationService.RelatedReadingsTraverser(
-                stayingReading, RelationTypeModel::getIs_colocation);
-        for (Node n : db.traversalDescription().depthFirst()
+                stayingReading, RelationTypeModel::getIs_colocation, tx);
+        for (Node n : tx.traversalDescription().depthFirst()
                 .relationships(ERelations.RELATED)
                 .evaluator(rt)
                 .uniqueness(Uniqueness.NODE_GLOBAL)
@@ -802,12 +822,13 @@ public class Reading {
         }
         // Test for cycles.
         if (!aligned) {
-            if (ReadingService.wouldGetCyclic(stayingReading, deletingReading)) {
+            if (ReadingService.wouldGetCyclic(stayingReading, deletingReading, tx)) {
                 errorMessage = "Readings to be merged would make the graph cyclic";
                 return false;
             }
         }
 
+        tx.close();
         return true;
     }
 
@@ -838,21 +859,33 @@ public class Reading {
      * @param deletingReading
      *            the reading which will be deleted from the database
      */
-    private void merge(Node stayingReading, Node deletingReading) {
-        // Remove any existing relations between the readings
-        deleteRelationBetweenReadings(stayingReading, deletingReading);
-        // Transfer the witnesses of the to-be-deleted reading to the staying reading
-        for (Relationship r : deletingReading.getRelationships(ERelations.SEQUENCE, Direction.INCOMING)) {
-            ReadingService.transferWitnesses(r.getStartNode(), stayingReading, r);
-            r.delete();
+    private GraphModel merge(Node stayingReading, Node deletingReading) throws IllegalStateException, IOException {
+        GraphModel merged = null;
+        try (Transaction tx = db.beginTx()) {
+            merged = new GraphModel();
+            // Remove any existing relations between the readings
+            deleteRelationBetweenReadings(stayingReading, deletingReading);
+            // Transfer the witnesses of the to-be-deleted reading to the staying reading
+            for (Relationship r : deletingReading.getRelationships(Direction.INCOMING, ERelations.SEQUENCE)) {
+                ReadingService.transferWitnesses(r.getStartNode(), stayingReading, r).stream().map(SequenceModel::new)
+                        .forEach(merged.getSequences()::add);
+                r.delete();
+            }
+            for (Relationship r : deletingReading.getRelationships(Direction.OUTGOING, ERelations.SEQUENCE)) {
+                ReadingService.transferWitnesses(stayingReading, r.getEndNode(), r).stream().map(SequenceModel::new)
+                        .forEach(merged.getSequences()::add);
+                r.delete();
+            }
+            // Transfer any existing reading relations to the node that will remain
+            merged.addRelations(addRelationsToStayingReading(stayingReading, deletingReading, tx));
+            // Delete the redundant reading (including any transitive relation artifacts) and record the remaining one
+            // deletingReading.getRelationships().forEach(Relationship::delete);
+            deletingReading.delete();
+            merged.getReadings().add(new ReadingModel(stayingReading, tx));
+        } catch (Exception e) {
+            e.printStackTrace();
         }
-        for (Relationship r : deletingReading.getRelationships(ERelations.SEQUENCE, Direction.OUTGOING)) {
-            ReadingService.transferWitnesses(stayingReading, r.getEndNode(), r);
-            r.delete();
-        }
-        // Transfer any existing reading relations to the node that will remain
-        addRelationsToStayingReading(stayingReading, deletingReading);
-        deletingReading.delete();
+        return merged;
     }
 
     /**
@@ -881,23 +914,29 @@ public class Reading {
      * @param deletingReading
      *            the reading which will be deleted from the database
      */
-    private void addRelationsToStayingReading(Node stayingReading,
-                                              Node deletingReading) {
-        // copy relationships from deletingReading to stayingReading
+    private Set<RelationModel> addRelationsToStayingReading(Node stayingReading, Node deletingReading, Transaction tx)
+            throws IllegalStateException, IOException {
+        Set<RelationModel> addedRels = new HashSet<>();
+        Relation relService = new Relation(getTraditionId(), getTraditionNode(getTraditionId()));
+        // copy any relevant and nonexistent relationships from deletingReading to stayingReading
         for (Relationship oldRel : deletingReading.getRelationships(
-                ERelations.RELATED, Direction.OUTGOING)) {
-            Relationship newRel = stayingReading.createRelationshipTo(
-                    oldRel.getEndNode(), ERelations.RELATED);
-            RelationService.copyRelationshipProperties(oldRel, newRel);
-            oldRel.delete();
+        		Direction.BOTH, ERelations.RELATED)) {
+            RelationModel rel = new RelationModel(oldRel, tx);
+            if (oldRel.getStartNode().equals(deletingReading))
+                rel.setSource(stayingReading.getElementId());
+            else
+                rel.setTarget(stayingReading.getElementId());
+            Response addResult = relService.create(rel);
+            if (addResult.getStatus() == Status.CREATED.getStatusCode())
+                addedRels.add(rel);
+            else if (addResult.getStatus() > 399)
+                throw new IllegalStateException(String.format("Conflicting %s relation to node %d prevents merge",
+                        rel.getType(), oldRel.getOtherNode(deletingReading).getElementId()));
         }
-        for (Relationship oldRel : deletingReading.getRelationships(
-                ERelations.RELATED, Direction.INCOMING)) {
-            Relationship newRel = oldRel.getStartNode().createRelationshipTo(
-                    stayingReading, ERelations.RELATED);
-            RelationService.copyRelationshipProperties(oldRel, newRel);
-            oldRel.delete();
-        }
+        // Now delete all the relations from deletingReading, including any that were created just now
+        // as transitive relation artifacts
+        deletingReading.getRelationships(ERelations.RELATED).forEach(Relationship::delete);
+        return addedRels;
     }
 
     /**
@@ -906,7 +945,7 @@ public class Reading {
      *
      * This is the opposite of the {@code compress} call.
      *
-     * @summary Split a reading
+     * @title Split a reading
      *
      * @param splitIndex - the index of the first letter of the second word, indicating where
      *            the reading is to be split. For example, "unto" with index 2 produces "un"
@@ -930,11 +969,12 @@ public class Reading {
     @ReturnType(clazz = GraphModel.class)
     public Response splitReading(@PathParam("splitIndex") int splitIndex,
                                  ReadingBoundaryModel model) {
+        if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
         assert (model != null);
         GraphModel readingsAndRelations;
         Node originalReading;
         try (Transaction tx = db.beginTx()) {
-            originalReading = db.getNodeById(readId);
+            originalReading = tx.getNodeByElementId(readId);
             String originalText = originalReading.getProperty("text").toString();
             if (splitIndex > originalText.length())
                 errorMessage = "The index must not be bigger than the text length";
@@ -963,10 +1003,11 @@ public class Reading {
             if (errorMessage != null)
                 return errorResponse(Status.INTERNAL_SERVER_ERROR);
 
-            readingsAndRelations = split(originalReading, splitIndex, model);
-            ReadingService.recalculateRank(originalReading, true);
+            readingsAndRelations = split(originalReading, splitIndex, model, tx);
+            Node tradNode = VariantGraphService.getSectionTraditionNode(originalReading, tx);
+            ReadingService.recalculateRank(tradNode, originalReading, true, tx);
 
-            tx.success();
+            tx.commit();
         } catch (NotFoundException e) {
             errorMessage = e.getMessage();
             return errorResponse(Status.NOT_FOUND);
@@ -1019,28 +1060,30 @@ public class Reading {
      *            the ReadingBoundaryModel saying how the reading should be split
      * @return a list of the new SEQUENCE relationships created.
      */
-    private GraphModel split(Node originalReading, int splitIndex, ReadingBoundaryModel model) {
+    private GraphModel split(Node originalReading, int splitIndex, ReadingBoundaryModel model, Transaction tx) {
         ArrayList<ReadingModel> createdOrChangedReadings = new ArrayList<>();
         ArrayList<SequenceModel> createdSequences = new ArrayList<>();
 
         // Get the sequence relationships that came out of the original reading
         ArrayList<Relationship> originalOutgoingRels = new ArrayList<>();
-        originalReading.getRelationships(ERelations.SEQUENCE, Direction.OUTGOING).forEach(originalOutgoingRels::add);
+        originalReading.getRelationships(Direction.OUTGOING, ERelations.SEQUENCE).forEach(originalOutgoingRels::add);
 
         // Get the sequence of reading text that should be created
         String[] splitWords = splitUpText(splitIndex, model.getCharacter(),
                 originalReading.getProperty("text").toString());
 
+        String tmp = splitWords[0];
         // Change the first reading
         originalReading.setProperty("text", splitWords[0]);
         originalReading.setProperty("display", splitWords[0].replaceAll("<", "&lt;").replaceAll(">", "&gt;"));
-        createdOrChangedReadings.add(new ReadingModel(originalReading));
+        createdOrChangedReadings.add(new ReadingModel(originalReading, tx));
 
         // Add the new readings
         Node lastReading = originalReading;
+        // Transaction tx = db.beginTx();
 
         for (int i = 1; i < splitWords.length; i++) {
-            Node newReading = db.createNode();
+            Node newReading = tx.createNode();
 
             ReadingService.copyReadingProperties(lastReading, newReading);
             newReading.setProperty("text", splitWords[i]);
@@ -1065,12 +1108,13 @@ public class Reading {
                 ReadingService.transferWitnesses(lastReading, newReading, r);
 
             // Add the newly created objects to our eventual GraphModel
-            createdOrChangedReadings.add(new ReadingModel(newReading));
+            createdOrChangedReadings.add(new ReadingModel(newReading, tx));
             createdSequences.add(new SequenceModel(newSeq));
 
             // Loop
             lastReading = newReading;
         }
+        // tx.close();
         for (Relationship oldRel : originalOutgoingRels) {
             Relationship newRel = lastReading.createRelationshipTo(oldRel.getEndNode(), oldRel.getType());
             RelationService.copyRelationshipProperties(oldRel, newRel);
@@ -1084,7 +1128,7 @@ public class Reading {
     /**
      * Gets the reading that follows the requested reading in the given witness.
      *
-     * @summary Next reading
+     * @title Next reading
      *
      * @param witnessId - the id (sigil) of the witness
      * @param layer - the witness layer to follow
@@ -1100,22 +1144,25 @@ public class Reading {
     @ReturnType(clazz = ReadingModel.class)
     public Response getNextReadingInWitness(@PathParam("witnessId") String witnessId,
                                             @DefaultValue("witnesses") @QueryParam("layer") String layer) {
-        Node foundNeighbour = getNeighbourReadingInSequence(witnessId, layer, Direction.OUTGOING);
-        if (foundNeighbour != null) {
-            ReadingModel result = new ReadingModel(foundNeighbour);
-            if (result.getIs_end()) {
-                errorMessage = "this was the last reading for this witness";
-                return errorResponse(Status.NOT_FOUND);
+        if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
+        try(Transaction tx = db.beginTx()){
+            Node foundNeighbour = getNeighbourReadingInSequence(witnessId, layer, Direction.OUTGOING, db.beginTx());
+            if (foundNeighbour != null) {
+                ReadingModel result = new ReadingModel(foundNeighbour, tx);
+                if (result.getIs_end()) {
+                    errorMessage = "this was the last reading for this witness";
+                    return errorResponse(Status.NOT_FOUND);
+                }
+                return Response.ok(new ReadingModel(foundNeighbour, tx)).build();
             }
-            return Response.ok(new ReadingModel(foundNeighbour)).build();
+            return errorResponse(errorMessage.contains("not found") ? Status.NOT_FOUND : Status.INTERNAL_SERVER_ERROR);
         }
-        return errorResponse(errorMessage.contains("not found") ? Status.NOT_FOUND : Status.INTERNAL_SERVER_ERROR);
     }
 
     /**
      * Gets the reading that precedes the requested reading in the given witness.
      *
-     * @summary Prior reading
+     * @title Prior reading
      *
      * @param witnessId - the id (sigil) of the witness
      * @param layer - the witness layer to follow
@@ -1131,27 +1178,32 @@ public class Reading {
     @ReturnType(clazz = ReadingModel.class)
     public Response getPreviousReadingInWitness(@PathParam("witnessId") String witnessId,
                                                 @DefaultValue("witnesses") @QueryParam("layer") String layer) {
-        Node foundNeighbour = getNeighbourReadingInSequence(witnessId, layer, Direction.INCOMING);
-        if (foundNeighbour != null) {
-            ReadingModel result = new ReadingModel(foundNeighbour);
-            if (result.getIs_start()) {
-                errorMessage = "this was the first reading for this witness";
-                return errorResponse(Status.NOT_FOUND);
+        if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
+        try (Transaction tx = db.beginTx()){
+            Node foundNeighbour = getNeighbourReadingInSequence(witnessId, layer, Direction.INCOMING, db.beginTx());
+            if (foundNeighbour != null) {
+                ReadingModel result = new ReadingModel(foundNeighbour, tx);
+                if (result.getIs_start()) {
+                    errorMessage = "this was the first reading for this witness";
+                    return errorResponse(Status.NOT_FOUND);
+                }
+                return Response.ok(new ReadingModel(foundNeighbour, tx)).build();
             }
-            return Response.ok(new ReadingModel(foundNeighbour)).build();
+        }catch (Exception e){
+            e.printStackTrace();
         }
         return errorResponse(errorMessage.contains("not found") ? Status.NOT_FOUND : Status.INTERNAL_SERVER_ERROR);
     }
 
     // Gets the neighbour reading in the given direction for the given witness. Returns
     // the relevant ReadingModel, or sets errorMessage and returns null.
-    private Node getNeighbourReadingInSequence(String witnessId, String layer, Direction dir) {
+    private Node getNeighbourReadingInSequence(String witnessId, String layer, Direction dir, Transaction tx) {
         Node neighbour = null;
-        try (Transaction tx = db.beginTx()) {
-            Node read = db.getNodeById(readId);
+        // try (Transaction tx = db.beginTx()) {
+            Node read = tx.getNodeByElementId(readId);
             // Sanity check: does the requested witness+layer actually exist in this node in
             // either direction?
-            ReadingModel rm = new ReadingModel(read);
+            ReadingModel rm = new ReadingModel(read, tx);
             if (!layer.equals("witnesses")) { // if the base witness isn't here we will error below anyway
                 String wholesigil = String.format("%s (%s)", witnessId, layer);
                 if (!rm.getWitnesses().contains(wholesigil)) {
@@ -1161,7 +1213,7 @@ public class Reading {
 
             }
             String dirdisplay = dir.equals(Direction.INCOMING) ? "prior" : "next";
-            Iterable<Relationship> seqs = read.getRelationships(ERelations.SEQUENCE, dir);
+            Iterable<Relationship> seqs = read.getRelationships(dir, ERelations.SEQUENCE);
             // Get the list of relations matching the given layer
             Collection<Relationship> matching = StreamSupport.stream(seqs.spliterator(), false)
                     .filter(x -> isPathFor(x, witnessId, layer))
@@ -1180,13 +1232,13 @@ public class Reading {
             } else {
                 neighbour = matching.iterator().next().getOtherNode(read);
             }
-            tx.success();
-        } catch (NotFoundException e) {
-            errorMessage = e.getMessage();
-        } catch (Exception e) {
-            e.printStackTrace();
-            errorMessage = e.getMessage();
-        }
+            // tx.close();
+        // } catch (NotFoundException e) {
+        //     errorMessage = e.getMessage();
+        // } catch (Exception e) {
+        //     e.printStackTrace();
+        //     errorMessage = e.getMessage();
+        // }
         return neighbour;
     }
 
@@ -1225,43 +1277,45 @@ public class Reading {
      *
      * This is the opposite of the {@code split} call.
      *
-     * @summary Concatenate readings
+     * @title Concatenate readings
      *
      * @param readId2 - the id of the second reading
      * @param boundary
      *            The specification of whether the reading text will be separated with a string,
      *            and if so, what string it will be. If the readings have {@code join_next} or
      *            {@code join_prior} set, this will be respected in preference to the boundary specification.
-     *
+     * @return a GraphModel describing the newly compressed reading, and all sequences that were altered as a result
      * @statuscode 200 - on success
      * @statuscode 409 - if the readings cannot legally be concatenated
      * @statuscode 500 - on error, with an error message
      */
+    // LATER: consider whether we should actually return all modified / deleted readings...
     @POST
     @Path("concatenate/{read2Id}")
     @Consumes(MediaType.APPLICATION_JSON)
-    // @Produces("application/json; charset=utf-8")
-    @ReturnType("java.lang.Void")
-    public Response compressReadings(@PathParam("read2Id") long readId2, ReadingBoundaryModel boundary) {
-
+    @Produces("application/json; charset=utf-8")
+    @ReturnType(clazz = GraphModel.class)
+    public Response compressReadings(@PathParam("read2Id") String readId2, ReadingBoundaryModel boundary) {
+        if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
         Node read1, read2;
+        // some defaults if we fall through and haven't changed it
         errorMessage = "problem with a reading. could not compress";
+        Response resp;
 
         try (Transaction tx = db.beginTx()) {
-            read1 = db.getNodeById(readId);
-            read2 = db.getNodeById(readId2);
+            read1 = tx.getNodeByElementId(readId);
+            read2 = tx.getNodeByElementId(String.valueOf(readId2));
             if ((long) read1.getProperty("rank") > (long) read2.getProperty("rank")) {
-                tx.success();
                 errorMessage = "the first reading has a higher rank then the second reading";
-                return errorResponse(Status.CONFLICT);
+                resp =  errorResponse(Status.CONFLICT);
+            } else if (canBeCompressed(read1, read2)) {
+                resp = Response.ok().entity(compress(read1, read2, boundary, tx)).build();
+                Node tradNode = VariantGraphService.getSectionTraditionNode(read1, tx);
+                ReadingService.recalculateRank(tradNode, read1, false, tx);
+            } else {
+                resp = errorResponse(Status.CONFLICT);
             }
-            if (canBeCompressed(read1, read2)) {
-                compress(read1, read2, boundary);
-                ReadingService.recalculateRank(read1);
-                tx.success();
-                return Response.ok().build();
-            }
-            tx.success();
+            tx.commit();
         } catch (NotFoundException e) {
             errorMessage = e.getMessage();
             return errorResponse(Status.NOT_FOUND);
@@ -1270,7 +1324,415 @@ public class Reading {
             errorMessage = e.getMessage();
             return errorResponse(Status.INTERNAL_SERVER_ERROR);
         }
-        return errorResponse(Status.CONFLICT);
+        return resp;
+    }
+
+    /*
+    Get all complex readings containing this reading.
+     *
+     */
+    @GET
+    @Path("complex")
+    @Produces("application/json; charset=utf-8")
+    @ReturnType("java.util.List<net.stemmaweb.model.ComplexReadingModel>")
+    public Response getComplexReadings() {
+        List<ComplexReadingModel> crList = new ArrayList<>();
+        try (Transaction tx = db.beginTx()) {
+            Node myReading = tx.getNodeByElementId(readId);
+            for (Node node : tx.traversalDescription().depthFirst()
+                    .relationships(ERelations.HAS_HYPERNODE, Direction.OUTGOING)
+                    .uniqueness(Uniqueness.RELATIONSHIP_GLOBAL).traverse(myReading)
+                    .nodes()) {
+              if (node != myReading) {
+                crList.add(new ComplexReadingModel(node, tx));
+              }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Response.serverError().entity(jsonerror(e.getMessage())).build();
+        }
+        return Response.ok(crList).build();
+    }
+
+    /*
+    Create a complex reading from the specified reading ids.
+     */
+    @PUT
+    @Path("complex")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces("application/json; charset=utf-8")
+    @ReturnType(clazz = ComplexReadingModel.class)
+    public Response complexReading(ComplexReadingModel skeleton) {
+        try (Transaction tx = db.beginTx()) {
+            Node hyperNode = tx.createNode(Nodes.READING, Nodes.HYPERREADING);
+            if (skeleton.getSource() != null) {
+              hyperNode.setProperty("source", skeleton.getSource());
+            }
+            if (skeleton.getNote() != null) {
+              hyperNode.setProperty("note", skeleton.getNote());
+            }
+            Node thisNode = tx.getNodeByElementId(readId);
+            thisNode.createRelationshipTo(hyperNode, ERelations.HAS_HYPERNODE);
+            for (ComplexReadingModel comp: skeleton.getComponents())  {
+                if (comp.getReading() != null) { // create relationship from actual reading
+                  Node otherNode = tx.getNodeByElementId(comp.getReading().getId());
+                  otherNode.createRelationshipTo(hyperNode, ERelations.HAS_HYPERNODE);
+                } else { // create relationship from embedded complex reading
+                  System.out.println("create relationship to embedded complex reading");
+                  Node embeddedHyperNode = tx.getNodeByElementId(comp.getId());
+                  embeddedHyperNode.createRelationshipTo(hyperNode, ERelations.HAS_HYPERNODE);
+                }
+            }
+            ComplexReadingModel complex_reading = new ComplexReadingModel(hyperNode, tx);
+            tx.commit();
+            return Response.ok(complex_reading).build();
+        } catch (NotFoundException e) {
+            errorMessage = e.getMessage();
+            return errorResponse(Status.NOT_FOUND);
+        } catch (Exception e) {
+            e.printStackTrace();
+            errorMessage = e.getMessage();
+            return errorResponse(Status.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    /**
+     * Removes a complex reading and all its relationships.
+     *
+     */
+    @DELETE
+    @Path("complex/{cid}")
+    @ReturnType("java.lang.Void")
+    public Response deleteComplex(@PathParam("cid") String cid) {
+        try (Transaction tx = db.beginTx()) {
+            Node removableNode = tx.getNodeByElementId(cid);
+            removableNode.getRelationships().forEach(Relationship::delete);
+            removableNode.delete();
+            tx.close();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Response.serverError().entity(jsonerror(e.getMessage())).build();
+        }
+        return Response.ok().build();
+    }
+
+    class Attach {
+        public Boolean asymetrical(int[] a, Node source, Node target, String stext, String ttext){
+
+            /*
+            from
+              o-o
+             /
+            o
+             \
+              o-o
+            to
+            o-o-o
+               \
+                o
+             */
+            Relationship sri = source.getSingleRelationship(ERelations.SEQUENCE, Direction.INCOMING);
+            Relationship sro = source.getSingleRelationship(ERelations.SEQUENCE, Direction.OUTGOING);
+
+            try{
+                if(a[0] == 0 && a[1] == 1){
+
+                    // before merging relation properties, we get the target relationship object that has a start/end node connected to the source node
+                    Optional<Relationship> tri_opt = target.getRelationships(Direction.INCOMING, ERelations.SEQUENCE).stream().filter(item -> item.getStartNode().getElementId().equals(sri.getStartNode().getElementId())).findFirst();
+                    assert tri_opt.isPresent();
+                    Relationship tri = tri_opt.get();
+
+                    // set target relationship witnesses
+                    String[] tri_wit = (String[]) tri.getProperty("witnesses");
+                    String[] sri_wit = (String[]) sri.getProperty("witnesses");
+                    String[] target_witnesses_in = Arrays.copyOf(tri_wit, tri_wit.length + sri_wit.length);
+                    System.arraycopy(sri_wit, 0, target_witnesses_in, tri_wit.length, sri_wit.length);
+                    Arrays.sort(target_witnesses_in);
+                    tri.setProperty("witnesses", target_witnesses_in);
+
+                    // create relationship between target node and next source node
+                    Node source_next_node = sro.getEndNode();
+                    Relationship target_to_source_next_node= target.createRelationshipTo(source_next_node, ERelations.SEQUENCE);
+                    target_to_source_next_node.setProperty("witnesses", sro.getProperty("witnesses"));
+
+                    // set node value
+                    if(stext.equals("") || ttext.equals("")){
+                        target.setProperty("text", String.format("%s%s", stext, ttext));
+                    }
+
+                    sri.delete();
+                    sro.delete();
+                    source.delete();
+                    return true;
+
+                }
+                if(a[0] == 1 && a[1] == 0) {
+
+                    Optional<Relationship> tro_opt = target.getRelationships(Direction.OUTGOING, ERelations.SEQUENCE).stream().filter(item -> item.getEndNode().getElementId().equals(sro.getEndNode().getElementId())).findFirst();
+                    assert tro_opt.isPresent();
+                    Relationship tro = tro_opt.get();
+
+                    // set target relationship witnesses
+                    String[] tro_wit = (String[]) tro.getProperty("witnesses");
+                    String[] sro_wit = (String[]) sro.getProperty("witnesses");
+                    String[] target_witnesses_in = Arrays.copyOf(tro_wit, tro_wit.length + sro_wit.length);
+                    System.arraycopy(sro_wit, 0, target_witnesses_in, tro_wit.length, sro_wit.length);
+                    Arrays.sort(target_witnesses_in);
+                    tro.setProperty("witnesses", target_witnesses_in);
+
+                    // create relationship between target node and prev source node
+                    Node source_prev_node = sri.getStartNode();
+                    Relationship target_to_source_next_node = source_prev_node.createRelationshipTo(target, ERelations.SEQUENCE);
+                    target_to_source_next_node.setProperty("witnesses", sri.getProperty("witnesses"));
+
+                    // set node value
+                    if (stext.equals("") || ttext.equals("")) {
+                        target.setProperty("text", String.format("%s%s", stext, ttext));
+                    }
+
+                    sri.delete();
+                    sro.delete();
+                    source.delete();
+                    return true;
+                }
+
+            }catch(Exception e){
+                System.err.println(e.getMessage());
+                throw e;
+            }
+
+            return false;
+        }
+        public Boolean parallel(int[] a, Node source, Node target, String stext, String ttext){
+            /*
+            from
+            o-o-o
+            o-o-o
+            to
+            o-o-o
+             / \
+            o   o
+             */
+            try{
+                Relationship sri = source.getSingleRelationship(ERelations.SEQUENCE, Direction.INCOMING);
+                Relationship sro = source.getSingleRelationship(ERelations.SEQUENCE, Direction.OUTGOING);
+
+                // create relationship between target node and prev source node
+                Node source_prev_node = sri.getStartNode();
+                Relationship prev_to_target_rel = source_prev_node.createRelationshipTo(target, ERelations.SEQUENCE);
+                prev_to_target_rel.setProperty("witnesses", sri.getProperty("witnesses"));
+
+                // create relationship between target node and next source node
+                Node source_next_node = sro.getEndNode();
+                Relationship target_to_next_rel = target.createRelationshipTo(source_next_node, ERelations.SEQUENCE);
+                target_to_next_rel.setProperty("witnesses", sro.getProperty("witnesses"));
+
+                // set node value
+                if(stext.equals("") || ttext.equals("")){
+                    target.setProperty("text", String.format("%s%s", stext, ttext));
+                }
+
+                sri.delete();
+                sro.delete();
+                source.delete();
+
+                return true;
+            }catch(Exception e){
+                System.err.println(e.getMessage());
+                throw e;
+            }
+        }
+        public Boolean symmetrical(int[] a, Node source, Node target, String stext, String ttext){
+            /*
+            from
+              o
+             / \
+            o   o
+             \ /
+              o
+            to
+              o
+             / \
+            o   o
+             */
+            try{
+                Relationship sri = source.getSingleRelationship(ERelations.SEQUENCE, Direction.INCOMING);
+                Relationship sro = source.getSingleRelationship(ERelations.SEQUENCE, Direction.OUTGOING);
+
+                Optional<Relationship> tri_opt = target.getRelationships(Direction.INCOMING, ERelations.SEQUENCE).stream().filter(item -> item.getStartNode().getElementId().equals(sri.getStartNode().getElementId())).findFirst();
+                assert tri_opt.isPresent();
+                Relationship tri = tri_opt.get();
+
+                Optional<Relationship> tro_opt = target.getRelationships(Direction.OUTGOING, ERelations.SEQUENCE).stream().filter(item -> item.getEndNode().getElementId().equals(sro.getEndNode().getElementId())).findFirst();
+                assert tro_opt.isPresent();
+                Relationship tro = tro_opt.get();
+
+                // set target out relationship witnesses
+                String[] tro_wit = (String[]) tro.getProperty("witnesses");
+                String[] sro_wit = (String[]) sro.getProperty("witnesses");
+                String[] target_witnesses_out = Arrays.copyOf(tro_wit, tro_wit.length + sro_wit.length);
+                System.arraycopy(sro_wit, 0, target_witnesses_out, tro_wit.length, sro_wit.length);
+                Arrays.sort(target_witnesses_out);
+                tro.setProperty("witnesses", target_witnesses_out);
+
+                // set target in relationship witnesses
+                String[] tri_wit = (String[]) tri.getProperty("witnesses");
+                String[] sri_wit = (String[]) sri.getProperty("witnesses");
+                String[] target_witnesses_in = Arrays.copyOf(tri_wit, tri_wit.length + sri_wit.length);
+                System.arraycopy(sri_wit, 0, target_witnesses_in, tri_wit.length, sri_wit.length);
+                Arrays.sort(target_witnesses_in);
+                tri.setProperty("witnesses", target_witnesses_in);
+
+                // set node value
+                if(stext.equals("") || ttext.equals("")){
+                    target.setProperty("text", String.format("%s%s", stext, ttext));
+                }
+
+                sri.delete();
+                sro.delete();
+                source.delete();
+
+            }catch(Exception e){
+                System.err.println(e.getMessage());
+                throw e;
+            }
+            return true;
+        }
+    }
+    /**
+     * merge two reading of the same ranks, reverse detach process
+     * source and target can be reversed
+     *
+     * @param target
+     *      target reading
+     */
+    @POST
+    @Path("mergenodes/{target}")
+    @ReturnType("java.lang.Void")
+    public Response mergeNodes(@PathParam("target") String target) {
+
+        Attach attach = new Attach();
+
+        try(Transaction tx = db.beginTx()){
+
+            Node snode = tx.getNodeByElementId(this.readId);
+            // String snode_id = snode.getElementId();
+            Relationship source_rel_out = snode.getSingleRelationship(ERelations.SEQUENCE, Direction.OUTGOING);
+            String sro_id = source_rel_out.getEndNode().getElementId();
+            Relationship source_rel_in = snode.getSingleRelationship(ERelations.SEQUENCE, Direction.INCOMING);
+            String sri_id = source_rel_in.getStartNode().getElementId();
+
+            Node tnode = tx.getNodeByElementId(target);
+            // String tnode_id = tnode.getElementId();
+
+            // int srank = Integer.parseInt(snode.getProperty("rank").toString());
+            // int prec_rank = srank-1;
+            // int next_rank = srank+1;
+            // int degree_in = tnode.getDegree(ERelations.SEQUENCE, Direction.INCOMING);
+            // int degree_out = (int) tnode.getRelationships(Direction.OUTGOING, ERelations.SEQUENCE).stream().count();
+
+            Set<String> target_node_in_rel = tnode.getRelationships(Direction.INCOMING, ERelations.SEQUENCE).stream().map(item -> item.getStartNode().getElementId()).collect(Collectors.toSet());
+            // int tnil_length = target_node_in_rel.size();
+            Set<String> target_node_out_rel = tnode.getRelationships(Direction.OUTGOING, ERelations.SEQUENCE).stream().map(item -> item.getEndNode().getElementId()).collect(Collectors.toSet());
+            // int tnol_length = target_node_out_rel.size();
+
+            // String total_node_i_query = String.format("MATCH (n:READING) WHERE n.rank = %s and n.section_id = \"%s\" RETURN count(n) as count", prec_rank, snode.getProperty("section_id"));
+            // String total_node_o_query = String.format("MATCH (n:READING) WHERE n.rank = %s and n.section_id = \"%s\" RETURN count(n) as count", next_rank, snode.getProperty("section_id"));
+
+            // Optional<Map<String, Object>> prtn_query = tx.execute(total_node_i_query).stream().findFirst();
+            // Optional<Map<String, Object>> nrtn_query = tx.execute(total_node_o_query).stream().findFirst();
+
+            // assert (prtn_query.isPresent());
+            // assert (nrtn_query.isPresent());
+
+            // Long prec_rank_total_nodes = (Long) prtn_query.get().get("count");
+            // Long next_rank_total_nodes = (Long) nrtn_query.get().get("count");
+
+            // int i = prec_rank_total_nodes.intValue() - degree_in;
+            // int s = next_rank_total_nodes.intValue() - degree_out;
+
+            int i = target_node_in_rel.add(sri_id) ? 1 : 0;
+            int s = target_node_out_rel.add(sro_id) ? 1 : 0;
+
+            int[] a = {i, s};
+            int pattern_code = Arrays.stream(a).sum();
+
+            boolean equalRanking = snode.getProperty("rank").equals(tnode.getProperty("rank"));
+            String stext = snode.getProperty("text").toString();
+            String ttext = tnode.getProperty("text").toString();
+            boolean equalValue = snode.getProperty("text").toString().equals(tnode.getProperty("text").toString());
+
+            Boolean ready = false;
+
+            if ((equalRanking && equalValue) || (equalRanking && (stext.equals("") ^ ttext.equals("")))){
+                if (pattern_code == 1) {
+                    ready = attach.asymetrical(a, snode, tnode, stext, ttext);
+                } else if (pattern_code == 2) {
+                    ready = attach.parallel(a, snode, tnode, stext, ttext);
+                } else if (pattern_code == 0) {
+                    ready = attach.symmetrical(a, snode, tnode, stext, ttext);
+                }
+                if(ready){
+                    tx.commit();
+                }
+            }else{
+                throw new RuntimeException("This two nodes does not have the same ranks or the same text value : nodes can't be attached ");
+            }
+        }catch (Exception e){
+            e.printStackTrace();
+            return Response.serverError().entity(jsonerror(e.getMessage())).build();
+        }
+        return Response.ok().build();
+    }
+    /**
+     * set node rank, move a reading through the graph section
+     *
+     * @return
+     */
+    @PUT
+    @Path("rank")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces("application/json; charset=utf-8")
+    @ReturnType(clazz = ReadingModel.class)
+    public Response changeRank(@QueryParam("rank") Long rank) {
+        ReadingModel res = null;
+        if (rank != null){
+            try (Transaction tx = db.beginTx()) {
+                Node read = tx.getNodeByElementId(readId);
+                Long oldRank = (Long) read.getProperty("rank");
+                boolean node_can_move = checkNodeRank(oldRank, rank, read);
+                if (!rank.equals(oldRank) && node_can_move) {
+                    read.setProperty("rank", rank);
+                    res = new ReadingModel(read, tx);
+                    tx.commit();
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+                return Response.serverError().entity(jsonerror(e.getMessage())).build();
+            }
+        }
+        if (res == null) {
+            errorMessage = "The reading can't be moved to the specified rank. " +
+                    "Please check the provided value and check if the section can include the reading";
+            return errorResponse(Status.BAD_REQUEST);
+        }
+        return Response.ok(res).build();
+    }
+
+    private boolean checkNodeRank(Long oldRank, Long rank, Node reading) {
+        if (reading.hasRelationship(Direction.INCOMING, ERelations.SEQUENCE) && reading.hasRelationship(Direction.OUTGOING, ERelations.SEQUENCE)) {
+            Relationship rel_in = reading.getSingleRelationship(ERelations.SEQUENCE, Direction.INCOMING);
+            Relationship rel_out = reading.getSingleRelationship(ERelations.SEQUENCE, Direction.OUTGOING);
+
+            Node end_node = rel_out.getEndNode();
+            Node start_node = rel_in.getStartNode();
+
+            if (rank < (Long) end_node.getProperty("rank") && !oldRank.equals(rank) && rank > oldRank) {
+                return true;
+            }
+            return rank > (Long) start_node.getProperty("rank") && !oldRank.equals(rank) && rank < oldRank;
+        }
+        return false;
     }
 
     /*
@@ -1372,8 +1834,9 @@ public class Reading {
      *            the BoundaryModel that determines, in compbination with reading flags
      *            join_next and join_prior, how the reading text will be constructed.
      */
-    private void compress(Node read1, Node read2, ReadingBoundaryModel boundary) {
+    private GraphModel compress(Node read1, Node read2, ReadingBoundaryModel boundary, Transaction tx) {
         String newText;
+        GraphModel compressedReading = new GraphModel();
         boolean joined = (read1.hasProperty("join_next") && (Boolean) read1.getProperty("join_next")) ||
                 (read2.hasProperty("join_prior") && (Boolean) read2.getProperty("join_prior"));
         // We need to join the text, the display form, and the normal form
@@ -1398,12 +1861,14 @@ public class Reading {
             if (!newText.equals("") && (!newText.equals(plaintextform) || read1.hasProperty(prop)))
                 read1.setProperty(prop, newText);
         }
+        compressedReading.getReadings().add(new ReadingModel(read1, tx));
 
         for (Relationship r : getSequenceBetweenReadings(read1, read2) ) {
             r.delete();
         }
-        copyRelationships(read1, read2);
+        compressedReading.addSequences(copySequences(read1, read2));
         read2.delete();
+        return compressedReading;
     }
 
     /**
@@ -1415,7 +1880,8 @@ public class Reading {
      * @param read2
      *            the node from which relationships are copied
      */
-    private void copyRelationships(Node read1, Node read2) {
+    private Set<SequenceModel> copySequences(Node read1, Node read2) {
+        Set<SequenceModel> newCopies = new HashSet<>();
         for (Relationship tempRel : read2.getRelationships(Direction.OUTGOING, ERelations.SEQUENCE, ERelations.LEMMA_TEXT)) {
             Node tempNode = tempRel.getOtherNode(read2);
             Relationship rel1 = read1.createRelationshipTo(tempNode, tempRel.getType());
@@ -1423,7 +1889,9 @@ public class Reading {
                 rel1.setProperty(key, tempRel.getProperty(key));
             }
             tempRel.delete();
+            newCopies.add(new SequenceModel(rel1));
         }
+        return newCopies;
     }
 
     /**
@@ -1509,14 +1977,14 @@ public class Reading {
         return foundRels;
     }
 
-    private String getTraditionId () {
+    String getTraditionId () {
         String tradId;
         try (Transaction tx = db.beginTx()) {
-            Node rdg = db.getNodeById(readId);
-            tradId = db.getNodeById(Long.parseLong(rdg.getProperty("section_id").toString()))
+            Node rdg = tx.getNodeByElementId(readId);
+            tradId = tx.getNodeByElementId(rdg.getProperty("section_id").toString())
                     .getSingleRelationship(ERelations.PART, Direction.INCOMING)
                     .getStartNode().getProperty("id").toString();
-            tx.success();
+            tx.close();
         }
         return tradId;
     }

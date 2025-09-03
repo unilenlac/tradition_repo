@@ -2,10 +2,14 @@ package net.stemmaweb.model;
 
 import javax.xml.bind.annotation.XmlRootElement;
 
-import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.annotation.JsonInclude.Include;
+import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.Transaction;
+
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonInclude.Include;
+
+import net.stemmaweb.services.GraphDatabaseServiceProvider;
 
 /**
  * Provides a model for a user outside of the database. Can be parsed into a
@@ -40,8 +44,10 @@ public class UserModel {
 
     public UserModel() {}
 
-    public UserModel(Node node) {
-        try (Transaction tx = node.getGraphDatabase().beginTx()) {
+    public UserModel(Node node, Transaction tx) {
+        // GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
+        // try (Transaction tx = node.getGraphDatabase().beginTx()) {
+        try {
             setId(node.getProperty("id").toString());
             if (node.hasProperty("passphrase"))
                 setPassphrase(node.getProperty("passphrase").toString());
@@ -51,7 +57,8 @@ public class UserModel {
                 setActive((Boolean) node.getProperty("active"));
             if (node.hasProperty("email"))
                 setEmail(node.getProperty("email").toString());
-            tx.success();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
     }
 

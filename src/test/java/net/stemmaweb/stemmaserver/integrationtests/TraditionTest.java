@@ -1,13 +1,22 @@
 package net.stemmaweb.stemmaserver.integrationtests;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.*;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import javax.ws.rs.client.Entity;
 import javax.ws.rs.core.GenericType;
@@ -15,29 +24,33 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 
-import net.stemmaweb.model.*;
-import net.stemmaweb.rest.ERelations;
-import net.stemmaweb.rest.Nodes;
-import net.stemmaweb.rest.Root;
+import net.stemmaweb.services.Database;
 import net.stemmaweb.services.GraphDatabaseServiceProvider;
-import net.stemmaweb.services.VariantGraphService;
-import net.stemmaweb.stemmaserver.JerseyTestServerFactory;
-
-import net.stemmaweb.stemmaserver.Util;
-
 import org.glassfish.jersey.test.JerseyTest;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.neo4j.dbms.api.DatabaseManagementService;
+import org.neo4j.dbms.api.DatabaseManagementServiceBuilder;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.Relationship;
 import org.neo4j.graphdb.ResourceIterator;
 import org.neo4j.graphdb.Result;
 import org.neo4j.graphdb.Transaction;
-import org.neo4j.test.TestGraphDatabaseFactory;
 
-import static org.junit.Assert.*;
+import net.stemmaweb.model.ReadingModel;
+import net.stemmaweb.model.RelationModel;
+import net.stemmaweb.model.StemmaModel;
+import net.stemmaweb.model.TraditionModel;
+import net.stemmaweb.model.UserModel;
+import net.stemmaweb.model.WitnessModel;
+import net.stemmaweb.rest.ERelations;
+import net.stemmaweb.rest.Nodes;
+import net.stemmaweb.rest.Root;
+import net.stemmaweb.services.VariantGraphService;
+import net.stemmaweb.stemmaserver.JerseyTestServerFactory;
+import net.stemmaweb.stemmaserver.Util;
 
 /**
  * Contains all tests for the api calls related to the tradition.
@@ -47,22 +60,21 @@ import static org.junit.Assert.*;
 public class TraditionTest {
     private String tradId;
 
-    private GraphDatabaseService db;
+    private final GraphDatabaseService db = Database.getInstance().session;
 
     /*
      * JerseyTest is the test environment to Test api calls it provides a
      * grizzly http service
      */
     private JerseyTest jerseyTest;
-    private HashMap<String, String> readingLookup;
+
+    public TraditionTest() throws IOException {
+    }
 
     @Before
     public void setUp() throws Exception {
 
-        db = new GraphDatabaseServiceProvider(new TestGraphDatabaseFactory()
-                .newImpermanentDatabase())
-                .getDatabase();
-        Util.setupTestDB(db, "1");
+        Util.setupTestDB(db);
 
         // Create a JerseyTestServer for the necessary REST API calls
 
@@ -74,12 +86,7 @@ public class TraditionTest {
         /*
          * create a tradition inside the test DB
          */
-        tradId = createTraditionFromFile("Tradition", "src/TestFiles/testTradition.xml", "1");
-        /*
-         * get a mapping of reading text/rank to ID
-         */
-        readingLookup = Util.makeReadingLookup(jerseyTest, tradId);
-
+        tradId = createTraditionFromFile("Tradition", "src/TestFiles/testTradition.xml", "admin@example.org");
     }
 
     private String createTraditionFromFile(String tName, String fName, String userId) {
@@ -100,11 +107,11 @@ public class TraditionTest {
 
         // import a second tradition into the db
         String testfile = "src/TestFiles/testTradition.xml";
-        expectedIds.add(createTraditionFromFile("Tradition", testfile, "1"));
+        expectedIds.add(createTraditionFromFile("Tradition", testfile, "admin@example.org"));
 
         List<TraditionModel> traditions = jerseyTest.target("/traditions")
                 .request()
-                .get(new GenericType<List<TraditionModel>>() {});
+                .get(new GenericType<>() {});
         for (TraditionModel returned : traditions) {
             assertTrue(expectedIds.contains(returned.getId()));
             assertEquals("Tradition", returned.getName());
@@ -124,7 +131,7 @@ public class TraditionTest {
        an order that is not guaranteed. */
     @Test(expected = org.junit.ComparisonFailure.class)
     public void getAllRelationshipsTest() {
-        String jsonPayload = "{\"role\":\"user\",\"id\":1}";
+        String jsonPayload = "{\"role\":\"user\",\"id\":admin@example.org}";
         jerseyTest.target("/user/1")
                 .request(MediaType.APPLICATION_JSON)
                 .put(Entity.json(jsonPayload));
@@ -140,7 +147,7 @@ public class TraditionTest {
 
         List<RelationModel> relationships = jerseyTest.target("/tradition/" + tradId + "/relations")
                 .request()
-                .get(new GenericType<List<RelationModel>>() {});
+                .get(new GenericType<>() {});
         RelationModel relLoaded = relationships.get(2);
 
         assertEquals(rel.getSource(), relLoaded.getSource());
@@ -157,17 +164,17 @@ public class TraditionTest {
 
         List<RelationModel> relationships = jerseyTest.target("/tradition/" + tradId + "/relations")
                 .request()
-                .get(new GenericType<List<RelationModel>>() {});
+                .get(new GenericType<>() {});
 
         assertEquals(3, relationships.size());
     }
 
     @Test
     public void getAllWitnessesTest() {
-        Set<String> expectedWitnesses = new HashSet<>(Arrays.asList("A", "B", "C"));
+        Set<String> expectedWitnesses = new HashSet<>(Arrays.asList("A", "B", "C", "0"));
         List<WitnessModel> witnesses = jerseyTest.target("/tradition/" + tradId + "/witnesses")
                 .request()
-                .get(new GenericType<List<WitnessModel>>() {});
+                .get(new GenericType<>() {});
         assertEquals(expectedWitnesses.size(), witnesses.size());
         for (WitnessModel w: witnesses) {
             assertTrue(expectedWitnesses.contains(w.getSigil()));
@@ -178,10 +185,10 @@ public class TraditionTest {
     public void getWitnessesMultiSectionTest () {
         Set<String> expectedWitnesses = new HashSet<>(Arrays.asList("A", "B", "C"));
         // Add the same data as a second section
-        Util.addSectionToTradition(jerseyTest, tradId, "src/TestFiles/testTradition.xml", "stemmaweb", "section 2");
+        Util.addSectionToTradition(jerseyTest, tradId, "src/TestFiles/testTradition.xml", "stemmaweb", "section 2", true);
         List<WitnessModel> witnesses = jerseyTest.target("/tradition/" + tradId + "/witnesses")
                 .request()
-                .get(new GenericType<List<WitnessModel>>() {});
+                .get(new GenericType<>() {});
         assertEquals(expectedWitnesses.size(), witnesses.size());
         for (WitnessModel w: witnesses) {
             assertTrue(expectedWitnesses.contains(w.getSigil()));
@@ -197,96 +204,6 @@ public class TraditionTest {
         assertEquals(Response.status(Status.NOT_FOUND).build().getStatus(), resp.getStatus());
     }
 
-    @Test
-    public void getDotOfNonExistentTraditionTest() {
-        Response resp = jerseyTest
-                .target("/tradition/10000/dot")
-                .request()
-                .get();
-
-        assertEquals(Response.status(Status.NOT_FOUND).build().getStatus(), resp.getStatus());
-    }
-
-    @Test
-    public void getDotTest() {
-        String str = jerseyTest
-                .target("/tradition/" + tradId + "/dot")
-                .request()
-                .get(String.class);
-
-        String[] exp = new String[64];
-        exp[0] = "digraph \"Tradition\" \\{";
-        exp[1] = "graph \\[bgcolor=\"none\", rankdir=\"LR\"\\]";
-        exp[2] = "node \\[fillcolor=\"white\", fontsize=\"14\", shape=\"ellipse\", style=\"filled\"\\]";
-        exp[3] = "edge \\[arrowhead=\"open\", color=\"#000000\", fontcolor=\"#000000\"\\]";
-        exp[4] = String.format("subgraph \\{ rank=same %s \"#SILENT#\" \\}", readingLookup.get("#START#/0"));
-        exp[5] = "\"#SILENT#\" \\[shape=diamond,color=white,penwidth=0,label=\"\"\\]";
-        exp[6] = String.format("%s \\[id=\"__START__\", label=\"#START#\"\\]", readingLookup.get("#START#/0"));
-        exp[7] = String.format("%s \\[id=\"n%s\", label=\"when\"\\]", readingLookup.get("when/1"), readingLookup.get("when/1"));
-        exp[9] = String.format("%s \\[id=\"n%s\", label=\"april\"\\]", readingLookup.get("april/2"), readingLookup.get("april/2"));
-        exp[11] = String.format("%s \\[id=\"n%s\", label=\"showers\"\\]", readingLookup.get("showers/5"), readingLookup.get("showers/5"));
-        exp[14] = String.format("%s \\[id=\"n%s\", label=\"with\"\\]", readingLookup.get("with/3"), readingLookup.get("with/3"));
-        exp[16] = String.format("%s \\[id=\"n%s\", label=\"sweet\"\\]", readingLookup.get("sweet/6"), readingLookup.get("sweet/6"));
-        exp[18] = String.format("%s \\[id=\"n%s\", label=\"his\"\\]", readingLookup.get("his/4"), readingLookup.get("his/4"));
-        exp[20] = String.format("%s \\[id=\"n%s\", label=\"with\"\\]", readingLookup.get("with/7"), readingLookup.get("with/7"));
-        exp[22] = String.format("%s \\[id=\"n%s\", label=\"april\"\\]", readingLookup.get("april/8"), readingLookup.get("april/8"));
-        exp[24] = String.format("%s \\[id=\"n%s\", label=\"fruit\"\\]", readingLookup.get("fruit/9"), readingLookup.get("fruit/9"));
-        exp[27] = String.format("%s \\[id=\"n%s\", label=\"teh\"\\]", readingLookup.get("teh/10"), readingLookup.get("teh/10"));
-        exp[29] = String.format("%s \\[id=\"n%s\", label=\"the\"\\]", readingLookup.get("the/10"), readingLookup.get("the/10"));
-        exp[31] = String.format("%s \\[id=\"n%s\", label=\"drought\"\\]", readingLookup.get("drought/11"), readingLookup.get("drought/11"));
-        exp[34] = String.format("%s \\[id=\"n%s\", label=\"march\"\\]", readingLookup.get("march/11"), readingLookup.get("march/11"));
-        exp[36] = String.format("%s \\[id=\"n%s\", label=\"of\"\\]", readingLookup.get("of/12"), readingLookup.get("of/12"));
-        exp[39] = String.format("%s \\[id=\"n%s\", label=\"drought\"\\]", readingLookup.get("drought/13"), readingLookup.get("drought/13"));
-        exp[41] = String.format("%s \\[id=\"n%s\", label=\"march\"\\]", readingLookup.get("march/13"), readingLookup.get("march/13"));
-        exp[43] = String.format("%s \\[id=\"n%s\", label=\"has\"\\]", readingLookup.get("has/14"), readingLookup.get("has/14"));
-        exp[46] = String.format("%s \\[id=\"n%s\", label=\"pierced\"\\]", readingLookup.get("pierced/15"), readingLookup.get("pierced/15"));
-        exp[48] = String.format("%s \\[id=\"n%s\", label=\"to\"\\]", readingLookup.get("to/16"), readingLookup.get("to/16"));
-        exp[50] = String.format("%s \\[id=\"n%s\", label=\"unto\"\\]", readingLookup.get("unto/16"), readingLookup.get("unto/16"));
-        exp[52] = String.format("%s \\[id=\"n%s\", label=\"teh\"\\]", readingLookup.get("teh/16"), readingLookup.get("teh/16"));
-        exp[54] = String.format("%s \\[id=\"n%s\", label=\"the\"\\]", readingLookup.get("the/17"), readingLookup.get("the/17"));
-        exp[57] = String.format("%s \\[id=\"n%s\", label=\"rood\"\\]", readingLookup.get("rood/17"), readingLookup.get("rood/17"));
-        exp[59] = String.format("%s \\[id=\"n%s\", label=\"root\"\\]", readingLookup.get("root/18"), readingLookup.get("root/18"));
-        exp[61] = String.format("%s \\[id=\"__END__\", label=\"#END#\"\\]", readingLookup.get("#END#/19"));
-        exp[8] = String.format("%s->%s \\[label=\"A, B, C\", id=\"e\\d+\", penwidth=\"1.4\"\\]", readingLookup.get("#START#/0"), readingLookup.get("when/1"));
-        exp[10] = String.format("%s->%s \\[label=\"A\", id=\"e\\d+\", penwidth=\"1.0\"\\]", readingLookup.get("when/1"), readingLookup.get("april/2"));
-        exp[12] = String.format("%s->%s \\[label=\"A\", id=\"e\\d+\", penwidth=\"1.0\"\\]", readingLookup.get("april/2"), readingLookup.get("with/3"));
-        exp[13] = String.format("%s->%s \\[label=\"B, C\", id=\"e\\d+\", penwidth=\"1.2\", minlen=\"4\"\\]", readingLookup.get("when/1"), readingLookup.get("showers/5"));
-        exp[15] = String.format("%s->%s \\[label=\"A\", id=\"e\\d+\", penwidth=\"1.0\"\\]", readingLookup.get("with/3"), readingLookup.get("his/4"));
-        exp[17] = String.format("%s->%s \\[label=\"A, B, C\", id=\"e\\d+\", penwidth=\"1.4\"\\]", readingLookup.get("showers/5"), readingLookup.get("sweet/6"));
-        exp[19] = String.format("%s->%s \\[label=\"A\", id=\"e\\d+\", penwidth=\"1.0\"\\]", readingLookup.get("his/4"), readingLookup.get("showers/5"));
-        exp[21] = String.format("%s->%s \\[label=\"A, B, C\", id=\"e\\d+\", penwidth=\"1.4\"\\]", readingLookup.get("sweet/6"), readingLookup.get("with/7"));
-        exp[23] = String.format("%s->%s \\[label=\"B, C\", id=\"e\\d+\", penwidth=\"1.2\"\\]", readingLookup.get("with/7"), readingLookup.get("april/8"));
-        exp[25] = String.format("%s->%s \\[label=\"A\", id=\"e\\d+\", penwidth=\"1.0\", minlen=\"2\"\\]", readingLookup.get("with/7"), readingLookup.get("fruit/9"));
-        exp[26] = String.format("%s->%s \\[label=\"B, C\", id=\"e\\d+\", penwidth=\"1.2\"\\]", readingLookup.get("april/8"), readingLookup.get("fruit/9"));
-        exp[28] = String.format("%s->%s \\[label=\"C\", id=\"e\\d+\", penwidth=\"1.0\"\\]", readingLookup.get("fruit/9"), readingLookup.get("teh/10"));
-        exp[30] = String.format("%s->%s \\[label=\"A, B\", id=\"e\\d+\", penwidth=\"1.2\"\\]", readingLookup.get("fruit/9"), readingLookup.get("the/10"));
-        exp[32] = String.format("%s->%s \\[label=\"C\", id=\"e\\d+\", penwidth=\"1.0\"\\]", readingLookup.get("teh/10"), readingLookup.get("drought/11"));
-        exp[33] = String.format("%s->%s \\[label=\"A\", id=\"e\\d+\", penwidth=\"1.0\"\\]", readingLookup.get("the/10"), readingLookup.get("drought/11"));
-        exp[35] = String.format("%s->%s \\[label=\"B\", id=\"e\\d+\", penwidth=\"1.0\"\\]", readingLookup.get("the/10"), readingLookup.get("march/11"));
-        exp[37] = String.format("%s->%s \\[label=\"A, C\", id=\"e\\d+\", penwidth=\"1.2\"\\]", readingLookup.get("drought/11"), readingLookup.get("of/12"));
-        exp[38] = String.format("%s->%s \\[label=\"B\", id=\"e\\d+\", penwidth=\"1.0\"\\]", readingLookup.get("march/11"), readingLookup.get("of/12"));
-        exp[40] = String.format("%s->%s \\[label=\"B\", id=\"e\\d+\", penwidth=\"1.0\"\\]", readingLookup.get("of/12"), readingLookup.get("drought/13"));
-        exp[42] = String.format("%s->%s \\[label=\"A, C\", id=\"e\\d+\", penwidth=\"1.2\"\\]", readingLookup.get("of/12"), readingLookup.get("march/13"));
-        exp[44] = String.format("%s->%s \\[label=\"B\", id=\"e\\d+\", penwidth=\"1.0\"\\]", readingLookup.get("drought/13"), readingLookup.get("has/14"));
-        exp[45] = String.format("%s->%s \\[label=\"A, C\", id=\"e\\d+\", penwidth=\"1.2\"\\]", readingLookup.get("march/13"), readingLookup.get("has/14"));
-        exp[47] = String.format("%s->%s \\[label=\"A, B, C\", id=\"e\\d+\", penwidth=\"1.4\"\\]", readingLookup.get("has/14"), readingLookup.get("pierced/15"));
-        exp[49] = String.format("%s->%s \\[label=\"B\", id=\"e\\d+\", penwidth=\"1.0\"\\]", readingLookup.get("pierced/15"), readingLookup.get("to/16"));
-        exp[51] = String.format("%s->%s \\[label=\"A\", id=\"e\\d+\", penwidth=\"1.0\"\\]", readingLookup.get("pierced/15"), readingLookup.get("unto/16"));
-        exp[53] = String.format("%s->%s \\[label=\"C\", id=\"e\\d+\", penwidth=\"1.0\"\\]", readingLookup.get("pierced/15"), readingLookup.get("teh/16"));
-        exp[55] = String.format("%s->%s \\[label=\"A\", id=\"e\\d+\", penwidth=\"1.0\"\\]", readingLookup.get("unto/16"), readingLookup.get("the/17"));
-        exp[56] = String.format("%s->%s \\[label=\"B\", id=\"e\\d+\", penwidth=\"1.0\"\\]", readingLookup.get("to/16"), readingLookup.get("the/17"));
-        exp[58] = String.format("%s->%s \\[label=\"C\", id=\"e\\d+\", penwidth=\"1.0\"\\]", readingLookup.get("teh/16"), readingLookup.get("rood/17"));
-        exp[60] = String.format("%s->%s \\[label=\"A, B\", id=\"e\\d+\", penwidth=\"1.2\"\\]", readingLookup.get("the/17"), readingLookup.get("root/18"));
-        exp[62] = String.format("%s->%s \\[label=\"C\", id=\"e\\d+\", penwidth=\"1.0\", minlen=\"2\"\\]", readingLookup.get("rood/17"), readingLookup.get("#END#/19"));
-        exp[63] = String.format("%s->%s \\[label=\"A, B\", id=\"e\\d+\", penwidth=\"1.2\"\\]", readingLookup.get("root/18"), readingLookup.get("#END#/19"));
-
-        for (String anExp : exp) {
-            Pattern p = Pattern.compile(anExp);
-            Matcher m = p.matcher(str);
-            assertTrue("seeking pattern" + m.toString(), m.find());
-        }
-    }
-
     /**
      * Test if it is possible to change the user of a Tradition
      */
@@ -299,13 +216,13 @@ public class TraditionTest {
          * Create a second user with id 42
          */
         try (Transaction tx = db.beginTx()) {
-            Node rootNode = db.findNode(Nodes.ROOT, "name", "Root node");
-            newUser = db.createNode(Nodes.USER);
+            Node rootNode = tx.findNode(Nodes.ROOT, "name", "Root node");
+            newUser = tx.createNode(Nodes.USER);
             newUser.setProperty("id", "42");
             newUser.setProperty("role", "admin");
 
             rootNode.createRelationshipTo(newUser, ERelations.SYSTEMUSER);
-            tx.success();
+            tx.commit();
         }
 
         /*
@@ -313,7 +230,7 @@ public class TraditionTest {
          */
         try (Transaction tx = db.beginTx()) {
             Iterable<Relationship> ownedTraditions = newUser.getRelationships(ERelations.OWNS_TRADITION);
-            tx.success();
+            tx.close();
             assertFalse(ownedTraditions.iterator().hasNext());
         }
 
@@ -321,22 +238,22 @@ public class TraditionTest {
          * Verify that user 1 has tradition
          */
         try (Transaction tx = db.beginTx()) {
-            Node origUser = db.findNode(Nodes.USER, "id", "1");
+            Node origUser = tx.findNode(Nodes.USER, "id", "1");
             Iterable<Relationship> ownership = origUser.getRelationships(ERelations.OWNS_TRADITION);
             assertTrue(ownership.iterator().hasNext());
             Node tradNode = ownership.iterator().next().getEndNode();
-            TraditionModel tradition = new TraditionModel(tradNode);
+            TraditionModel tradition = new TraditionModel(tradNode, tx);
 
             assertEquals(tradId, tradition.getId());
             assertEquals("Tradition", tradition.getName());
 
-            tx.success();
+            tx.close();
         } catch (Exception e) {
             fail();
         }
 
         /*
-         * Change the owner of the tradition, and another of its properties
+         * Change the owner of the tradition, and another of its properties, and add a stemweb_jobid
          */
         TraditionModel textInfo = new TraditionModel();
         textInfo.setName("RenamedTraditionName");
@@ -344,6 +261,7 @@ public class TraditionTest {
         textInfo.setDirection("RL");
         textInfo.setIs_public(false);
         textInfo.setOwner("42");
+        textInfo.setStemweb_jobid(3);
 
         Response ownerChangeResponse = jerseyTest
                 .target("/tradition/" + tradId)
@@ -355,14 +273,15 @@ public class TraditionTest {
          * Test if user with id 42 has now the tradition
          */
         try (Transaction tx = db.beginTx()) {
-            Node tradNode = db.findNode(Nodes.TRADITION, "id", tradId);
-            TraditionModel tradition = new TraditionModel(tradNode);
+            Node tradNode = tx.findNode(Nodes.TRADITION, "id", tradId);
+            TraditionModel tradition = new TraditionModel(tradNode, tx);
 
             assertEquals("42", tradition.getOwner());
             assertEquals(tradId, tradition.getId());
             assertEquals("RenamedTraditionName", tradition.getName());
             assertEquals("RL", tradition.getDirection());
-            tx.success();
+            assertEquals(Integer.valueOf(3), tradition.getStemweb_jobid());
+            tx.close();
 
         }
 
@@ -370,12 +289,30 @@ public class TraditionTest {
          * The user with id 1 has no tradition
          */
         try (Transaction tx = db.beginTx()) {
-            result = db.execute("match (n)<-[:OWNS_TRADITION]-(userId:USER {id:'1'}) return n");
+            result = tx.execute("match (n)<-[:OWNS_TRADITION]-(userId:USER {id:'1'}) return n");
             Iterator<Node> tradIterator = result.columnAs("n");
             assertFalse(tradIterator.hasNext());
 
-            tx.success();
+            tx.close();
         }
+
+        /*
+         * Now check that we can delete the Stemweb job ID
+         */
+        TraditionModel sjDel = new TraditionModel();
+        sjDel.setStemweb_jobid(0);
+        Response jobIdDelResponse = jerseyTest
+                .target("/tradition/" + tradId)
+                .request()
+                .put(Entity.json(sjDel));
+        assertEquals(Status.OK.getStatusCode(), jobIdDelResponse.getStatus());
+        TraditionModel sjResult = jobIdDelResponse.readEntity(TraditionModel.class);
+        assertEquals("RenamedTraditionName", sjResult.getName());
+        assertEquals("RL", sjResult.getDirection());
+        assertEquals(tradId, sjResult.getId());
+        assertEquals("42", sjResult.getOwner());
+        assertNull(sjResult.getStemweb_jobid());
+
     }
 
 
@@ -387,10 +324,10 @@ public class TraditionTest {
         /* Preconditon
          * The user with id 1 has tradition
          */
-        Response jerseyResult = jerseyTest.target("/user/1/traditions").request().get();
+        Response jerseyResult = jerseyTest.target("/user/admin@example.org/traditions").request().get();
         assertEquals(Response.Status.OK.getStatusCode(), jerseyResult.getStatus());
-        List<TraditionModel> tradList = jerseyResult.readEntity(new GenericType<List<TraditionModel>>() {});
-        assertEquals(1, tradList.size());
+        List<TraditionModel> tradList = jerseyResult.readEntity(new GenericType<>() {});
+        assertEquals(2, tradList.size());
         assertEquals(tradId, tradList.get(0).getId());
 
         /*
@@ -411,10 +348,10 @@ public class TraditionTest {
         /* PostCondition
          * The user with id 1 has still tradition
          */
-        jerseyResult = jerseyTest.target("/user/1/traditions").request().get();
+        jerseyResult = jerseyTest.target("/user/admin@example.org/traditions").request().get();
         assertEquals(Response.Status.OK.getStatusCode(), jerseyResult.getStatus());
-        tradList = jerseyResult.readEntity(new GenericType<List<TraditionModel>>() {});
-        assertEquals(1, tradList.size());
+        tradList = jerseyResult.readEntity(new GenericType<>() {});
+        assertEquals(2, tradList.size());
         assertEquals(tradId, tradList.get(0).getId());
         assertEquals("Tradition", tradList.get(0).getName());
 
@@ -430,16 +367,16 @@ public class TraditionTest {
          * Create a second user with id 42
          */
         try (Transaction tx = db.beginTx()) {
-            Result result = db.execute("match (n:ROOT) return n");
+            Result result = tx.execute("match (n:ROOT) return n");
             Iterator<Node> nodes = result.columnAs("n");
             Node rootNode = nodes.next();
 
-            Node node = db.createNode(Nodes.USER);
+            Node node = tx.createNode(Nodes.USER);
             node.setProperty("id", "42");
             node.setProperty("role", "admin");
 
             rootNode.createRelationshipTo(node, ERelations.SYSTEMUSER);
-            tx.success();
+            tx.close();
         }
 
         /*
@@ -454,7 +391,7 @@ public class TraditionTest {
          */
         jerseyResult = jerseyTest.target("/user/1/traditions").request().get();
         assertEquals(Response.Status.OK.getStatusCode(), jerseyResult.getStatus());
-        List<TraditionModel> tradList = jerseyResult.readEntity(new GenericType<List<TraditionModel>>() {});
+        List<TraditionModel> tradList = jerseyResult.readEntity(new GenericType<>() {});
         assertEquals(1, tradList.size());
         assertEquals(tradId, tradList.get(0).getId());
 
@@ -484,7 +421,7 @@ public class TraditionTest {
          */
         jerseyResult = jerseyTest.target("/user/1/traditions").request().get();
         assertEquals(Response.Status.OK.getStatusCode(), jerseyResult.getStatus());
-        tradList = jerseyResult.readEntity(new GenericType<List<TraditionModel>>() {});
+        tradList = jerseyResult.readEntity(new GenericType<>() {});
         assertEquals(1, tradList.size());
         assertEquals(tradId, tradList.get(0).getId());
         assertEquals("Tradition", tradList.get(0).getName());
@@ -509,7 +446,7 @@ public class TraditionTest {
         assertEquals(Response.Status.OK.getStatusCode(), removalResponse.getStatus());
 
 
-        Node startNode = VariantGraphService.getStartNode(tradId, db);
+        Node startNode = VariantGraphService.getStartNode(tradId, db.beginTx());
 
         assertNull(startNode);
     }
@@ -531,8 +468,7 @@ public class TraditionTest {
         // count the total number of nodes
         AtomicInteger numNodes = new AtomicInteger(0);
         try (Transaction tx = db.beginTx()) {
-            db.execute("match (n) return n").forEachRemaining(x -> numNodes.getAndIncrement());
-            tx.success();
+            tx.execute("match (n) return n").forEachRemaining(x -> numNodes.getAndIncrement());
         }
         int originalNodeCount = numNodes.get();
 
@@ -565,10 +501,10 @@ public class TraditionTest {
         try (Transaction tx = db.beginTx()) {
             int[] alignRanks = {77, 110};
             for (int r : alignRanks) {
-                ResourceIterator<Node> atRank = db.findNodes(Nodes.READING, "rank", r);
+                ResourceIterator<Node> atRank = tx.findNodes(Nodes.READING, "rank", r);
                 assertTrue(atRank.hasNext());
-                ReadingModel rdg1 = new ReadingModel(atRank.next());
-                ReadingModel rdg2 = new ReadingModel(atRank.next());
+                ReadingModel rdg1 = new ReadingModel(atRank.next(), tx);
+                ReadingModel rdg2 = new ReadingModel(atRank.next(), tx);
                 RelationModel rel = new RelationModel();
                 rel.setType("grammatical");
                 rel.setScope("local");
@@ -581,25 +517,24 @@ public class TraditionTest {
             }
 
             // and a transposition, for kicks
-            Node tx1 = db.findNode(Nodes.READING, "rank", 217);
-            Node tx2 = db.findNode(Nodes.READING, "rank", 219);
+            Node tx1 = tx.findNode(Nodes.READING, "rank", 217);
+            Node tx2 = tx.findNode(Nodes.READING, "rank", 219);
             RelationModel txrel = new RelationModel();
             txrel.setType("transposition");
             txrel.setScope("local");
-            txrel.setSource(String.valueOf(tx1.getId()));
-            txrel.setTarget(String.valueOf(tx2.getId()));
+            txrel.setSource(String.valueOf(tx1.getElementId()));
+            txrel.setTarget(String.valueOf(tx2.getElementId()));
             jerseyResponse = jerseyTest.target("/tradition/" + florId + "/relation")
                     .request()
                     .post(Entity.json(txrel));
             assertEquals(Response.Status.CREATED.getStatusCode(), jerseyResponse.getStatusInfo().getStatusCode());
-            tx.success();
         }
 
         // now count the nodes
         numNodes.set(0);
         try (Transaction tx = db.beginTx()) {
-            db.execute("match (n) return n").forEachRemaining(x -> numNodes.getAndIncrement());
-            tx.success();
+            tx.execute("match (n) return n").forEachRemaining(x -> numNodes.getAndIncrement());
+            tx.close();
         }
         assertTrue(numNodes.get() > originalNodeCount + 200);
 
@@ -613,8 +548,8 @@ public class TraditionTest {
         // nodes should be back to original number
         numNodes.set(0);
         try (Transaction tx = db.beginTx()) {
-            db.execute("match (n) return n").forEachRemaining(x -> numNodes.getAndIncrement());
-            tx.success();
+            tx.execute("match (n) return n").forEachRemaining(x -> numNodes.getAndIncrement());
+            tx.close();
         }
         assertEquals(originalNodeCount, numNodes.get());
     }
@@ -637,17 +572,17 @@ public class TraditionTest {
             /*
              * Test if user 1 still exists
              */
-            Result result = db.execute("match (userId:USER {id:'1'}) return userId");
+            Result result = tx.execute("match (userId:USER {id:'admin@example.org'}) return userId");
             Iterator<Node> nodes = result.columnAs("userId");
             assertTrue(nodes.hasNext());
 
             /*
              * Check if tradition {tradId} still exists
              */
-            result = db.execute("match (t:TRADITION {id:'" + tradId + "'}) return t");
+            result = tx.execute("match (t:TRADITION {id:'" + tradId + "'}) return t");
             nodes = result.columnAs("t");
             assertTrue(nodes.hasNext());
-            tx.success();
+            tx.close();
         }
     }
 
@@ -658,7 +593,7 @@ public class TraditionTest {
      */
     @After
     public void tearDown() throws Exception {
+
         jerseyTest.tearDown();
-        db.shutdown();
     }
 }

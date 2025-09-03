@@ -1,18 +1,31 @@
 package net.stemmaweb.model;
 
+import java.util.*;
+import java.util.stream.*;
+import java.util.Arrays;
+import java.util.stream.Stream;
+import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
+
+import javax.xml.bind.annotation.XmlRootElement;
+
+import org.neo4j.graphdb.Direction;
+import org.neo4j.graphdb.GraphDatabaseService;
+import org.neo4j.graphdb.Node;
+import org.neo4j.graphdb.Relationship;
+import org.neo4j.graphdb.RelationshipType;
+import org.neo4j.graphdb.Transaction;
+import org.neo4j.graphdb.traversal.TraversalDescription;
+import org.neo4j.graphdb.traversal.Uniqueness;
+
 import com.fasterxml.jackson.annotation.JsonInclude;
+
 import net.stemmaweb.rest.ERelations;
+import net.stemmaweb.services.GraphDatabaseServiceProvider;
 import net.stemmaweb.services.RelationService;
 import net.stemmaweb.services.VariantCrawler;
 import net.stemmaweb.services.VariantGraphService;
 import net.stemmaweb.services.WitnessPath;
-import org.neo4j.graphdb.*;
-import org.neo4j.graphdb.traversal.TraversalDescription;
-import org.neo4j.graphdb.traversal.Uniqueness;
-
-import javax.xml.bind.annotation.XmlRootElement;
-import java.util.*;
-import java.util.stream.Collectors;
 
 @XmlRootElement
 @JsonInclude(JsonInclude.Include.NON_DEFAULT)
@@ -70,7 +83,8 @@ public class VariantListModel {
      *
      * @param sectionNode - the section to generate the list for
      * @param baseWitness - the witness sigil to indicate the base text, if any
-     * @param conflate    - the name of the relations that should be the basis for text normalisation, if any
+     * @param excludeWitnesses - a list of witness sigla to exclude from the result
+     * @param conflate    - the name of a relation that should be the basis for text normalisation, if any
      * @param suppress    - a regular expression of readings that should be excluded from the variant list
      * @param filterNonsense - whether to exclude readings marked as nonsense readings
      * @param filterTypeOne - whether to filter out so-called "type 1" variants
@@ -78,6 +92,7 @@ public class VariantListModel {
      *                    values are "no", "maybe" and "yes".
      * @param combine     - whether to move variants marked as dislocations to the variant location of
      *                    their corresponding base readings
+     * @throws Exception (anything thrown by clearNormalization)
      */
     public VariantListModel(Node sectionNode, String baseWitness, List<String> excludeWitnesses, List<String> conflate,
                             String suppress, Boolean filterNonsense, Boolean filterTypeOne, String significant,
@@ -96,50 +111,51 @@ public class VariantListModel {
         this.filterTypeOne = filterTypeOne;
         this.significant = RelationModel.Significance.valueOf(significant);
         this.dislocationCombined = combine;
-        GraphDatabaseService db = sectionNode.getGraphDatabase();
+        GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
         try (Transaction tx = db.beginTx()) {
             RelationshipType follow = ERelations.SEQUENCE;
-            if (conflate != null && !conflate.isEmpty()) {
-                VariantGraphService.normalizeGraph(sectionNode, conflate);
+            if (conflate.size() > 0) {
+                VariantGraphService.normalizeGraph(sectionNode, conflate, tx);
                 follow = ERelations.NSEQUENCE;
             }
 
             // Figure out which types are dislocation types in this tradition
             this.dislocationTypes = new ArrayList<>();
-            for (RelationTypeModel rtm : RelationService.ourRelationTypes(sectionNode)) {
+            for (RelationTypeModel rtm : RelationService.ourRelationTypes(sectionNode, tx)) {
                 if (!rtm.getIs_colocation())
                     dislocationTypes.add(rtm.getName());
             }
 
             // See which list of readings will serve as our base text
-            Node startNode = VariantGraphService.getStartNode(String.valueOf(sectionNode.getId()), db);
-            TraversalDescription baseWalker = db.traversalDescription().depthFirst();
+            Node startNode = VariantGraphService.getStartNode(String.valueOf(sectionNode.getElementId()), tx);
+            TraversalDescription baseWalker = tx.traversalDescription().depthFirst();
             List<Relationship> baseText;
             if (baseWitness != null) {
                 // We use the requested witness text, which is connected via SEQUENCE or NSEQUENCE
                 // links and so unproblematic.
                 baseWalker = baseWalker.evaluator(new WitnessPath(baseWitness, follow).getEvalForWitness());
-                baseText = baseWalker.traverse(startNode).relationships().stream().collect(Collectors.toList());
+                baseText = StreamSupport.stream(baseWalker.traverse(startNode).relationships().spliterator(), false).collect(Collectors.toList());
                 this.basisText = baseWitness;
             } else {
                 // We collect the readings, but count their SEQUENCE or NSEQUENCE links in the base text.
                 List<Node> baseReadings;
-                if (startNode.hasRelationship(ERelations.LEMMA_TEXT, Direction.OUTGOING)) {
+                if (startNode.hasRelationship(Direction.OUTGOING, ERelations.LEMMA_TEXT)) {
                     // We traverse the lemma text
                     baseWalker = baseWalker.relationships(ERelations.LEMMA_TEXT);
-                    baseReadings = baseWalker.traverse(startNode).nodes().stream().collect(Collectors.toList());
+                    baseReadings = StreamSupport.stream(baseWalker.traverse(startNode).nodes().spliterator(), false).collect(Collectors.toList());
                     this.basisText = "lemma";
                 } else {
                     // We calculate and use the majority text
-                    baseReadings = VariantGraphService.calculateMajorityText(sectionNode);
+                    baseReadings = VariantGraphService.calculateMajorityText(sectionNode, tx);
                     this.basisText = "majority";
                 }
                 baseText = new ArrayList<>();
-                Node prior = baseReadings.remove(0);
+                Node prior = tx.getNodeByElementId(baseReadings.remove(0).getElementId());
                 for (Node curr : baseReadings) {
-                    prior.getRelationships(follow, Direction.OUTGOING).forEach(x -> {
-                        if (x.getEndNode().equals(curr)) baseText.add(x);});
-                    prior = curr;
+                    Node current = tx.getNodeByElementId(curr.getElementId());
+                    prior.getRelationships(Direction.OUTGOING).forEach(x -> {
+                        if (x.getEndNode().equals(current)) baseText.add(x);});
+                    prior = current;
                 }
             }
 
@@ -147,8 +163,8 @@ public class VariantListModel {
 
             // Filter readings by regex / nonsense flag as needed. Pass the base text in case
             // any before/after reading settings need to be altered.
-            this.baseChain = baseText.stream().map(x -> new ReadingModel(x.getEndNode())).collect(Collectors.toList());
-            this.baseChain.add(0, new ReadingModel(baseText.get(0).getStartNode()));
+            this.baseChain = baseText.stream().map(x -> new ReadingModel(x.getEndNode(), tx)).collect(Collectors.toList());
+            this.baseChain.add(0, new ReadingModel(baseText.get(0).getStartNode(), tx));
             this.filterReadings(this.baseChain);
 
             // Filter for type1 variants
@@ -164,9 +180,9 @@ public class VariantListModel {
 
             // Clean up if we normalised
             if (conflate != null && !conflate.isEmpty())
-                VariantGraphService.clearNormalization(sectionNode);
+                VariantGraphService.clearNormalization(sectionNode, tx);
 
-            tx.success();
+            tx.commit();
         }
     }
 
@@ -176,27 +192,33 @@ public class VariantListModel {
         VariantCrawler crawler = new VariantCrawler(sequence, follow, excludeWitnesses);
         // Set up the traversal for the path segments we want
         try (Transaction tx = db.beginTx()) {
-            TraversalDescription traverser = db.traversalDescription().depthFirst()
+            TraversalDescription traverser = tx.traversalDescription().depthFirst()
                     .uniqueness(Uniqueness.RELATIONSHIP_PATH)
                     .expand(crawler.variantListExpander())
                     .evaluator(crawler.variantListEvaluator());
             // Get our base chain of nodes
-            List<Node> baseChain = sequence.stream().map(Relationship::getEndNode).collect(Collectors.toList());
-            baseChain.add(0, sequence.get(0).getStartNode());
+            // List<Node> baseChain = sequence.stream().map(Relationship::getEndNode).collect(Collectors.toList());
+            List<Node> baseChain = new ArrayList<>(
+                    new LinkedHashSet<>(
+                            sequence.stream().map(Relationship::getNodes).collect(
+                                    Collectors.toList()
+                            ).stream().flatMap(Arrays::stream).collect(Collectors.toList())));
+
+            // baseChain.add(0, sequence.get(0).getStartNode());
             // We have to run the traverser from each node in the base chain, to get any variants that start there.
             for (Node n : baseChain) {
                 for (org.neo4j.graphdb.Path v : traverser.traverse(n)) {
-                    VariantModel vm = new VariantModel(v, crawler.getWitnessesForPath(v));
+                    VariantModel vm = new VariantModel(v, crawler.getWitnessesForPath(v), tx);
                     // Sanity check
                     // if (!baseChain.contains(v.startNode()) || !baseChain.contains(v.endNode()))
                     //     throw new Exception("Variant chain disconnected from base chain");
                     if (!vm.isEmpty()) {
-                        VariantLocationModel vloc = this.getVLM(baseChain, v.startNode(), v.endNode());
+                        VariantLocationModel vloc = this.getVLM(baseChain, v.startNode(), v.endNode(), tx);
                         vloc.addVariant(vm);
                     }
                 }
             }
-            tx.success();
+            tx.commit();
         }
 
         // Add relation information to each variant location. This will also notice displaced variants.
@@ -209,10 +231,10 @@ public class VariantListModel {
 
     private VariantLocationModel getVLM(List<Node> baseChain,
                                         Node vStart,
-                                        Node vEnd) {
+                                        Node vEnd, Transaction tx) {
         // Retrieve any existing VariantLocationModel, or create a new one
         VariantLocationModel vlm = new VariantLocationModel();
-        String key = String.format("%d -- %d", vStart.getId(), vEnd.getId());
+        String key = String.format("%s -- %s", vStart.getElementId(), vEnd.getElementId());
         Optional<VariantLocationModel> ovlm = this.getVariantlist().stream()
                 .filter(x -> key.equals(x.lookupKey())).findFirst();
         if (ovlm.isPresent()) {
@@ -223,17 +245,17 @@ public class VariantListModel {
             // Turn our sub-chain into reading models
             List<ReadingModel> baseReadings = baseChain
                     .subList(baseChain.indexOf(vStart), baseChain.indexOf(vEnd)+1)
-                    .stream().map(ReadingModel::new).collect(Collectors.toList());
+                    .stream().map(n -> new ReadingModel(n, tx)).collect(Collectors.toList());
             // Set the reading models in place in the VLM
             vlm.setBefore(baseReadings.remove(0));
             vlm.setAfter(baseReadings.remove(baseReadings.size() - 1));
             vlm.setBase(baseReadings);
-            // Set the rank index to the rank of the first base reading
             if (baseReadings.size() > 0)
+            // Set the rank index to the rank of the first base reading
                 vlm.setRankIndex(baseReadings.get(0).getRank());
             else
                 vlm.setRankIndex(vlm.getBefore().getRank() + 1);
-            vlm.setNormalised(vStart.hasRelationship(ERelations.NSEQUENCE, Direction.OUTGOING));
+            vlm.setNormalised(vStart.hasRelationship(Direction.OUTGOING, ERelations.NSEQUENCE));
             this.variantlist.add(vlm);
         }
         return vlm;

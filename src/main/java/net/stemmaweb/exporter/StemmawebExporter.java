@@ -1,5 +1,7 @@
 package net.stemmaweb.exporter;
 
+import static net.stemmaweb.Util.jsonerror;
+
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.OutputStream;
@@ -18,10 +20,6 @@ import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
 
-import net.stemmaweb.rest.ERelations;
-
-import net.stemmaweb.services.GraphDatabaseServiceProvider;
-import net.stemmaweb.services.VariantGraphService;
 import org.neo4j.graphdb.Direction;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Node;
@@ -32,6 +30,10 @@ import org.w3c.dom.Document;
 
 import com.sun.xml.txw2.output.IndentingXMLStreamWriter;
 
+import net.stemmaweb.rest.ERelations;
+import net.stemmaweb.services.GraphDatabaseServiceProvider;
+import net.stemmaweb.services.VariantGraphService;
+
 /**
  * This class provides methods for exporting GraphMl (XML) File from Neo4J in the old Stemmaweb format
  *
@@ -39,10 +41,10 @@ import com.sun.xml.txw2.output.IndentingXMLStreamWriter;
  */
 
 public class StemmawebExporter {
-    private GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
-    private GraphDatabaseService db = dbServiceProvider.getDatabase();
+    private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
+    private final GraphDatabaseService db = dbServiceProvider.getDatabase();
 
-    private HashMap<String,String[]> nodeMap = new HashMap<String, String[]>() {
+    private final HashMap<String,String[]> nodeMap = new HashMap<>() {
         {
             put("grammar_invalid", new String[]{"dn0", "boolean"});
             put("id", new String[]{"dn1", "string"});
@@ -66,7 +68,7 @@ public class StemmawebExporter {
             put("sep_char", new String[]{"dn19", "string"});     // Sequence
         }
     };
-    private HashMap<String,String[]> relationMap = new HashMap<String, String[]>() {
+    private final HashMap<String,String[]> relationMap = new HashMap<>() {
         {
             put("a_derivable_from_b", new String[]{"de0", "boolean"});
             put("alters_meaning", new String[]{"de1", "int"});
@@ -84,7 +86,7 @@ public class StemmawebExporter {
             put("type_related", new String[]{"de13", "string"});
         }
     };
-    private HashMap<String,String[]> graphMap = new HashMap<String, String[]>() {
+    private final HashMap<String,String[]> graphMap = new HashMap<>() {
         {
             put("language", new String[]{"dg0", "string"});
             put("name", new String[]{"dg1", "string"});
@@ -119,17 +121,17 @@ public class StemmawebExporter {
         int nodeCountGraph1 = 0;
         int edgeCountGraph2 = 0;
         int nodeCountGraph2 = 0;
-
-        Node traditionNode = VariantGraphService.getTraditionNode(tradId, db);
-        if(traditionNode == null)
-            return Response.status(Status.NOT_FOUND).entity("No tradition found for this ID").build();
-        Node traditionStartNode = VariantGraphService.getStartNode(tradId, db);
-        if(traditionStartNode == null)
-            return Response.status(Status.NOT_FOUND).entity("No graph found for this tradition.").build();
-
         File file;
-        try (Transaction tx = db.beginTx()) {
+        Transaction tx = db.beginTx();
 
+        try {
+        	Node traditionNode = VariantGraphService.getTraditionNode(tradId, tx);
+        	if(traditionNode == null)
+        		return Response.status(Status.NOT_FOUND).entity(jsonerror("No tradition found for this ID")).build();
+        	Node traditionStartNode = VariantGraphService.getStartNode(tradId, tx);
+        	if(traditionStartNode == null)
+        		return Response.status(Status.NOT_FOUND).entity(jsonerror("No graph found for this tradition.")).build();
+        	
             file = File.createTempFile("output", ".xml");
             OutputStream out = new FileOutputStream(file);
 
@@ -193,14 +195,14 @@ public class StemmawebExporter {
 
             long nodeId = 0;
             long edgeId = 0;
-            for (Node node : db.traversalDescription().depthFirst()
+            for (Node node : tx.traversalDescription().depthFirst()
                     .relationships(ERelations.SEQUENCE, Direction.OUTGOING)
                     .uniqueness(Uniqueness.NODE_GLOBAL)
                     .traverse(traditionStartNode).nodes()) {
                 nodeCountGraph1++;
                 props = node.getPropertyKeys();
                 writer.writeStartElement("node");
-                writer.writeAttribute("id", String.valueOf(node.getId()));
+                writer.writeAttribute("id", node.getElementId());
                 writer.writeStartElement("data");
                 writer.writeAttribute("key", nodeMap.get("id")[0]);
                 writer.writeCharacters("n" + nodeId++);
@@ -219,7 +221,7 @@ public class StemmawebExporter {
 
             String startNode;
             String endNode;
-            for ( Relationship rel : db.traversalDescription()
+            for ( Relationship rel : tx.traversalDescription()
                     .relationships(ERelations.SEQUENCE, Direction.OUTGOING)
                     .uniqueness(Uniqueness.RELATIONSHIP_GLOBAL)
                     .traverse(traditionStartNode)
@@ -231,8 +233,8 @@ public class StemmawebExporter {
                         for (String witness : witnesses) {
                             writer.writeStartElement("edge");
 
-                            writer.writeAttribute("source", rel.getStartNode().getId() + "");
-                            writer.writeAttribute("target", rel.getEndNode().getId() + "");
+                            writer.writeAttribute("source", rel.getStartNode().getElementId());
+                            writer.writeAttribute("target", rel.getEndNode().getElementId());
                             writer.writeAttribute("id", "e" + edgeId++);
 
                             if (!property.equals("witnesses") && relationMap.containsKey(property)) {
@@ -270,14 +272,14 @@ public class StemmawebExporter {
 
             nodeId = 0;
             edgeId = 0;
-            for (Node node : db.traversalDescription().depthFirst()
+            for (Node node : tx.traversalDescription().depthFirst()
                     .relationships(ERelations.SEQUENCE, Direction.OUTGOING)
                     .uniqueness(Uniqueness.NODE_GLOBAL)
                     .traverse(traditionStartNode)
                     .nodes()) {
                 nodeCountGraph2++;
                 writer.writeStartElement("node");
-                writer.writeAttribute("id", node.getId() + "");
+                writer.writeAttribute("id", node.getElementId());
                 writer.writeStartElement("data");
                 writer.writeAttribute("key", nodeMap.get("id")[0]);
                 writer.writeCharacters("n" + nodeId++);
@@ -285,7 +287,7 @@ public class StemmawebExporter {
                 writer.writeEndElement(); // end node
             }
 
-            for (Node node : db.traversalDescription()
+            for (Node node : tx.traversalDescription()
                     .depthFirst()
                     .relationships(ERelations.SEQUENCE, Direction.OUTGOING)
                     .uniqueness(Uniqueness.NODE_GLOBAL)
@@ -293,13 +295,13 @@ public class StemmawebExporter {
                     .nodes()) {
 
                 Iterable<Relationship> rels;
-                rels = node.getRelationships(ERelations.RELATED, Direction.OUTGOING);
+                rels = node.getRelationships(Direction.OUTGOING, ERelations.RELATED);
                 for(Relationship rel : rels) {
                     edgeCountGraph2++;
                     props = rel.getPropertyKeys();
                     writer.writeStartElement("edge");
-                    startNode = rel.getStartNode().getId() + "";
-                    endNode = rel.getEndNode().getId() + "";
+                    startNode = rel.getStartNode().getElementId();
+                    endNode = rel.getEndNode().getElementId();
                     writer.writeAttribute("source", startNode);
                     writer.writeAttribute("target", endNode);
                     writer.writeAttribute("id", "e" + edgeId++);
@@ -347,20 +349,23 @@ public class StemmawebExporter {
             nodesCount = attr.getNamedItem("parse.nodes");
             nodesCount.setTextContent(nodeCountGraph2 + "");
 
-            // TODO What is the point of this transformer call?
+            // TODO What is the point of this transformer call? Trying to cleanup `file` after this breaks.
             TransformerFactory transformerFactory = TransformerFactory.newInstance();
             Transformer transformer = transformerFactory.newTransformer();
             DOMSource source = new DOMSource(doc);
             StreamResult resultFile = new StreamResult(file);
             transformer.transform(source, resultFile);
-            tx.success();
         } catch(Exception e) {
             e.printStackTrace();
 
             return Response
                     .status(Response.Status.INTERNAL_SERVER_ERROR)
-                    .entity("Error: Tradition could not be exported!")
+                    .entity(jsonerror("Error: Tradition could not be exported!"))
                     .build();
+        } finally {
+        	if (tx != null) {
+        		tx.close();
+        	}
         }
 
         return Response.ok(file.toString(), MediaType.APPLICATION_XML).build();

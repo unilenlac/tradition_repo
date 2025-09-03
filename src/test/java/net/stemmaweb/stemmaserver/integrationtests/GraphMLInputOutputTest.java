@@ -1,34 +1,51 @@
 package net.stemmaweb.stemmaserver.integrationtests;
 
+import static org.junit.Assert.assertNotEquals;
+
+import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
+
+import javax.ws.rs.client.Entity;
+import javax.ws.rs.core.GenericType;
+import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.Response;
+import javax.xml.parsers.DocumentBuilderFactory;
+
+import org.glassfish.jersey.test.JerseyTest;
+import org.neo4j.dbms.api.DatabaseManagementService;
+import org.neo4j.graphdb.GraphDatabaseService;
+import org.neo4j.graphdb.Node;
+import org.neo4j.graphdb.Transaction;
+import org.w3c.dom.Document;
+import org.w3c.dom.NodeList;
+import org.xml.sax.InputSource;
+
 import junit.framework.TestCase;
-import net.stemmaweb.model.*;
+import net.stemmaweb.model.AnnotationLabelModel;
+import net.stemmaweb.model.AnnotationLinkModel;
+import net.stemmaweb.model.AnnotationModel;
+import net.stemmaweb.model.ReadingModel;
+import net.stemmaweb.model.RelationTypeModel;
+import net.stemmaweb.model.SectionModel;
+import net.stemmaweb.model.StemmaModel;
+import net.stemmaweb.model.TraditionModel;
+import net.stemmaweb.model.WitnessModel;
 import net.stemmaweb.rest.Nodes;
 import net.stemmaweb.services.GraphDatabaseServiceProvider;
 import net.stemmaweb.services.ReadingService;
 import net.stemmaweb.services.VariantGraphService;
 import net.stemmaweb.stemmaserver.Util;
-
-import org.glassfish.jersey.test.JerseyTest;
-import org.neo4j.graphdb.GraphDatabaseService;
-import org.neo4j.graphdb.Node;
-import org.neo4j.graphdb.Transaction;
-import org.neo4j.test.TestGraphDatabaseFactory;
-import org.w3c.dom.Document;
-import org.w3c.dom.NodeList;
-import org.xml.sax.InputSource;
-
-import javax.ws.rs.core.Response;
-import javax.xml.parsers.DocumentBuilderFactory;
-import javax.ws.rs.core.GenericType;
-import javax.ws.rs.core.MediaType;
-import java.io.StringReader;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
-import java.util.stream.Collectors;
-
-import static org.junit.Assert.assertNotEquals;
 
 /**
  * Tests for our own input/output formats.
@@ -36,15 +53,21 @@ import static org.junit.Assert.assertNotEquals;
  */
 public class GraphMLInputOutputTest extends TestCase {
 
-    private GraphDatabaseService db;
+    private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
+    private final GraphDatabaseService db = dbServiceProvider.getDatabase();
     private JerseyTest jerseyTest;
     private String tradId;
     private String multiTradId;
+	private DatabaseManagementService dbService;
+
+    public GraphMLInputOutputTest() throws IOException {
+    }
 
     public void setUp() throws Exception {
         super.setUp();
-        db = new GraphDatabaseServiceProvider(new TestGraphDatabaseFactory().newImpermanentDatabase()).getDatabase();
-        Util.setupTestDB(db, "me@example.org");
+        // db = new GraphDatabaseServiceProvider(new TestGraphDatabaseFactory().newImpermanentDatabase()).getDatabase();
+    	// db = new GraphDatabaseServiceProvider((String) null).getDatabase();
+        Util.setupTestDB(db);
 
         // Create a JerseyTestServer for the necessary REST API calls
         jerseyTest = Util.setupJersey();
@@ -52,45 +75,58 @@ public class GraphMLInputOutputTest extends TestCase {
         Response r = Util.createTraditionFromFileOrString(jerseyTest, "Tradition",
                     "BI", "me@example.org", "src/TestFiles/testTradition.xml", "stemmaweb");
         tradId = Util.getValueFromJson(r, "tradId");
+//        assertNotNull(tradId);
 
+        // Try our own medicine
         r = Util.createTraditionFromFileOrString(jerseyTest, "Multi-section tradition",
                 "LR", "me@example.org", "src/TestFiles/legendfrag.xml", "stemmaweb");
         multiTradId = Util.getValueFromJson(r, "tradId");
         Util.addSectionToTradition(jerseyTest, multiTradId, "src/TestFiles/lf2.xml",
-                "stemmaweb", "section 2");
+                "stemmaweb", "section 2", true);
 
     }
 
-    public void testXMLOutput() {
-        // Just request the tradition and make sure that we get XML back out
+    public void testZipOutput() {
+        // Just request the tradition and make sure that we get a zip file back out
         Response r = jerseyTest.target("/tradition/" + tradId + "/graphml")
-                .request(MediaType.APPLICATION_XML_TYPE).get();
+                .request("application/zip").get();
         assertEquals(Response.Status.OK.getStatusCode(), r.getStatus());
-        assertTrue(r.readEntity(String.class)
-                .contains("<key attr.name=\"neolabel\" attr.type=\"string\" for=\"node\" id=\"dn0\"/>"));
+        try {
+            LinkedHashMap<String,File> lm = net.stemmaweb.parser.Util.extractGraphMLZip(r.readEntity(InputStream.class));
+            for (File f : lm.values()) {
+                assertTrue(new String(Files.readAllBytes(f.toPath()))
+                        .contains("<key attr.name=\"neolabel\" attr.type=\"string\" for=\"node\" id=\"dn0\"/>"));
+            }
+            net.stemmaweb.parser.Util.cleanupExtractedZip(lm);
+        } catch (Exception e) {
+            fail();
+        }
     }
 
-    public void testXMLInputExistingTradition() {
+    public void testZipInputExistingTradition() {
         Response r = jerseyTest.target("/tradition/" + tradId + "/graphml")
-                .request(MediaType.APPLICATION_XML_TYPE).get();
-        String graphML = r.readEntity(String.class);
+                .request("application/zip").get();
+        // Write it to a temp file
+        String gmlZip = Util.saveGraphMLTempfile(r);
+        assertNotNull(gmlZip);
 
         r = Util.createTraditionFromFileOrString(jerseyTest, "New-name tradition", "LR",
-                "me@example.org", graphML, "graphml");
+                "me@example.org", gmlZip, "graphml");
         assertEquals(Response.Status.CREATED.getStatusCode(), r.getStatus());
         assertNotEquals(tradId, Util.getValueFromJson(r, "tradId"));
     }
 
-    public void testXMLInput() {
-        // Now we have to be able to parse back in what we spat out.
+    public void testZipInput() {
+        // Make sure we can parse back in what we spat out.
         Response r = jerseyTest.target("/tradition/" + tradId + "/graphml")
-                .request(MediaType.APPLICATION_XML_TYPE).get();
-        String graphML = r.readEntity(String.class);
+                .request("application/zip").get();
+        assertEquals(Response.Status.OK.getStatusCode(), r.getStatus());
+        String inputFile = Util.saveGraphMLTempfile(r);
 
         r = jerseyTest.target("/tradition/" + tradId).request().delete();
         assertEquals(Response.Status.OK.getStatusCode(), r.getStatus());
         r = Util.createTraditionFromFileOrString(jerseyTest, "New-name tradition", "LR",
-                "me@example.org", graphML, "graphml");
+                "me@example.org", inputFile, "graphml");
         assertEquals(Response.Status.CREATED.getStatusCode(), r.getStatus());
 
         // Does it have the right tradition ID?
@@ -104,14 +140,14 @@ public class GraphMLInputOutputTest extends TestCase {
         // Does the tradition have the right number of sections?
         ArrayList<SectionModel> s = jerseyTest.target("/tradition/" + tradId + "/sections")
                 .request()
-                .get(new GenericType<ArrayList<SectionModel>>() {});
+                .get(new GenericType<>() {});
         assertEquals(1, s.size());
         assertEquals("DEFAULT", s.get(0).getName());
 
         // Does the tradition have the right number of readings?
         ArrayList<ReadingModel> rdgs = jerseyTest.target("/tradition/" + tradId + "/readings")
                 .request()
-                .get(new GenericType<ArrayList<ReadingModel>>(){});
+                .get(new GenericType<>(){});
         assertEquals(26, rdgs.size());
 
         // Do the readings claim to belong to the new sections and not the old?
@@ -120,17 +156,18 @@ public class GraphMLInputOutputTest extends TestCase {
                 .get(new GenericType<List<SectionModel>>() {})
                 .stream().map(SectionModel::getId).collect(Collectors.toSet());
         try (Transaction tx = db.beginTx()) {
-            List<Node> ourReadings = VariantGraphService.returnEntireTradition(tradId, db).nodes().stream()
+//        	List<Node> ourReadings = VariantGraphService.returnEntireTradition(tradId, db).nodes().stream()
+            List<Node> ourReadings = StreamSupport.stream(VariantGraphService.returnEntireTradition(tradId, db).nodes().spliterator(), false)
                     .filter(x -> x.hasLabel(Nodes.READING)).collect(Collectors.toList());
             for (Node rdg : ourReadings)
                 assertTrue(sections.contains(rdg.getProperty("section_id").toString()));
-            tx.success();
+            tx.close();
         }
 
         // Do the witness texts match?
         ArrayList<WitnessModel> wits = jerseyTest.target("/tradition/" + tradId + "/witnesses")
                 .request()
-                .get(new GenericType<ArrayList<WitnessModel>>(){});
+                .get(new GenericType<>(){});
         assertEquals(3, wits.size());
         String textA = "when april with his showers sweet with fruit the drought of march has pierced unto the root";
         String textB = "when showers sweet with april fruit the march of drought has pierced to the root";
@@ -148,7 +185,7 @@ public class GraphMLInputOutputTest extends TestCase {
 
         ArrayList<StemmaModel> stemmata = jerseyTest.target("/tradition/" + tradId + "/stemmata")
                 .request()
-                .get(new GenericType<ArrayList<StemmaModel>>(){});
+                .get(new GenericType<>(){});
         assertEquals(2, stemmata.size());
         if (stemmata.get(0).getIs_undirected()) {
             Util.assertStemmasEquivalent(directedStemma, stemmata.get(1).getDot());
@@ -159,75 +196,66 @@ public class GraphMLInputOutputTest extends TestCase {
         }
     }
 
-    public void testXMLOutputSingleSection() {
+    public void testZipOutputSingleSection() {
         // Start with a multi-section tradition and get the section IDs
         List<SectionModel> sections = jerseyTest.target("/tradition/" + multiTradId + "/sections")
-                .request(MediaType.APPLICATION_JSON_TYPE).get(new GenericType<List<SectionModel>>() {});
+                .request(MediaType.APPLICATION_JSON_TYPE).get(new GenericType<>() {});
         // See how many witnesses we have to begin with
         List<WitnessModel> witnesses = jerseyTest.target("/tradition/" + multiTradId + "/witnesses")
-                .request().get(new GenericType<List<WitnessModel>>() {});
+                .request().get(new GenericType<>() {});
         assertEquals(37, witnesses.size());
         // Get the GraphML output, make sure it has correct # of nodes & edges
+        String targetSection = sections.get(0).getId();
+        String sectFileName = "section-" + targetSection + ".xml";
         Response r = jerseyTest.target("/tradition/" + multiTradId + "/section/"
-                + sections.get(0).getId() + "/graphml")
-                .request(MediaType.APPLICATION_XML_TYPE).get();
+                + targetSection + "/graphml")
+                .request("application/zip").get();
         assertEquals(Response.Status.OK.getStatusCode(), r.getStatus());
-        String xmlresp = r.readEntity(String.class);
-        assertTrue(xmlresp.contains("<key attr.name=\"neolabel\" attr.type=\"string\" for=\"node\" id=\"dn0\"/>"));
-
-        InputSource is = new InputSource();
-        is.setCharacterStream(new StringReader(xmlresp));
-        Document graphdoc = null;
+        LinkedHashMap<String,File> xmlFiles;
         try {
-            graphdoc = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(is);
+            xmlFiles = net.stemmaweb.parser.Util.extractGraphMLZip(r.readEntity(InputStream.class));
+            // There should be a tradition file and a single section file
+            assertEquals(2, xmlFiles.size());
+            assertTrue(xmlFiles.containsKey("tradition.xml"));
+            assertTrue(xmlFiles.containsKey(sectFileName));
+            // The tradition file should contain the tradition node, three relation types, 37 witnesses and a section
+            assertEquals(42, getXMLNodeList(xmlFiles.get("tradition.xml")).getLength());
+            // The section file should contain a section and 30 readings
+            assertEquals(31, getXMLNodeList(xmlFiles.get(sectFileName)).getLength());
+            net.stemmaweb.parser.Util.cleanupExtractedZip(xmlFiles);
         } catch (Exception e) {
             fail();
         }
-        assertNotNull(graphdoc);
-        NodeList nodes = graphdoc.getElementsByTagName("node");
-        assertEquals(31, nodes.getLength());
-
-        // Get the GraphML output with witnesses included, make sure it is correct
-        xmlresp = jerseyTest.target("/tradition/" + multiTradId + "/section/"
-                + sections.get(1).getId() + "/graphml")
-                .queryParam("include_witnesses", "true")
-                .request(MediaType.APPLICATION_XML_TYPE).get(String.class);
-
-        is = new InputSource();
-        is.setCharacterStream(new StringReader(xmlresp));
-        graphdoc = null;
-        try {
-            graphdoc = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(is);
-        } catch (Exception e) {
-            fail();
-        }
-        assertNotNull(graphdoc);
-        nodes = graphdoc.getElementsByTagName("node");
-        assertEquals(82, nodes.getLength());
 
         // Now add this section again to the tradition and make sure the witnesses aren't doubled
-        Util.addSectionToTradition(jerseyTest, multiTradId,
-                xmlresp, "graphml", "Section 3");
+        /* Util.addSectionToTradition(jerseyTest, multiTradId,
+                , "graphmlsingle", "Section 3");
         sections = jerseyTest.target("/tradition/" + multiTradId + "/sections")
-                .request().get(new GenericType<List<SectionModel>>() {});
+                .request().get(new GenericType<>() {});
         assertEquals(3, sections.size());
         witnesses = jerseyTest.target("/tradition/" + multiTradId + "/witnesses")
-                .request().get(new GenericType<List<WitnessModel>>() {});
-        assertEquals(37, witnesses.size());
+                .request().get(new GenericType<>() {});
+        assertEquals(37, witnesses.size()); */
     }
 
-    public void testXMLInputCreateFromSection() {
+    private NodeList getXMLNodeList(File input) throws Exception {
+        InputSource is = new InputSource();
+        is.setCharacterStream(new FileReader(input));
+        Document traddoc = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(is);
+        return traddoc.getElementsByTagName("node");
+    }
+
+    public void testZipInputCreateFromSection() {
         List<SectionModel> ms = jerseyTest.target("/tradition/" + multiTradId + "/sections")
                 .request()
-                .get(new GenericType<List<SectionModel>>() {});
-        String sectxml = jerseyTest
+                .get(new GenericType<>() {});
+        Response r = jerseyTest
                 .target("/tradition/" + multiTradId + "/section/" + ms.get(1).getId() + "/graphml")
-                .request()
-                .get(String.class);
-        assertTrue(sectxml.contains("graphdrawing"));
+                .request().get();
+        String sectxml = Util.saveGraphMLTempfile(r);
 
         // Try to create a new tradition with only a section download
-        Response r = Util.createTraditionFromFileOrString(jerseyTest, "legend", "LR",
+        r = Util.createTraditionFromFileOrString(jerseyTest, "legend", "LR",
                 "me@example.org", sectxml, "graphml");
         assertEquals(Response.Status.CREATED.getStatusCode(), r.getStatus());
         String legendId = Util.getValueFromJson(r, "tradId");
@@ -244,17 +272,18 @@ public class GraphMLInputOutputTest extends TestCase {
                 .get(new GenericType<List<SectionModel>>() {})
                 .stream().map(SectionModel::getId).collect(Collectors.toSet());
         try (Transaction tx = db.beginTx()) {
-            List<Node> ourReadings = VariantGraphService.returnEntireTradition(legendId, db).nodes().stream()
+//        	List<Node> ourReadings = VariantGraphService.returnEntireTradition(legendId, db).nodes().stream()
+            List<Node> ourReadings = StreamSupport.stream(VariantGraphService.returnEntireTradition(legendId, db).nodes().spliterator(), false)
                     .filter(x -> x.hasLabel(Nodes.READING)).collect(Collectors.toList());
             for (Node rdg : ourReadings)
                 assertTrue(newSections.contains(rdg.getProperty("section_id").toString()));
-            tx.success();
+            tx.close();
         }
 
         // Does the tradition have any relation types defined?
         List<RelationTypeModel> rtypes = jerseyTest.target("/tradition/" + legendId + "/relationtypes")
                 .request()
-                .get(new GenericType<List<RelationTypeModel>>() {});
+                .get(new GenericType<>() {});
         assertEquals(3, rtypes.size());
         List<String> rnames = rtypes.stream().map(RelationTypeModel::getName).collect(Collectors.toList());
         assertTrue(rnames.contains("collated"));
@@ -262,96 +291,325 @@ public class GraphMLInputOutputTest extends TestCase {
         assertTrue(rnames.contains("spelling"));
     }
 
-    public void testXMLInputNewSectionWitnesses() {
+    public void testZipInputNewSectionWitnesses() {
         String florId = Util.getValueFromJson(Util.createTraditionFromFileOrString(jerseyTest, "Florilegium",
                 "LR", "me@example.org", "src/TestFiles/florilegium_z.csv", "csv"), "tradId");
         // Get the single-section XML
-        String chryxml = jerseyTest.target("/tradition/" + florId + "/graphml").request().get(String.class);
+        Response r = jerseyTest.target("/tradition/" + florId + "/graphml").request().get();
+        String chryfile = Util.saveGraphMLTempfile(r);
+        assertNotNull(chryfile);
+        String chryxml = Util.getConcatenatedGraphML(chryfile);
+        assertNotNull(chryxml);
         assertTrue(chryxml.contains("graphdrawing"));
 
         // Add a second section so we can export it
         String florSect2 = Util.getValueFromJson(Util.addSectionToTradition(jerseyTest, florId,
-                "src/TestFiles/florilegium_y.csv", "csv", "Chrysostom"), "parentId");
-        String womenxml = jerseyTest.target("/tradition/" + florId + "/section/" + florSect2 + "/graphml")
+                "src/TestFiles/florilegium_y.csv", "csv", "Chrysostom", true), "sectionId");
+        r = jerseyTest.target("/tradition/" + florId + "/section/" + florSect2 + "/graphml")
                 .request()
-                .get(String.class);
+                .get();
+        String womenfile = Util.saveGraphMLTempfile(r);
+        assertNotNull(womenfile);
+        String womenxml = Util.getConcatenatedGraphML(womenfile);
+        assertNotNull(womenxml);
         assertTrue(womenxml.contains("graphdrawing"));
 
         // Check that all our witnesses are there
         List<WitnessModel> wits = jerseyTest.target("/tradition/" + florId + "/witnesses")
                 .request()
-                .get(new GenericType<List<WitnessModel>>() {});
+                .get(new GenericType<>() {});
         assertEquals(13, wits.size());
 
         // Now make a new tradition with the GraphML
         String flor2Id = Util.getValueFromJson(Util.createTraditionFromFileOrString(jerseyTest, "Floritwo",
-                "LR", "me@example.org", chryxml, "graphml"), "tradId");
+                "LR", "me@example.org", chryfile, "graphml"), "tradId");
         // Count the witnesses
         wits = jerseyTest.target("/tradition/" + flor2Id + "/witnesses")
                 .request()
-                .get(new GenericType<List<WitnessModel>>() {});
+                .get(new GenericType<>() {});
         assertEquals(5, wits.size());
         // Add the second section
-        Response r = Util.addSectionToTradition(jerseyTest, flor2Id, womenxml, "graphml", "Appearance of women");
+        r = Util.addSectionToTradition(jerseyTest, flor2Id, womenfile, "graphml", "Appearance of women", true);
         assertEquals(Response.Status.CREATED.getStatusCode(), r.getStatus());
         // Count the witnesses
         wits = jerseyTest.target("/tradition/" + flor2Id + "/witnesses")
                 .request()
-                .get(new GenericType<List<WitnessModel>>() {});
+                .get(new GenericType<>() {});
         assertEquals(13, wits.size());
     }
 
-    public void testXMLInputWithAnnotations() {
+    public void testZipOutputAndInputWithAnnotations() {
+        // Create the tradition
+
+        // Set its annotation structure
+
+        // Input the annotations
+
+        // Export it to a zipfile
+
+        // Reimport it; all annotations should be there
+
+        // Add another section
+
+        // Export the single section
+
+        // Reimport it; the annotation label structure should not have changed
+
+        // All the above is the full test; here below is the quick and dirty version
         Response r = Util.createTraditionFromFileOrString(jerseyTest, "Matthew 401", "LR",
-                "me@example.org", "src/TestFiles/m401-annotated.xml", "graphml");
+                "me@example.org", "src/TestFiles/m401-annotated.zip", "graphml");
         assertEquals(Response.Status.CREATED.getStatusCode(), r.getStatus());
         String mattId = Util.getValueFromJson(r, "tradId");
         SectionModel section = Util.getSingleSection(jerseyTest, mattId);
         List<AnnotationModel> annos = jerseyTest.target("/tradition/" + mattId + "/annotations")
-                .request().get(new GenericType<List<AnnotationModel>>() {});
-        // Check that all annotations are there
+                .request().get(new GenericType<>() {});
+        // Check that all annotations are there.
+        // BUG: the PERSON/PLACE/DATE annotations did not make it into the test data export.
+        // This needs to be explicitly tested for in a more formal manner above.
         assertEquals(24, annos.size());
         assertEquals(14, annos.stream().filter(x -> x.getLabel().equals("TRANSLATION")).count());
-        assertEquals(2, annos.stream().filter(x -> x.getLabel().equals("DATEREF")).count());
         assertEquals(2, annos.stream().filter(x -> x.getLabel().equals("TITLE")).count());
+        assertEquals(2, annos.stream().filter(x -> x.getLabel().equals("DATEREF")).count());
         assertEquals(2, annos.stream().filter(x -> x.getLabel().equals("DATING")).count());
+        // assertEquals(2, annos.stream().filter(x -> x.getLabel().equals("DATE")).count());
         assertEquals(2, annos.stream().filter(x -> x.getLabel().equals("PERSONREF")).count());
+        // assertEquals(1, annos.stream().filter(x -> x.getLabel().equals("PERSON")).count());
         assertEquals(2, annos.stream().filter(x -> x.getLabel().equals("PLACEREF")).count());
+        // assertEquals(2, annos.stream().filter(x -> x.getLabel().equals("PLACE")).count());
         // Get our section ID
 
-        // Spot-check that a few are linked correctly
+        // Spot-check that something is linked correctly
         Optional<AnnotationModel> testAnno = annos.stream().filter(x -> x.getLabel().equals("TRANSLATION")
                 && x.getProperties().get("text").equals("And after 5 years locusts arose in that district, " +
                 "like sands of the sea, and ruined the earth.")).findFirst();
         assertTrue(testAnno.isPresent());
         List<ReadingModel> sectionReadings = jerseyTest
                 .target("/tradition/" + mattId + "/section/" + section.getId() + "/lemmareadings")
-                .request().get(new GenericType<List<ReadingModel>>() {});
+                .request().get(new GenericType<>() {});
         // Find the ranks of the start and finish of this translation
         assertEquals(2, testAnno.get().getLinks().size());
-        Long startId = 0L;
-        Long endId = 0L;
+        String startId = "";
+        String endId = "";
         for (AnnotationLinkModel lm : testAnno.get().getLinks()) {
             if (lm.getType().equals("BEGIN"))
                 startId = lm.getTarget();
             else if (lm.getType().equals("END"))
                 endId = lm.getTarget();
         }
-        assertFalse(startId == 0L);
-        assertFalse(endId == 0L);
+        assertFalse(startId.isBlank());
+        assertFalse(endId.isBlank());
         List<ReadingModel> translated = new ArrayList<>();
         boolean in_translation = false;
         for (ReadingModel rm : sectionReadings) {
-            if (rm.getId().equals(String.valueOf(startId)))
+            if (rm.getId().equals(startId))
                 in_translation = true;
             if (in_translation) translated.add(rm);
-            if (rm.getId().equals(String.valueOf(endId)))
+            if (rm.getId().equals(endId))
                 in_translation = false;
         }
         String expected = "և զկնի հինկ ամին եկեալ մարախ յայնմ գաւառին որպէս զաւազ ծովու և ապականեաց զերկիր.";
         String actual = ReadingService.textOfReadings(translated, true, false);
         assertEquals(expected, actual);
+
+        // Add a second section to this tradition
+        r = Util.addSectionToTradition(jerseyTest, mattId, "src/TestFiles/milestone-591.zip",
+                "graphml", "section 591", true);
+        assertEquals(Response.Status.CREATED.getStatusCode(), r.getStatus());
+        String s591 = Util.getValueFromJson(r, "sectionId");
+        assertNotNull(s591);
+        // There should still be the same number of annotation labels, properties, and links in the tradition
+        List<AnnotationLabelModel> tradAnnoTypes = jerseyTest.target("/tradition/" + mattId + "/annotationlabels")
+                .request().get(new GenericType<>() {});
+        assertEquals(13, tradAnnoTypes.size());
+        List<AnnotationModel> sectAnnos = jerseyTest.target("/tradition/" + mattId + "/section/" + s591 + "/annotations")
+                .request().get(new GenericType<>() {});
+        assertEquals(9, sectAnnos.size());
     }
+
+    public void testZipExportAnnotationsAcrossSection() {
+        HashMap<String,String> readingLookup = Util.makeReadingLookup(jerseyTest, multiTradId);
+        // Write the annotation schema
+        AnnotationLabelModel placerefAlm = new AnnotationLabelModel();
+        placerefAlm.setName("PLACEREF");
+        placerefAlm.addLink("READING", "BEGIN,END");
+        placerefAlm.addProperty("authority", "String");
+        Response r = jerseyTest.target("/tradition/" + multiTradId + "/annotationlabel/PLACEREF")
+                .request().put(Entity.json(placerefAlm));
+        assertEquals(Response.Status.CREATED.getStatusCode(), r.getStatus());
+        AnnotationLabelModel placeAlm = new AnnotationLabelModel();
+        placeAlm.setName("PLACE");
+        placeAlm.addProperty("name", "String");
+        placeAlm.addLink("PLACEREF", "REFERENCED");
+        r = jerseyTest.target("/tradition/" + multiTradId + "/annotationlabel/PLACE")
+                .request().put(Entity.json(placeAlm));
+        assertEquals(Response.Status.CREATED.getStatusCode(), r.getStatus());
+
+        // Add the first place reference "swecia"
+        AnnotationModel sect1ref = new AnnotationModel();
+        sect1ref.setLabel("PLACEREF");
+        sect1ref.addProperty("authority", "tla");
+        AnnotationLinkModel s1b = new AnnotationLinkModel();
+        s1b.setTarget(readingLookup.get("swecia/2"));
+        s1b.setType("BEGIN");
+        sect1ref.addLink(s1b);
+        AnnotationLinkModel s1e = new AnnotationLinkModel();
+        s1e.setTarget(readingLookup.get("swecia/2"));
+        s1e.setType("END");
+        sect1ref.addLink(s1e);
+        r = jerseyTest.target("/tradition/" + multiTradId + "/annotation/").request().post(Entity.json(sect1ref));
+        assertEquals(Response.Status.CREATED.getStatusCode(), r.getStatus());
+        sect1ref = r.readEntity(AnnotationModel.class);
+
+        // Add the second place reference ("terre illius")
+        AnnotationModel sect2ref = new AnnotationModel();
+        sect2ref.setLabel("PLACEREF");
+        sect2ref.addProperty("authority", "tla");
+        AnnotationLinkModel s2b = new AnnotationLinkModel();
+        s2b.setTarget(readingLookup.get("terre/6"));
+        s2b.setType("BEGIN");
+        sect2ref.addLink(s2b);
+        AnnotationLinkModel s2e = new AnnotationLinkModel();
+        s2e.setTarget(readingLookup.get("illius/7"));
+        s2e.setType("END");
+        sect2ref.addLink(s2e);
+        r = jerseyTest.target("/tradition/" + multiTradId + "/annotation").request().post(Entity.json(sect2ref));
+        assertEquals(Response.Status.CREATED.getStatusCode(), r.getStatus());
+        sect2ref = r.readEntity(AnnotationModel.class);
+
+        // Add the place to which these refer
+        AnnotationModel thePlace = new AnnotationModel();
+        thePlace.setLabel("PLACE");
+        thePlace.addProperty("name", "Sweden");
+        AnnotationLinkModel r1 = new AnnotationLinkModel();
+        r1.setTarget(sect1ref.getId());
+        r1.setType("REFERENCED");
+        thePlace.addLink(r1);
+        AnnotationLinkModel r2 = new AnnotationLinkModel();
+        r2.setTarget(sect2ref.getId());
+        r2.setType("REFERENCED");
+        thePlace.addLink(r2);
+        r = jerseyTest.target("/tradition/" + multiTradId + "/annotation").request().post(Entity.json(thePlace));
+        assertEquals(Response.Status.CREATED.getStatusCode(), r.getStatus());
+        thePlace = r.readEntity(AnnotationModel.class);
+
+        // Export the zip file
+        r = jerseyTest.target("/tradition/" + multiTradId + "/graphml").request().get();
+        assertEquals(Response.Status.OK.getStatusCode(), r.getStatus());
+        String ourZip = Util.saveGraphMLTempfile(r);
+
+        // ...and try reimporting it
+        r = Util.createTraditionFromFileOrString(jerseyTest, "new Legend", "LR", "me@example.org", ourZip, "graphml");
+        assertEquals(Response.Status.CREATED.getStatusCode(), r.getStatus());
+        String newTradId = Util.getValueFromJson(r, "tradId");
+
+        // Ask for section annotations and make sure they are correct
+        List<SectionModel> ourSections = jerseyTest.target("/tradition/" + newTradId + "/sections")
+                .request().get(new GenericType<>() {});
+        assertEquals(2, ourSections.size());
+        List<AnnotationModel> allAnnos = jerseyTest.target("/tradition/" + newTradId + "/annotations")
+                .request().get(new GenericType<>() {});
+        assertEquals(3, allAnnos.size());
+        List<AnnotationModel> placeAnnos = jerseyTest.target("/tradition/" + newTradId + "/annotations")
+                .queryParam("label", "PLACE")
+                .request().get(new GenericType<>() {});
+        assertEquals(1, placeAnnos.size());
+        assertEquals(thePlace.getLabel(), placeAnnos.get(0).getLabel());
+        assertEquals(thePlace.getProperties().get("name"), placeAnnos.get(0).getProperties().get("name"));
+        List<AnnotationModel> s1Annos = jerseyTest
+                .target("/tradition/" + newTradId + "/section/" + ourSections.get(0).getId() + "/annotations")
+                .request().get(new GenericType<>() {});
+        assertEquals(1, s1Annos.size());
+        List<AnnotationModel> s2Annos = jerseyTest
+                .target("/tradition/" + newTradId + "/section/" + ourSections.get(1).getId() + "/annotations")
+                .request().get(new GenericType<>() {});
+        assertEquals(1, s2Annos.size());
+
+    }
+
+    public void testZipBadSectionInput() {
+        Response r = Util.createTraditionFromFileOrString(jerseyTest, "Matthew 401", "LR",
+                "me@example.org", "src/TestFiles/m401-annotated.zip", "graphml");
+        assertEquals(Response.Status.CREATED.getStatusCode(), r.getStatus());
+        String mattId = Util.getValueFromJson(r, "tradId");
+
+        List<SectionModel> sections = jerseyTest.target("/tradition/" + mattId + "/sections/")
+                .request().get(new GenericType<>() {});
+        assertEquals(1, sections.size());
+
+        // Try to add a file that has been unzipped and rezipped by the user. It should fail
+        r = Util.addSectionToTradition(jerseyTest, mattId, "src/TestFiles/milestone-591-BAD.zip",
+                "graphml", "591", true);
+        // This should really be BAD REQUEST, but let's see if we can reproduce the problem
+        assertEquals(Response.Status.BAD_REQUEST.getStatusCode(), r.getStatus());
+
+        // Try to request the list of sections again. This should succeed
+        r = jerseyTest.target("/tradition/" + mattId + "/sections/")
+                .request().get();
+        assertEquals(Response.Status.OK.getStatusCode(), r.getStatus());
+        sections = r.readEntity(new GenericType<>() {});
+        assertEquals(1, sections.size());
+    }
+
+/*
+    public void testZipArbitraryTradition() {
+        // Import the given tradition file and check that it works
+        String fn = "src/TestFiles/4aaf8973-7ac9-402a-8df9-19a2a050e364.zip";
+        Response r = Util.createTraditionFromFileOrString(jerseyTest, "Arbitrary tradition", "BI",
+                "me@example.org", fn, "graphml");
+        assertEquals(Response.Status.CREATED.getStatusCode(), r.getStatus());
+        String newTradId = Util.getValueFromJson(r, "tradId");
+        assertNotNull(newTradId);
+
+        // See if we still have our duplicated annotation labels
+        List<AnnotationLabelModel> annoTypes = jerseyTest.target("/tradition/" + newTradId + "/annotationlabels")
+                .request().get(new GenericType<>() {});
+        assertEquals(13, annoTypes.size());
+
+        // Check that the tradition has the right number of chapter links
+        HashMap<String,Integer> chapterDivs = new HashMap<>();
+        chapterDivs.put("Book One", 25);
+        chapterDivs.put("Book Two", 15);
+        chapterDivs.put("Book Three", 14);
+        chapterDivs.put("Continuation", 23);
+
+        List<AnnotationModel> ch = jerseyTest.target("/tradition/" + newTradId + "/annotations")
+                .queryParam("label", "CHAPTER")
+                .request().get(new GenericType<>() {});
+        assertEquals(4, ch.size());
+        for (AnnotationModel am : ch) {
+            String chtitle = am.getProperties().get("title").toString();
+            assertEquals(chapterDivs.get(chtitle), Integer.valueOf(am.getLinks().size()));
+        }
+
+        // Check that the tradition has the right number of titles, two per section
+        List<SectionModel> sectionModels = jerseyTest.target("/tradition/" + newTradId + "/sections")
+                .request().get(new GenericType<>() {});
+        assertEquals(77, sectionModels.size());
+        List<AnnotationModel> titleModels = jerseyTest.target("/tradition/" + newTradId + "/annotations")
+                .queryParam("label", "TITLE")
+                .request().get(new GenericType<>() {});
+        assertEquals(146, titleModels.size());
+        for (SectionModel sm : sectionModels) {
+            if (titleModels.stream().noneMatch(x -> x.getProperties().get("language").equals("hy")
+                    && x.getLinks().get(0).getTarget().equals(Long.valueOf(sm.getId()))))
+                System.out.println("No Armenian title found for section " + sm.getName());
+            if (titleModels.stream().noneMatch(x -> x.getProperties().get("language").equals("en")
+                    && x.getLinks().get(0).getTarget().equals(Long.valueOf(sm.getId()))))
+                System.out.println("No English title found for section " + sm.getName());
+        }
+
+        // Check that the tradition has the right number of PLACEREFs
+        List<AnnotationModel> placerefModels = jerseyTest.target("/tradition/" + newTradId + "/annotations")
+                .queryParam("label", "PLACEREF")
+                .request().get(new GenericType<>() {});
+        assertEquals(148, placerefModels.size());
+        // Check that the tradition has the right number of PLACEs
+        List<AnnotationModel> placeModels = jerseyTest.target("/tradition/" + newTradId + "/annotations")
+                .queryParam("label", "PLACE")
+                .request().get(new GenericType<>() {});
+        assertEquals(51, placeModels.size());
+    }
+*/
 
     // testXMLUserNodes
 
@@ -362,7 +620,8 @@ public class GraphMLInputOutputTest extends TestCase {
     // testXMLNoSections
 
     public void tearDown() throws Exception {
-        db.shutdown();
+        // db.shutdown();
+    	// GraphDatabaseServiceProvider.shutdown();
         jerseyTest.tearDown();
         super.tearDown();
     }

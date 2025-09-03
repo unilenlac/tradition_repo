@@ -35,13 +35,13 @@
   <key attr.name="type" attr.type="string" for="edge" id="de8"/>
   <key attr.name="witness" attr.type="string" for="edge" id="de9"/>
   <graph edgedefault="directed" id="Sermo_Augustini_170" parse.edgeids="canonical" parse.edges="461" parse.nodeids="canonical" parse.nodes="29" parse.order="nodesfirst">
-    <data key="dg0"> (a.c.)</data>
+    <data key="dg0"> [a.c.]</data>
     <data key="dg1">base text</data>
     <data key="dg2">Latin</data>
     <data key="dg3">1</data>
     <data key="dg6">3.2</data>
     <data key="dg4">Sermo Augustini 170</data>
-    <data key="dg5">digraph stemma {  l [ class=hypothetical ];  v [ class=hypothetical ];  "λ" [ class=hypothetical ];  F [ class=extant ];  "F (a.c.)" [ class=extant ];  L1 [ class=extant ];  L2 [ class=extant ];  L3 [ class=extant ];  "L3 (a.c.)" [ class=extant ];  L4 [ class=extant ];  "L4 (a.c.)" [ class=extant ];  L5 [ class=extant ];  "L5 (a.c.)" [ class=extant ];  L6 [ class=extant ];  "L6 (a.c.)" [ class=extant ];  L7 [ class=extant ];  "L7 (a.c.)" [ class=extant ];  L8 [ class=extant ];  "L8 (a.c.)" [ class=extant ];  L9 [ class=extant ];  "L9 (a.c.)" [ class=extant ];  M [ class=extant ];  "M (a.c.)" [ class=extant ];  V10 [ class=extant ];  "V10 (a.c.)" [ class=extant ];  V11 [ class=extant ];  "V11 (a.c.)" [ class=extant ];  W [ class=extant ];  "W (a.c.)" [ class=extant ];  maur [ class=extant ];  "F (a.c.)" -&gt; F;  "F (a.c.)" -&gt; v;  "F (a.c.)" -&gt; "λ";  F -&gt; v;  F -&gt; "λ";  L1 -&gt; L2;  "L3 (a.c.)" -&gt; L3;  "L3 (a.c.)" -&gt; maur;  L3 -&gt; maur;  "L4 (a.c.)" -&gt; L4;  "L5 (a.c.)" -&gt; L5;  "L6 (a.c.)" -&gt; L6;  "L7 (a.c.)" -&gt; L7;  "L8 (a.c.)" -&gt; L8;  "L8 (a.c.)" -&gt; maur;  L8 -&gt; maur;  "L9 (a.c.)" -&gt; L9;  "M (a.c.)" -&gt; M;  "V10 (a.c.)" -&gt; L3;  "V10 (a.c.)" -&gt; "L3 (a.c.)";  "V10 (a.c.)" -&gt; V10;  V10 -&gt; L3;  V10 -&gt; "L3 (a.c.)";  "V11 (a.c.)" -&gt; V11;  "W (a.c.)" -&gt; W;  l -&gt; L1;  l -&gt; L3;  l -&gt; "L3 (a.c.)";  l -&gt; L4;  l -&gt; "L4 (a.c.)";  l -&gt; L5;  l -&gt; "L5 (a.c.)";  l -&gt; L6;  l -&gt; "L6 (a.c.)";  l -&gt; L7;  l -&gt; "L7 (a.c.)";  l -&gt; L8;  l -&gt; "L8 (a.c.)";  l -&gt; L9;  l -&gt; "L9 (a.c.)";  v -&gt; L7;  v -&gt; "L7 (a.c.)";  v -&gt; V10;  v -&gt; "V10 (a.c.)";  v -&gt; V11;  v -&gt; "V11 (a.c.)";  "λ" -&gt; M;  "λ" -&gt; "M (a.c.)";  "λ" -&gt; W;  "λ" -&gt; "W (a.c.)";  "λ" -&gt; l;}</data>
+    <data key="dg5">digraph stemma {  l [ class=hypothetical ];  v [ class=hypothetical ];  "λ" [ class=hypothetical ];  F [ class=extant ];  "F [a.c.]" [ class=extant ];  L1 [ class=extant ];  L2 [ class=extant ];  L3 [ class=extant ];  "L3 [a.c.]" [ class=extant ];  L4 [ class=extant ];  "L4 [a.c.]" [ class=extant ];  L5 [ class=extant ];  "L5 [a.c.]" [ class=extant ];  L6 [ class=extant ];  "L6 [a.c.]" [ class=extant ];  L7 [ class=extant ];  "L7 [a.c.]" [ class=extant ];  L8 [ class=extant ];  "L8 [a.c.]" [ class=extant ];  L9 [ class=extant ];  "L9 [a.c.]" [ class=extant ];  M [ class=extant ];  "M [a.c.]" [ class=extant ];  V10 [ class=extant ];  "V10 [a.c.]" [ class=extant ];  V11 [ class=extant ];  "V11 [a.c.]" [ class=extant ];  W [ class=extant ];  "W [a.c.]" [ class=extant ];  maur [ class=extant ];  "F [a.c.]" -&gt; F;  "F [a.c.]" -&gt; v;  "F [a.c.]" -&gt; "λ";  F -&gt; v;  F -&gt; "λ";  L1 -&gt; L2;  "L3 [a.c.]" -&gt; L3;  "L3 [a.c.]" -&gt; maur;  L3 -&gt; maur;  "L4 [a.c.]" -&gt; L4;  "L5 [a.c.]" -&gt; L5;  "L6 [a.c.]" -&gt; L6;  "L7 [a.c.]" -&gt; L7;  "L8 [a.c.]" -&gt; L8;  "L8 [a.c.]" -&gt; maur;  L8 -&gt; maur;  "L9 [a.c.]" -&gt; L9;  "M [a.c.]" -&gt; M;  "V10 [a.c.]" -&gt; L3;  "V10 [a.c.]" -&gt; "L3 [a.c.]";  "V10 [a.c.]" -&gt; V10;  V10 -&gt; L3;  V10 -&gt; "L3 [a.c.]";  "V11 [a.c.]" -&gt; V11;  "W [a.c.]" -&gt; W;  l -&gt; L1;  l -&gt; L3;  l -&gt; "L3 [a.c.]";  l -&gt; L4;  l -&gt; "L4 [a.c.]";  l -&gt; L5;  l -&gt; "L5 [a.c.]";  l -&gt; L6;  l -&gt; "L6 [a.c.]";  l -&gt; L7;  l -&gt; "L7 [a.c.]";  l -&gt; L8;  l -&gt; "L8 [a.c.]";  l -&gt; L9;  l -&gt; "L9 [a.c.]";  v -&gt; L7;  v -&gt; "L7 [a.c.]";  v -&gt; V10;  v -&gt; "V10 [a.c.]";  v -&gt; V11;  v -&gt; "V11 [a.c.]";  "λ" -&gt; M;  "λ" -&gt; "M [a.c.]";  "λ" -&gt; W;  "λ" -&gt; "W [a.c.]";  "λ" -&gt; l;}</data>
     <data key="dg7">, </data>
     <data key="dg8"> </data>
     <node id="n0">
@@ -731,7 +731,7 @@
       <data key="de9">L2</data>
     </edge>
     <edge source="n9" target="n11" id="e152">
-      <data key="de2"> (a.c.)</data>
+      <data key="de2"> [a.c.]</data>
       <data key="de9">L3</data>
     </edge>
     <edge source="n9" target="n11" id="e153">

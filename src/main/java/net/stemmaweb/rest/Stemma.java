@@ -1,5 +1,6 @@
 package net.stemmaweb.rest;
 
+import java.io.IOException;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -11,14 +12,16 @@ import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 
 import com.qmino.miredot.annotations.ReturnType;
+import net.stemmaweb.Util.GetTraditionFunction;
 import net.stemmaweb.model.StemmaModel;
 import net.stemmaweb.parser.DotParser;
 import net.stemmaweb.parser.NewickParser;
+import net.stemmaweb.services.Database;
 import net.stemmaweb.services.GraphDatabaseServiceProvider;
 
 import org.neo4j.graphdb.*;
 
-import static net.stemmaweb.rest.Util.jsonerror;
+import static net.stemmaweb.Util.jsonerror;
 
 /**
  * Comprises all the api calls related to a stemma.
@@ -37,8 +40,8 @@ public class Stemma {
     }
 
     public Stemma (String traditionId, String requestedName, Boolean created) {
-        GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
-        db = dbServiceProvider.getDatabase();
+
+        db = Database.getInstance().session;
         tradId = traditionId;
         name = requestedName;
         newCreated = created;
@@ -47,7 +50,7 @@ public class Stemma {
     /**
      * Fetches the information for the specified stemma.
      *
-     * @summary Get stemma
+     * @title Get stemma
      * @return The stemma information, including its dot specification.
      * @statuscode 200 - on success
      * @statuscode 404 - if no such tradition exists
@@ -57,20 +60,23 @@ public class Stemma {
     @Produces("application/json; charset=utf-8")
     @ReturnType(clazz = StemmaModel.class)
     public Response getStemma() {
-        Node stemmaNode = getStemmaNode();
-        if (stemmaNode == null) {
-            return Response.status(Status.NOT_FOUND)
-                    .entity(jsonerror(String.format("No stemma %s found for tradition %s", name, tradId))).build();
+
+        try (Transaction tx = db.beginTx()) {
+            Node stemmaNode = getStemmaNode(tx);
+            if (stemmaNode == null) {
+                return Response.status(Status.NOT_FOUND)
+                        .entity(jsonerror(String.format("No stemma %s found for tradition %s", name, tradId))).build();
+            }
+            StemmaModel result = new StemmaModel(stemmaNode, tx);
+            Status returncode = newCreated ? Status.CREATED : Status.OK;
+            return Response.status(returncode).entity(result).build();
         }
-        StemmaModel result = new StemmaModel(stemmaNode);
-        Status returncode = newCreated ? Status.CREATED : Status.OK;
-        return Response.status(returncode).entity(result).build();
     }
 
     /**
      * Stores a new or updated stemma under the given name.
      *
-     * @summary Replace or add new stemma
+     * @title Replace or add new stemma
      * @param stemmaSpec - A StemmaModel containing the new or replacement stemma.
      * @return The stemma information, including its dot specification.
      * @statuscode 200 - on success, if stemma is updated
@@ -103,13 +109,13 @@ public class Stemma {
                 replaceResult = parser.importStemmaFromNewick(tradId, stemmaSpec);
             } else {
                 DotParser parser = new DotParser(db);
-                replaceResult = parser.importStemmaFromDot(tradId, stemmaSpec);
+                replaceResult = parser.importStemmaFromDot(tradId, stemmaSpec, tx);
             }
             if (replaceResult.getStatus() != 201)
                 return replaceResult;
 
             // OK, we can commit it.
-            tx.success();
+            tx.commit();
         } catch (Exception e) {
             e.printStackTrace();
             return Response.serverError().entity(jsonerror(e.getMessage())).build();
@@ -122,19 +128,20 @@ public class Stemma {
     /**
      * Deletes the stemma that is identified by the given name.
      *
-     * @summary Delete stemma
+     * @title Delete stemma
      * @return The stemma information, including its dot specification.
      * @statuscode 200 - on success, if stemma is updated
      * @statuscode 500 - on failure, with an error message
      */
     @DELETE
-    @Produces(MediaType.TEXT_PLAIN)
-    @ReturnType("java.lang.Void")
+    @Produces(MediaType.APPLICATION_JSON + "; charset=utf-8")
+    @ReturnType(clazz = StemmaModel.class)
     public Response deleteStemma() {
-        Node stemmaNode = getStemmaNode();
-        if (stemmaNode == null)
-            return Response.status(Status.NOT_FOUND).build();
         try (Transaction tx = db.beginTx()) {
+            Node stemmaNode = getStemmaNode(tx);
+            if (stemmaNode == null)
+                return Response.status(Status.NOT_FOUND).build();
+            StemmaModel removed = new StemmaModel(stemmaNode, tx);
             Set<Relationship> removableRelations = new HashSet<>();
             Set<Node> removableNodes = new HashSet<>();
 
@@ -153,7 +160,7 @@ public class Stemma {
 
             // Its associated TRANSMISSION relations are removable
             removableNodes
-                    .forEach(n -> n.getRelationships(ERelations.TRANSMITTED, Direction.BOTH)
+                    .forEach(n -> n.getRelationships(Direction.BOTH, ERelations.TRANSMITTED)
                             .forEach(r -> {
                                         if (r.getProperty("hypothesis").equals(name))
                                             removableRelations.add(r);
@@ -163,8 +170,8 @@ public class Stemma {
             // Its witnesses are removable if they have no links left
             removableRelations.forEach(Relationship::delete);
             removableNodes.stream().filter(x -> !x.hasRelationship()).forEach(Node::delete);
-            tx.success();
-            return Response.ok().build();
+            tx.commit();
+            return Response.ok(removed).build();
         } catch (Exception e ){
             return Response.serverError().entity(e.getMessage()).build();
         }
@@ -184,12 +191,13 @@ public class Stemma {
     @POST
     @Path("reorient/{nodeId}")
     @Produces("application/json; charset=utf-8")
+    @ReturnType(clazz = StemmaModel.class)
     public Response reorientStemma(@PathParam("nodeId") String nodeId) {
 
         try (Transaction tx = db.beginTx())
         {
             // Get the stemma and the witness
-            Result foundStemma = db.execute("match (:TRADITION {id:'" + tradId
+            Result foundStemma = tx.execute("match (:TRADITION {id:'" + tradId
                     + "'})-[:HAS_STEMMA]->(s:STEMMA {name:'" + name
                     + "'})-[:HAS_WITNESS]->(w:WITNESS {sigil:'" + nodeId + "'}) return s, w");
             if(!foundStemma.hasNext())
@@ -215,22 +223,21 @@ public class Stemma {
             // and make sure the stemma is directed.
             stemma.setProperty("directed", true);
 
-        tx.success();
+        tx.commit();
         }
         return getStemma();
 
     }
 
-    private Node getStemmaNode () {
-        try (Transaction tx = db.beginTx()) {
-            Result query = db.execute("match (:TRADITION {id:'" + tradId
-                    + "'})-[:HAS_STEMMA]->(s:STEMMA {name:'" + name + "'}) return s");
-            ResourceIterator<Node> foundStemma = query.columnAs("s");
-            tx.success();
-            if (!foundStemma.hasNext())
-                return null;
-            return foundStemma.next();
-        }
+    private Node getStemmaNode (Transaction tx) {
+        Result query = tx.execute("match (:TRADITION {id:'" + tradId
+                + "'})-[:HAS_STEMMA]->(s:STEMMA {name:'" + name + "'}) return s");
+        ResourceIterator<Node> foundStemma = query.columnAs("s");
+        if (!foundStemma.hasNext())
+            return null;
+        Node foundNode = foundStemma.next();
+        // tx.close();
+        return foundNode;
     }
 
 }

@@ -2,7 +2,7 @@ package net.stemmaweb.parser;
 
 import net.stemmaweb.model.ReadingModel;
 import net.stemmaweb.rest.Nodes;
-import net.stemmaweb.rest.ERelations;
+import net.stemmaweb.services.Database;
 import net.stemmaweb.services.VariantGraphService;
 import net.stemmaweb.services.GraphDatabaseServiceProvider;
 import net.stemmaweb.services.ReadingService;
@@ -17,14 +17,24 @@ import org.neo4j.graphdb.Transaction;
 import javax.ws.rs.core.Response;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
+import static net.stemmaweb.Util.jsonerror;
+import static net.stemmaweb.Util.jsonresp;
+import static net.stemmaweb.services.VariantGraphService.getSectionTraditionNode;
+
 public class CollateXJsonParser {
+    private final GraphDatabaseService db = Database.getInstance().session;
 
-    private GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
-    private GraphDatabaseService db = dbServiceProvider.getDatabase();
-
-    public Response parseCollateXJson(InputStream filestream, Node parentNode) {
+    /**
+     * Parse a CollateX JSON input stream and attach it to the given (section) parentNode.
+     *
+     * @param filestream - The data to parse
+     * @param parentNode - The section node that will carry the parsed data
+     * @return a Response to indicate the result
+     */
+    public Response parseCollateXJson(InputStream filestream, Node parentNode, Transaction tx) {
         // parse the JSON
         ArrayList<String> collationWitnesses = new ArrayList<>();
         ArrayList<ArrayList<ReadingModel>> collationTable = new ArrayList<>();
@@ -32,9 +42,15 @@ public class CollateXJsonParser {
         // JSON parsing block; turn CollateX JSON into our model classes.
         // Needs its own try/catch for JSON exceptions
         try {
-            JSONObject table = new JSONObject(IOUtils.toString(filestream, "utf-8"));
+            JSONObject table = new JSONObject(IOUtils.toString(filestream, StandardCharsets.UTF_8));
             // get the witness list from the clunky JSON interface
             JSONArray jWit = table.getJSONArray("witnesses");
+            // Is the list of witnesses a list of sigla, or a list of id/token objects? If the latter,
+            // tell the user they are trying to use CollateX input.
+            Object firstWit = jWit.get(0);
+            if (firstWit instanceof JSONObject)
+                return Response.status(Response.Status.BAD_REQUEST)
+                        .entity(jsonerror("Bad format: is this CollateX JSON input instead of output?")).build();
             for (int i = 0; i < jWit.length(); i++) collationWitnesses.add(jWit.getString(i));
 
             // get the table data from the clunky JSON interface
@@ -101,21 +117,21 @@ public class CollateXJsonParser {
             }
         } catch (JSONException|IOException e) {
             e.printStackTrace();
-            return Response.serverError().entity(Util.jsonerror(e.getMessage())).build();
+            return Response.serverError().entity(jsonerror(e.getMessage())).build();
         }
 
         // Now we have the data in our own model classes; proceed.
-        Node traditionNode = VariantGraphService.getTraditionNode(parentNode);
-        try (Transaction tx = db.beginTx()) {
+        try {
+            Node traditionNode = getSectionTraditionNode(parentNode, tx);
             // Check that we have all the witnesses
             for (String witString : collationWitnesses) {
                 List<String> wit = parseWitnessSigil(witString);
                 String sigil = wit.get(0);
-                Util.findOrCreateExtant(traditionNode, sigil);
+                Util.findOrCreateExtant(traditionNode, sigil, tx);
             }
 
             // Create the start node for the section
-            Node startNode = Util.createStartNode(parentNode);
+            Node startNode = Util.createStartNode(parentNode, tx);
             HashMap<String, Node> lastWitnessReading = new HashMap<>();
             collationWitnesses.forEach(x -> lastWitnessReading.put(x, startNode));
 
@@ -124,7 +140,6 @@ public class CollateXJsonParser {
             for (ArrayList<ReadingModel> row : collationTable) {
                 HashMap<String, Node> createdReadings = new HashMap<>();
                 int distinct = 0;
-                Node lastCollated = null;
                 for (int w = 0; w < row.size(); w++) {
                     ReadingModel rm = row.get(w);
                     String thisWitness = collationWitnesses.get(w);
@@ -137,12 +152,15 @@ public class CollateXJsonParser {
                     }
                     Node thisReading;
                     if (createdReadings.containsKey(lookupKey)) {
-                        thisReading = createdReadings.get(lookupKey);
+
+                        Node thisReadingTmp = createdReadings.get(lookupKey);
+                        thisReading = tx.getNodeByElementId(thisReadingTmp.getElementId());
                         thisReading.setProperty("extra",
                                 expandExtraField(thisReading.getProperty("extra").toString(),
                                         witParts, rm.getExtra()));
                     } else {
-                        thisReading = db.createNode(Nodes.READING);
+
+                        thisReading = tx.createNode(Nodes.READING);
                         thisReading.setProperty("text", rm.getText());
                         thisReading.setProperty("normal_form", rm.getNormal_form());
                         if (rm.getDisplay() != null)
@@ -158,15 +176,14 @@ public class CollateXJsonParser {
                             thisReading.setProperty("extra", thisExtra.toString());
                         }
                         thisReading.setProperty("rank", rank);
-                        thisReading.setProperty("section_id", parentNode.getId());
+                        thisReading.setProperty("section_id", parentNode.getElementId());
+
                         createdReadings.put(lookupKey, thisReading);
                         distinct++;
-                        if (lastCollated != null)
-                            lastCollated.createRelationshipTo(thisReading, ERelations.COLLATED);
-                        lastCollated = thisReading;
+
                     }
                     Node lastReading = lastWitnessReading.get(thisWitness);
-                    ReadingService.addWitnessLink(lastReading, thisReading, witParts.get(0), witParts.get(1));
+                    ReadingService.addWitnessLink(lastReading, thisReading, witParts.get(0), witParts.get(1), tx);
                     lastWitnessReading.put(thisWitness, thisReading);
                 }
                 if (createdReadings.size() > 0) {
@@ -174,24 +191,28 @@ public class CollateXJsonParser {
                     rank++;
                     // Set commonality attribute on all readings created
                     boolean common = distinct == 1;
-                    createdReadings.values().forEach(x -> x.setProperty("is_common", common));
+
+                    createdReadings.values().forEach(x -> {
+                        Node tmp = tx.getNodeByElementId(x.getElementId());
+                        tmp.setProperty("is_common", common);
+                    });
                 }
             }
 
-            Node endNode = Util.createEndNode(parentNode);
-            endNode.setProperty("rank", rank);
+            Node endNode = Util.createEndNode(parentNode, rank, tx);
+
             for (String witString : collationWitnesses) {
                 List<String> witParts = parseWitnessSigil(witString);
                 Node lastReading = lastWitnessReading.get(witString);
-                ReadingService.addWitnessLink(lastReading, endNode, witParts.get(0), witParts.get(1));
+                ReadingService.addWitnessLink(lastReading, endNode, witParts.get(0), witParts.get(1), tx);
             }
-            tx.success();
-            return Response.status(Response.Status.CREATED).entity(Util.jsonresp("parentId", parentNode.getId())).build();
+            // tx.commit();
+            return Response.status(Response.Status.CREATED).entity(jsonresp("parentId", parentNode.getElementId())).build();
         } catch (IllegalArgumentException e) {
-            return Response.status(Response.Status.BAD_REQUEST).entity(Util.jsonerror(e.getMessage())).build();
+            return Response.status(Response.Status.BAD_REQUEST).entity(jsonerror(e.getMessage())).build();
         } catch (Exception e) {
             e.printStackTrace();
-            return Response.serverError().entity(Util.jsonerror(e.getMessage())).build();
+            return Response.serverError().entity(jsonerror(e.getMessage())).build();
         }
 
     }

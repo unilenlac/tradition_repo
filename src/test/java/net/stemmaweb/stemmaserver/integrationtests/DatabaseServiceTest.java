@@ -1,24 +1,30 @@
 package net.stemmaweb.stemmaserver.integrationtests;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.ArrayList;
-
-import net.stemmaweb.rest.ERelations;
-import net.stemmaweb.services.DatabaseService;
-import net.stemmaweb.services.GraphDatabaseServiceProvider;
-
-import net.stemmaweb.services.VariantGraphService;
-import net.stemmaweb.stemmaserver.Util;
-
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-import org.neo4j.graphdb.GraphDatabaseService;
-import org.neo4j.graphdb.Node;
-import org.neo4j.test.TestGraphDatabaseFactory;
 
 import javax.ws.rs.core.Response;
 
-import static org.junit.Assert.*;
+import net.stemmaweb.services.Database;
+import net.stemmaweb.services.GraphDatabaseServiceProvider;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
+import org.neo4j.dbms.api.DatabaseManagementService;
+import org.neo4j.dbms.api.DatabaseManagementServiceBuilder;
+import org.neo4j.graphdb.GraphDatabaseService;
+import org.neo4j.graphdb.Node;
+// import org.neo4j.test.TestDatabaseManagementServiceBuilder;
+
+import net.stemmaweb.rest.ERelations;
+import net.stemmaweb.services.DatabaseService;
+import net.stemmaweb.services.VariantGraphService;
+import net.stemmaweb.stemmaserver.Util;
+import org.neo4j.graphdb.Transaction;
 
 /**
  * 
@@ -27,16 +33,19 @@ import static org.junit.Assert.*;
  */
 public class DatabaseServiceTest {
 
-    private GraphDatabaseService db;
     private String traditionId;
     private String userId;
+
+    private final GraphDatabaseService db = Database.getInstance().session;
+
+    public DatabaseServiceTest() throws IOException {
+    }
 
     @Before
     public void setUp() throws Exception {
 
-        db = new GraphDatabaseServiceProvider(new TestGraphDatabaseFactory().newImpermanentDatabase()).getDatabase();
-        userId = "simon";
-        Util.setupTestDB(db, userId);
+        userId = "admin@example.org";
+        Util.setupTestDB(db);
 
         /*
          * load a tradition to the test DB, without Jersey
@@ -52,9 +61,11 @@ public class DatabaseServiceTest {
 
     @Test
     public void getRelatedTest() {
-        Node tradition = VariantGraphService.getTraditionNode(traditionId, db);
-        ArrayList<Node> witnesses = DatabaseService.getRelated(tradition, ERelations.HAS_WITNESS);
-        assertEquals(3, witnesses.size());
+        try (Transaction tx = db.beginTx()) {
+            Node tradition = VariantGraphService.getTraditionNode(traditionId, tx);
+            ArrayList<Node> witnesses = DatabaseService.getRelated(tradition, ERelations.HAS_WITNESS, tx);
+            assertEquals(4, witnesses.size()); // 3 if the archetype W is excluded, 4 with it. Actually the base can't make the difference
+        }
     }
 
     @Test
@@ -67,6 +78,6 @@ public class DatabaseServiceTest {
      */
     @After
     public void tearDown() {
-        db.shutdown();
+
     }
 }

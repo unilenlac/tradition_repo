@@ -1,18 +1,22 @@
 package net.stemmaweb.model;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+
 import javax.xml.bind.annotation.XmlRootElement;
 
-import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.annotation.JsonInclude.Include;
-import com.qmino.miredot.annotations.MireDotIgnore;
-import net.stemmaweb.rest.ERelations;
-import net.stemmaweb.services.DatabaseService;
+import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.Relationship;
 import org.neo4j.graphdb.Transaction;
 
-import java.util.ArrayList;
-import java.util.Arrays;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonInclude.Include;
+import com.qmino.miredot.annotations.MireDotIgnore;
+
+import net.stemmaweb.rest.ERelations;
+import net.stemmaweb.services.DatabaseService;
+import net.stemmaweb.services.GraphDatabaseServiceProvider;
 
 /**
  * 
@@ -69,34 +73,71 @@ public class TraditionModel {
 
     public TraditionModel() {}
 
-    public TraditionModel(Node node) {
-        try (Transaction tx = node.getGraphDatabase().beginTx()) {
-            setId(node.getProperty("id").toString());
-            if (node.hasProperty("name"))
-                setName(node.getProperty("name").toString());
-            if (node.hasProperty("language"))
-                setLanguage(node.getProperty("language").toString());
-            if (node.hasProperty("direction"))
-                setDirection(node.getProperty("direction").toString());
-            if (node.hasProperty("is_public"))
-                setIs_public((Boolean) node.getProperty("is_public"));
-            if (node.hasProperty("stemweb_jobid"))
-                setStemweb_jobid(Integer.parseInt(node.getProperty("stemweb_jobid").toString()));
+    /*
+    public TraditionModel(Node node, Transaction tx) {
 
-            Relationship ownerRel = node.getSingleRelationship(ERelations.OWNS_TRADITION,
+        try {
+            Node txNode = tx.getNodeByElementId(node.getElementId());
+            setId(txNode.getProperty("id").toString());
+            if (txNode.hasProperty("name"))
+                setName(txNode.getProperty("name").toString());
+            if (txNode.hasProperty("language"))
+                setLanguage(txNode.getProperty("language").toString());
+            if (txNode.hasProperty("direction"))
+                setDirection(txNode.getProperty("direction").toString());
+            if (txNode.hasProperty("is_public"))
+                setIs_public((Boolean) txNode.getProperty("is_public"));
+            if (txNode.hasProperty("stemweb_jobid"))
+                setStemweb_jobid(Integer.parseInt(txNode.getProperty("stemweb_jobid").toString()));
+
+            Relationship ownerRel = txNode.getSingleRelationship(ERelations.OWNS_TRADITION,
                     org.neo4j.graphdb.Direction.INCOMING);
             if( ownerRel != null ) {
                 setOwner(ownerRel.getStartNode().getProperty("id").toString());
             }
 
             witnesses = new ArrayList<>();
-            DatabaseService.getRelated(node, ERelations.HAS_WITNESS).forEach(
+            DatabaseService.getRelated(txNode, ERelations.HAS_WITNESS, tx).forEach(
                     x -> witnesses.add(x.getProperty("sigil").toString()));
             // For now this is hard-coded
             reltypes = new ArrayList<>(Arrays.asList("grammatical", "spelling", "other", "punctuation",
                     "lexical", "orthographic", "uncertain"));
+        } catch (Exception e) {
+            throw new RuntimeException("Error retrieving tradition properties: " + e.getMessage());
+        }
+    }
+    */
 
-            tx.success();
+    public TraditionModel(Node node, Transaction tx) {
+
+        try {
+            Node txNode = tx.getNodeByElementId(node.getElementId());
+            setId(txNode.getProperty("id").toString());
+            if (txNode.hasProperty("name"))
+                setName(txNode.getProperty("name").toString());
+            if (txNode.hasProperty("language"))
+                setLanguage(txNode.getProperty("language").toString());
+            if (txNode.hasProperty("direction"))
+                setDirection(txNode.getProperty("direction").toString());
+            if (txNode.hasProperty("is_public"))
+                setIs_public((Boolean) txNode.getProperty("is_public"));
+            if (txNode.hasProperty("stemweb_jobid"))
+                setStemweb_jobid(Integer.parseInt(txNode.getProperty("stemweb_jobid").toString()));
+
+            Relationship ownerRel = txNode.getSingleRelationship(ERelations.OWNS_TRADITION,
+                    org.neo4j.graphdb.Direction.INCOMING);
+            if( ownerRel != null ) {
+                setOwner(ownerRel.getStartNode().getProperty("id").toString());
+            }
+
+            witnesses = new ArrayList<>();
+            DatabaseService.getRelated(txNode, ERelations.HAS_WITNESS, tx).forEach(
+                    x -> witnesses.add(x.getProperty("sigil").toString()));
+            // For now this is hard-coded
+            reltypes = new ArrayList<>(Arrays.asList("grammatical", "spelling", "other", "punctuation",
+                    "lexical", "orthographic", "uncertain"));
+        } catch (NumberFormatException e) {
+            throw new RuntimeException(e);
         }
     }
 

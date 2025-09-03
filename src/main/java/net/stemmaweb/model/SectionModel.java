@@ -2,13 +2,18 @@ package net.stemmaweb.model;
 
 import javax.xml.bind.annotation.XmlRootElement;
 
-import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.annotation.JsonInclude.Include;
-import net.stemmaweb.rest.ERelations;
+import net.stemmaweb.services.Database;
 import org.neo4j.graphdb.Direction;
+import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.Relationship;
 import org.neo4j.graphdb.Transaction;
+
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonInclude.Include;
+
+import net.stemmaweb.rest.ERelations;
+import net.stemmaweb.services.GraphDatabaseServiceProvider;
 
 /**
  * This model holds a witness. The sigil is also the witness name, e.g. 'Mk10'
@@ -46,9 +51,11 @@ public class SectionModel {
      * Generates a model from a Neo4j Node
      * @param node - the section node to initialize from
      */
-    public SectionModel(Node node) {
-        try (Transaction tx = node.getGraphDatabase().beginTx()) {
-            setId(String.valueOf(node.getId()));
+    public SectionModel(Node node, Transaction tx) {
+        // GraphDatabaseService db = Database.getInstance().session;
+//        try (Transaction tx = node.getGraphDatabase().beginTx()) {
+        try {
+            setId(node.getElementId());
             if (node.hasProperty("name"))
                 setName(node.getProperty("name").toString());
             // If this node has a language set, use it; otherwise fall back to the tradition language.
@@ -62,9 +69,12 @@ public class SectionModel {
             if (node.hasProperty("translation"))
                 setTranslation(node.getProperty("translation").toString());
             Relationship sectionEnd = node.getSingleRelationship(ERelations.HAS_END, Direction.OUTGOING);
-            setEndRank(Long.valueOf(sectionEnd.getEndNode().getProperty("rank").toString()));
-
-            tx.success();
+            if(sectionEnd != null){
+                setEndRank(Long.valueOf(sectionEnd.getEndNode().getProperty("rank").toString()));
+            }
+            // tx.close();
+        } catch (NumberFormatException e) {
+            throw new RuntimeException(e);
         }
     }
 

@@ -2,7 +2,6 @@ package net.stemmaweb.parser;
 
 import net.stemmaweb.model.ReadingModel;
 import net.stemmaweb.rest.*;
-import net.stemmaweb.services.DatabaseService;
 import net.stemmaweb.services.GraphDatabaseServiceProvider;
 import net.stemmaweb.services.VariantGraphService;
 import org.neo4j.graphdb.*;
@@ -16,6 +15,7 @@ import java.io.InputStream;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import static net.stemmaweb.Util.*;
 import static net.stemmaweb.services.ReadingService.addWitnessLink;
 import static net.stemmaweb.services.ReadingService.recalculateRank;
 import static net.stemmaweb.services.ReadingService.removePlaceholder;
@@ -24,18 +24,25 @@ import static net.stemmaweb.services.ReadingService.removePlaceholder;
  * Parse a TEI parallel-segmentation file into a tradition graph.
  */
 public class TEIParallelSegParser {
-    private GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
-    private GraphDatabaseService db = dbServiceProvider.getDatabase();
+    private final GraphDatabaseService db = new GraphDatabaseServiceProvider().getDatabase();
 
     // Global variables needed for the parsing
     // Keep track of which witnesses are "active" at any given time
-    private HashMap<String, Boolean> activeWitnesses = new HashMap<>();
+    private final HashMap<String, Boolean> activeWitnesses = new HashMap<>();
     // Keep a list of the placeholder nodes that are made in this process
-    private ArrayList<Node> placeholderNodes = new ArrayList<>();
+    private final ArrayList<Node> placeholderNodes = new ArrayList<>();
     // Note whether the witStart / witEnd tags are being used
     private Boolean appSiglorumPresent = false;
     private Boolean spaceSignificant = false;
 
+    /**
+     * Parse a TEI XML input stream with parallel-segmentation representation of variant text
+     * and attach it to the given (section) parentNode.
+     *
+     * @param xmldata - The data to parse
+     * @param parentNode - The section node that will carry the parsed data
+     * @return a Response to indicate the result
+     */
     public Response parseTEIParallelSeg(InputStream xmldata, Node parentNode) {
         XMLInputFactory factory;
         XMLStreamReader reader;
@@ -45,21 +52,22 @@ public class TEIParallelSegParser {
         } catch (XMLStreamException e) {
             e.printStackTrace();
             return Response.status(Response.Status.BAD_REQUEST)
-                    .entity("Error: Parsing of tradition file failed!")
+                    .entity(jsonerror("Parsing of tradition file failed!"))
                     .build();
         }
 
         // Main XML parser loop
-        Node traditionNode = DatabaseService.getRelated(parentNode, ERelations.PART).get(0);
         String tradId;
         String parentId;
         Node startNode;
         Node endNode = null;
+        Node traditionNode;
         try (Transaction tx = db.beginTx()) {
-            parentId = String.valueOf(parentNode.getId());
+            traditionNode = VariantGraphService.getSectionTraditionNode(parentNode, tx);
+            parentId = parentNode.getElementId();
             tradId = traditionNode.getProperty("id").toString();
             // Set up the start node
-            startNode = Util.createStartNode(parentNode);
+            startNode = Util.createStartNode(parentNode, tx);
 
             // State variables
             boolean inHeader = false;
@@ -88,12 +96,12 @@ public class TEIParallelSegParser {
 
                             case "text":
                                 // End of the text; add the end node.
-                                endNode = Util.createEndNode(parentNode);
+                                endNode = Util.createEndNode(parentNode, 0L, tx);
                                 // endNode.setProperty("rank", 0L);
                                 Relationship endLink = documentPrior.createRelationshipTo(endNode, ERelations.SEQUENCE);
                                 setAllWitnesses(endLink);
                                 // Now go through and clean out all the placeholder nodes, linking the tradition.
-                                for (Node n : placeholderNodes) removePlaceholder(n);
+                                for (Node n : placeholderNodes) removePlaceholder(n, tx);
                                 break;
 
                         }
@@ -110,7 +118,7 @@ public class TEIParallelSegParser {
                             case "witness":
                                 if(inHeader) {
                                     String sigil = reader.getAttributeValue(reader.getNamespaceURI("xml"), "id");
-                                    Util.findOrCreateExtant(traditionNode, sigil);
+                                    Util.findOrCreateExtant(traditionNode, sigil, tx);
                                     // All witnesses start active by default; if we encounter a witStart
                                     // we will start to use an explicit app siglorum.
                                     activeWitnesses.put(sigil, true);
@@ -134,7 +142,7 @@ public class TEIParallelSegParser {
                                 break;
 
                             case "app":
-                                documentPrior = parseApp(reader, parentNode.getId(), documentPrior, false);
+                                documentPrior = parseApp(reader, parentNode.getElementId(), documentPrior, false);
                                 break;
 
                             case "note":
@@ -152,7 +160,7 @@ public class TEIParallelSegParser {
                                     .filter(activeWitnesses::get)
                                     .collect(Collectors.toCollection(ArrayList::new));
                             // Make a reading chain of the text
-                            chain = makeReadingChain(reader, parentNode.getId(), readingWitnesses, "witnesses");
+                            chain = makeReadingChain(reader, parentNode.getElementId(), readingWitnesses, "witnesses");
                             if (chain.size() != 0) {
                                 // Add a placeholder to the end of the chain
                                 Node chainEnd = createPlaceholderNode("chainEnd");
@@ -163,7 +171,7 @@ public class TEIParallelSegParser {
                                 ArrayList<String> inactiveWitnesses = activeWitnesses.keySet().stream()
                                         .filter(x -> !activeWitnesses.get(x)).collect(Collectors.toCollection(ArrayList::new));
                                 for (String w : inactiveWitnesses)
-                                    addWitnessLink(documentPrior, chainEnd, w, "witnesses");
+                                    addWitnessLink(documentPrior, chainEnd, w, "witnesses", tx);
 
                                 // Link the beginning of the chain to the documentPrior
                                 Relationship link = documentPrior.createRelationshipTo(chain.get(0), ERelations.SEQUENCE);
@@ -178,16 +186,16 @@ public class TEIParallelSegParser {
             } // end parseloop
 
             // Now try re-ranking the nodes.
-            recalculateRank(startNode);
+            recalculateRank(traditionNode, startNode, false, tx);
             // Calculate which nodes are common
-            VariantGraphService.calculateCommon(parentNode);
-            tx.success();
+            VariantGraphService.calculateCommon(parentNode, tx);
+            tx.close();
         } catch (IllegalArgumentException e) {
-            return Response.status(Response.Status.BAD_REQUEST).entity(e.getMessage()).build();
+            return Response.status(Response.Status.BAD_REQUEST).entity(jsonerror(e.getMessage())).build();
         } catch (Exception e) {
-            System.out.println(String.format("Error encountered in XML line %d column %d: ",
+            System.out.printf("Error encountered in XML line %d column %d: %n",
                     reader.getLocation().getLineNumber(),
-                    reader.getLocation().getColumnNumber()));
+                    reader.getLocation().getColumnNumber());
             e.printStackTrace();
             return Response.serverError().build();
         }
@@ -196,30 +204,29 @@ public class TEIParallelSegParser {
         long endRank;
         try (Transaction tx = db.beginTx()) {
             assert(endNode != null);
-            endRank = Long.valueOf(endNode.getProperty("rank").toString());
-            tx.success();
+            endRank = Long.parseLong(endNode.getProperty("rank").toString());
         } catch (Exception e) {
             e.printStackTrace();
             return Response.serverError().build();
         }
-        Section s = new Section(tradId, parentId);
+        Section s = new Section(tradId, parentId, getTraditionNode(tradId));
         for (List<ReadingModel> identSet : s.collectIdenticalReadings(0, endRank)) {
             ReadingModel first = identSet.remove(0);
             Reading rd = new Reading(first.getId());
             for (ReadingModel identical : identSet) {
-                Response done = rd.mergeReadings(Long.valueOf(identical.getId()));
+                Response done = rd.mergeReadings(identical.getId());
                 if (done.getStatus() != Response.Status.OK.getStatusCode())
                     return Response.serverError().entity(done.getEntity()).build();
             }
         }
 
         return Response.status(Response.Status.CREATED)
-                .entity(String.format("{\"parentId\":\"%s\"}", parentId)).build();
+                .entity(jsonresp("parentId", parentId)).build();
     }
 
     // Parse an app, its readings, and its sub-apps if necessary. Return the node that
     // is now the last reading in its chain.
-    private Node parseApp(XMLStreamReader reader, Long sectId, Node contextPrior, Boolean recursed) {
+    private Node parseApp(XMLStreamReader reader, String sectId, Node contextPrior, Boolean recursed) {
 
         // We are at the START_ELEMENT event for the <app> tag.
         // Create a bracket of placeholder nodes, which all readings in this app
@@ -257,7 +264,7 @@ public class TEIParallelSegParser {
                                     ArrayList<String> inactiveWitnesses = activeWitnesses.keySet().stream()
                                             .filter(x -> !activeWitnesses.get(x)).collect(Collectors.toCollection(ArrayList::new));
                                     for (String w : inactiveWitnesses)
-                                        addWitnessLink(appStart, appEnd, w, "witnesses");
+                                        addWitnessLink(appStart, appEnd, w, "witnesses", tx);
                                 } else {
                                     // Connect only the current active witnesses from the enclosing app to this one
                                     r.setProperty("witnesses", activeWitnesses.keySet().stream()
@@ -270,7 +277,7 @@ public class TEIParallelSegParser {
                                 // <witStart/> / <witEnd/> apps.
                                 HashSet<String> hasWitnesses = new HashSet<>();
                                 Iterable<Relationship> outgoing = appStart.getRelationships(
-                                        ERelations.SEQUENCE, Direction.OUTGOING);
+                                		Direction.OUTGOING, ERelations.SEQUENCE);
                                 // Note the witness links that already exist in this app
                                 for (Relationship rel : outgoing)
                                     if (rel.hasProperty("witnesses"))
@@ -278,7 +285,7 @@ public class TEIParallelSegParser {
                                 // Add any active wits that are missing in this app
                                 activeWitnesses.keySet().stream().filter(activeWitnesses::get)
                                         .filter(x -> !hasWitnesses.contains(x))
-                                        .forEach(x -> addWitnessLink(appStart, appEnd, x, "witnesses"));
+                                        .forEach(x -> addWitnessLink(appStart, appEnd, x, "witnesses", tx));
 
                                 // Promote our new end node and get out of here.
                                 contextPrior = appEnd;
@@ -366,14 +373,14 @@ public class TEIParallelSegParser {
                         break;
                 }
             }
-            tx.success();
+            tx.close();
         } catch (Exception e) {
             e.printStackTrace();
         }
         return contextPrior;
     }
 
-    private ArrayList<Node> makeReadingChain(XMLStreamReader reader, Long sectId,
+    private ArrayList<Node> makeReadingChain(XMLStreamReader reader, String sectId,
                                              ArrayList<String> readingWitnesses, String witClass) {
         // Split the character stream into whitespace-separate words
         String[] words = reader.getText().split("\\s");
@@ -383,36 +390,40 @@ public class TEIParallelSegParser {
 
         // Make the chain of readings with the remaining words
         ArrayList<Node> chain = new ArrayList<>();
-        for (String word : words) {
-            if (word.matches("^\\s*$"))
-                continue;
-            Node wordNode = db.createNode(Nodes.READING);
-            wordNode.setProperty("text", word);
-            wordNode.setProperty("section_id", sectId);
-            // wordNode.setProperty("rank", 0L);
-            if (join_prior) {
-                wordNode.setProperty("join_prior", true);
-                join_prior = false;
-            }
-            if (!chain.isEmpty()) {
-                Node lastNode = chain.get(chain.size() - 1);
-                Relationship seq = lastNode.createRelationshipTo(wordNode, ERelations.SEQUENCE);
-                seq.setProperty(witClass, readingWitnesses.toArray(new String[0]));
-            }
-            chain.add(wordNode);
+        try (Transaction tx = db.beginTx()) {
+	        for (String word : words) {
+	            if (word.matches("^\\s*$"))
+	                continue;
+	            Node wordNode = tx.createNode(Nodes.READING);
+	            wordNode.setProperty("text", word);
+	            wordNode.setProperty("section_id", sectId);
+	            // wordNode.setProperty("rank", 0L);
+	            if (join_prior) {
+	                wordNode.setProperty("join_prior", true);
+	                join_prior = false;
+	            }
+	            if (!chain.isEmpty()) {
+	                Node lastNode = chain.get(chain.size() - 1);
+	                Relationship seq = lastNode.createRelationshipTo(wordNode, ERelations.SEQUENCE);
+	                seq.setProperty(witClass, readingWitnesses.toArray(new String[0]));
+	            }
+	            chain.add(wordNode);
+	        }
+	        // Set join_prior / join_next on the first & last readings
+	        // if there was a significant lack of whitespace
+	        if (spaceSignificant)
+	            if (!reader.getText().matches("\\s+$"))
+	                chain.get(chain.size()-1).setProperty("join_next", true);
+	            else if (join_prior || !reader.getText().matches("^\\s+"))
+	                chain.get(0).setProperty("join_prior", true);
+        } catch (Exception e) {
+            e.printStackTrace();
         }
-        // Set join_prior / join_next on the first & last readings
-        // if there was a significant lack of whitespace
-        if (spaceSignificant)
-            if (!reader.getText().matches("\\s+$"))
-                chain.get(chain.size()-1).setProperty("join_next", true);
-            else if (join_prior || !reader.getText().matches("^\\s+"))
-                chain.get(0).setProperty("join_prior", true);
         return chain;
     }
 
     private Node createPlaceholderNode (String name) {
-        Node ph = db.createNode(Nodes.READING);
+        Node ph = db.beginTx().createNode(Nodes.READING);
         ph.setProperty("is_placeholder", true);
         if (name != null) ph.setProperty("text", name);
         placeholderNodes.add(ph);

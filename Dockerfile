@@ -1,4 +1,4 @@
-FROM tomcat:9-jre8
+FROM tomcat:9-jdk17
 LABEL vendor=DHUniWien
 
 # Update packages, install Graphviz
@@ -10,6 +10,7 @@ RUN apt-get update \
 
 # Make the data directories
 RUN mkdir -p /var/lib/stemmarest/conf \
+    && mkdir -p /var/lib/stemmarest/plugins \
     && chmod -R g+w /var/lib/stemmarest \
     && chmod -R +2000 /var/lib/stemmarest
 
@@ -24,4 +25,5 @@ ENV STEMMAREST_HOME /var/lib/stemmarest
 
 # Run the server
 EXPOSE 8080
-CMD ["catalina.sh", "run"]
+ENTRYPOINT ["catalina.sh"]
+CMD ["run"]

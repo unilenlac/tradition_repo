@@ -1,5 +1,13 @@
 package net.stemmaweb.stemmaserver.integrationtests;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -7,26 +15,31 @@ import java.util.stream.Collectors;
 import javax.ws.rs.core.GenericType;
 import javax.ws.rs.core.Response;
 
-import net.stemmaweb.model.ReadingModel;
-import net.stemmaweb.model.SectionModel;
-import net.stemmaweb.model.TextSequenceModel;
-import net.stemmaweb.model.WitnessModel;
-import net.stemmaweb.rest.*;
 import net.stemmaweb.services.GraphDatabaseServiceProvider;
-import net.stemmaweb.stemmaserver.JerseyTestServerFactory;
-
-import net.stemmaweb.stemmaserver.Util;
-
 import org.glassfish.jersey.test.JerseyTest;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Test;
-import org.neo4j.graphdb.*;
+import org.neo4j.dbms.api.DatabaseManagementService;
+import org.neo4j.dbms.api.DatabaseManagementServiceBuilder;
+import org.neo4j.graphdb.Direction;
+import org.neo4j.graphdb.GraphDatabaseService;
+import org.neo4j.graphdb.Node;
+import org.neo4j.graphdb.Relationship;
+import org.neo4j.graphdb.ResourceIterator;
+import org.neo4j.graphdb.Transaction;
 
-import org.neo4j.test.TestGraphDatabaseFactory;
-
-import static org.junit.Assert.*;
+import net.stemmaweb.model.ReadingModel;
+import net.stemmaweb.model.SectionModel;
+import net.stemmaweb.model.TextSequenceModel;
+import net.stemmaweb.model.WitnessModel;
+import net.stemmaweb.rest.ERelations;
+import net.stemmaweb.rest.Nodes;
+import net.stemmaweb.rest.Root;
+import net.stemmaweb.rest.Witness;
+import net.stemmaweb.stemmaserver.JerseyTestServerFactory;
+import net.stemmaweb.stemmaserver.Util;
 
 /**
  * 
@@ -37,7 +50,8 @@ import static org.junit.Assert.*;
  */
 public class WitnessTest {
     private String tradId;
-    private GraphDatabaseService db;
+    private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
+    private final GraphDatabaseService db = dbServiceProvider.getDatabase();
 
     /*
      * JerseyTest is the test environment to Test api calls it provides a
@@ -45,11 +59,14 @@ public class WitnessTest {
      */
     private JerseyTest jerseyTest;
 
+    public WitnessTest() throws IOException {
+    }
+
 
     @Before
     public void setUp() throws Exception {
-        db = new GraphDatabaseServiceProvider(new TestGraphDatabaseFactory().newImpermanentDatabase()).getDatabase();
-        Util.setupTestDB(db, "1");
+
+        Util.setupTestDB(db);
 
         // Create a JerseyTestServer for the necessary REST API calls
 
@@ -79,7 +96,7 @@ public class WitnessTest {
     public void witnessAsTextTestA() {
         String expectedText = "when april with his showers sweet with "
                 + "fruit the drought of march has pierced unto the root";
-        Response resp = new Witness(tradId, "A").getWitnessAsText();
+        Response resp = new Witness(tradId, "A", net.stemmaweb.Util.getTraditionNode(tradId)).getWitnessAsText();
         assertEquals(expectedText, ((TextSequenceModel) resp.getEntity()).getText());
 
         String returnedText = jerseyTest
@@ -104,7 +121,7 @@ public class WitnessTest {
     public void witnessAsTextTestB() {
         String expectedText = "when showers sweet with april fruit the march "
                 + "of drought has pierced to the root";
-        Response resp = new Witness(tradId, "B").getWitnessAsText();
+        Response resp = new Witness(tradId, "B", net.stemmaweb.Util.getTraditionNode(tradId)).getWitnessAsText();
         assertEquals(expectedText, ((TextSequenceModel) resp.getEntity()).getText());
 
         String returnedText = jerseyTest
@@ -125,18 +142,17 @@ public class WitnessTest {
         } catch (Exception e) {
             fail();
         }
-        TextSequenceModel returnedText = (TextSequenceModel) new Witness(foxId, "w1").getWitnessAsText().getEntity();
+        TextSequenceModel returnedText = (TextSequenceModel) new Witness(foxId, "w1", net.stemmaweb.Util.getTraditionNode(tradId)).getWitnessAsText().getEntity();
         assertNotEquals(expectedText, returnedText.getText());
 
         // Find the reading that is the period
         Node period;
         try (Transaction tx = db.beginTx()) {
-            period = db.findNode(Nodes.READING, "text", ". ");
+            period = tx.findNode(Nodes.READING, "text", ". ");
             assertNotNull(period);
             period.setProperty("join_prior", true);
-            tx.success();
         }
-        returnedText = (TextSequenceModel) new Witness(foxId, "w1").getWitnessAsText().getEntity();
+        returnedText = (TextSequenceModel) new Witness(foxId, "w1", net.stemmaweb.Util.getTraditionNode(tradId)).getWitnessAsText().getEntity();
         assertEquals(expectedText, returnedText.getText());
 
         // Now find its predecessors and mark them as join_next
@@ -145,16 +161,15 @@ public class WitnessTest {
                 Node n = r.getStartNode();
                 n.setProperty("join_next", true);
             }
-            tx.success();
         }
-        returnedText = (TextSequenceModel) new Witness(foxId, "w1").getWitnessAsText().getEntity();
+        returnedText = (TextSequenceModel) new Witness(foxId, "w1", net.stemmaweb.Util.getTraditionNode(tradId)).getWitnessAsText().getEntity();
         assertEquals(expectedText, returnedText.getText());
 
         try (Transaction tx = db.beginTx()) {
             period.removeProperty("join_prior");
-            tx.success();
+            tx.commit();
         }
-        returnedText = (TextSequenceModel) new Witness(foxId, "w1").getWitnessAsText().getEntity();
+        returnedText = (TextSequenceModel) new Witness(foxId, "w1", net.stemmaweb.Util.getTraditionNode(tradId)).getWitnessAsText().getEntity();
         assertEquals(expectedText, returnedText.getText());
     }
 
@@ -290,15 +305,15 @@ public class WitnessTest {
 
         // Now add a witness out-of-band, that doesn't have any particular data, to make sure we can
         // delete errant witnesses
-        Long bogusId;
+        String bogusId;
         try (Transaction tx = db.beginTx()) {
-            Node traditionNode = db.findNode(Nodes.TRADITION, "id", tradId);
-            Node bogus = db.createNode(Nodes.WITNESS);
-            bogusId = bogus.getId();
+            Node traditionNode = tx.findNode(Nodes.TRADITION, "id", tradId);
+            Node bogus = tx.createNode(Nodes.WITNESS);
+            bogusId = bogus.getElementId();
             bogus.setProperty("hypothetical", false);
             bogus.setProperty("sigil", "n\":\"RJKYRSKZ");
             traditionNode.createRelationshipTo(bogus, ERelations.HAS_WITNESS);
-            tx.success();
+            tx.commit();
         }
         assertNotNull(bogusId);
         assertEquals(3, jerseyTest.target("/tradition/" + tradId + "/witnesses")
@@ -331,7 +346,7 @@ public class WitnessTest {
     @Test
     public void createWitnessInvalidSigil() {
         Response r = Util.createTraditionFromFileOrString(jerseyTest, "592th", "LR", "1",
-                "src/TestFiles/592th.xml", "graphml");
+                "src/TestFiles/592th.xml", "graphmlsingle");
         assertEquals(Response.Status.BAD_REQUEST.getStatusCode(), r.getStatus());
         String error = Util.getValueFromJson(r, "error");
         assertEquals("The character \" may not appear in a sigil name.", error);
@@ -385,9 +400,9 @@ public class WitnessTest {
     @Test
     public void traditionNodeExistsTest() {
         try (Transaction tx = db.beginTx()) {
-            ResourceIterator<Node> tradNodesIt = db.findNodes(Nodes.TRADITION, "name", "Tradition");
+            ResourceIterator<Node> tradNodesIt = tx.findNodes(Nodes.TRADITION, "name", "Tradition");
             assertTrue(tradNodesIt.hasNext());
-            tx.success();
+            tx.close();
         }
     }
 
@@ -397,9 +412,9 @@ public class WitnessTest {
     @Test
     public void traditionEndNodeExistsTest() {
         try (Transaction tx = db.beginTx()) {
-            ResourceIterator<Node> tradNodesIt = db.findNodes(Nodes.READING, "text", "#END#");
+            ResourceIterator<Node> tradNodesIt = tx.findNodes(Nodes.READING, "text", "#END#");
             assertTrue(tradNodesIt.hasNext());
-            tx.success();
+            tx.close();
         }
     }
 
@@ -468,7 +483,11 @@ public class WitnessTest {
      */
     @After
     public void tearDown() throws Exception {
-        db.shutdown();
+        DatabaseManagementService service = dbServiceProvider.getManagementService();
+
+        if (service != null) {
+            service.shutdownDatabase(db.databaseName());
+        }
         jerseyTest.tearDown();
     }
 }

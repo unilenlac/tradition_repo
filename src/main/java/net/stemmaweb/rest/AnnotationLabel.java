@@ -1,6 +1,7 @@
 package net.stemmaweb.rest;
 
 import com.qmino.miredot.annotations.ReturnType;
+import net.stemmaweb.Util.GetTraditionFunction;
 import net.stemmaweb.model.AnnotationLabelModel;
 import net.stemmaweb.services.DatabaseService;
 import net.stemmaweb.services.GraphDatabaseServiceProvider;
@@ -16,7 +17,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
-import static net.stemmaweb.rest.Util.jsonerror;
+import static net.stemmaweb.Util.jsonerror;
 
 /**
  * Comprises the API calls having to do with specifying the annotation types that are allowed on
@@ -27,22 +28,24 @@ import static net.stemmaweb.rest.Util.jsonerror;
  */
 
 public class AnnotationLabel {
-    private GraphDatabaseService db;
-    private String tradId;
-    private String name;
+    private final GraphDatabaseService db;
+    private final String tradId;
+    private final String name;
 
-    AnnotationLabel(String tradId, String name) {
+    private final GetTraditionFunction<Transaction, Node> getTraditionNode;
+
+    AnnotationLabel(String tradId, String name, GetTraditionFunction<Transaction, Node> getTraditionFunction) {
         GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
         db = dbServiceProvider.getDatabase();
         this.tradId = tradId;
         this.name = name;
+        getTraditionNode = getTraditionFunction;
     }
 
     /**
      * Gets the information for the given annotation type name.
      *
-     * @summary Get annotation label spec
-     *
+     * @title Get annotation label spec
      * @return A JSON AnnotationLabelModel or a JSON error message
      * @statuscode 200 on success
      * @statuscode 400 if there is an error in the annotation type specification
@@ -52,17 +55,19 @@ public class AnnotationLabel {
     @Produces("application/json; charset=utf-8")
     @ReturnType(clazz = AnnotationLabelModel.class)
     public Response getAnnotationLabel() {
-        Node ourNode = lookupAnnotationLabel();
-        if (ourNode == null) {
-            return Response.status(Response.Status.NOT_FOUND).build();
+        try(Transaction tx = db.beginTx()){
+            Node ourNode = lookupAnnotationLabel(tx);
+            if (ourNode == null) {
+                return Response.status(Response.Status.NOT_FOUND).build();
+            }
+            return Response.ok(new AnnotationLabelModel(ourNode, tx)).build();
         }
-        return Response.ok(new AnnotationLabelModel(ourNode)).build();
     }
 
     /**
      * Creates or updates an annotation type specification
      *
-     * @summary Put annotation label spec
+     * @title Put annotation label spec
      * @param alm - The AnnotationLabelModel specification to use
      * @return The AnnotationLabelModel specification created / updated
      * @statuscode 200 on update of existing label
@@ -76,13 +81,15 @@ public class AnnotationLabel {
     @Produces("application/json; charset=utf-8")
     @ReturnType(clazz = AnnotationLabelModel.class)
     public Response createOrUpdateAnnotationLabel(AnnotationLabelModel alm) {
-        Node ourNode = lookupAnnotationLabel();
-        Node tradNode = VariantGraphService.getTraditionNode(tradId, db);
         boolean isNew = false;
+        Node ourNode;
+        AnnotationLabelModel annotation_label;
         try (Transaction tx = db.beginTx()) {
+            ourNode = lookupAnnotationLabel(tx);
+            Node tradNode = this.getTraditionNode.apply(tx);
             // Get the existing list of annotation labels associated with this tradition
             List<String> reservedWords = Arrays.asList("USER", "ROOT", "__SYSTEM__");
-            List<String> existingLabels = getValidTargetsForTradition(reservedWords);
+            List<String> existingLabels = getValidTargetsForTradition(reservedWords, tradNode, tx);
 
             if (ourNode == null) {
                 isNew = true;
@@ -95,7 +102,7 @@ public class AnnotationLabel {
                     return Response.status(Response.Status.CONFLICT)
                             .entity(jsonerror("Requested label " + alm.getName() + " already in use")).build();
                 // Create the label and its properties and links
-                ourNode = db.createNode(Nodes.ANNOTATIONLABEL);
+                ourNode = tx.createNode(Nodes.ANNOTATIONLABEL);
                 tradNode.createRelationshipTo(ourNode, ERelations.HAS_ANNOTATION_TYPE);
                 ourNode.setProperty("name", alm.getName());
                 existingLabels.add(alm.getName());
@@ -123,7 +130,7 @@ public class AnnotationLabel {
             // Now reset the properties and links according to the model given.
             // Do we have any new properties?
             if (!alm.getProperties().isEmpty()) {
-                Node pnode = db.createNode(Nodes.PROPERTIES);
+                Node pnode = tx.createNode(Nodes.PROPERTIES);
                 ourNode.createRelationshipTo(pnode, ERelations.HAS_PROPERTIES);
                 ArrayList<String> allowedValues = new ArrayList<>(Arrays.asList("Boolean", "Long", "Double",
                         "Character", "String", "LocalDate", "OffsetTime", "LocalTime", "ZonedDateTime",
@@ -145,7 +152,7 @@ public class AnnotationLabel {
             }
             // Do we have any links?
             if (!alm.getLinks().isEmpty()) {
-                Node lnode = db.createNode(Nodes.LINKS);
+                Node lnode = tx.createNode(Nodes.LINKS);
                 ourNode.createRelationshipTo(lnode, ERelations.HAS_LINKS);
                 for (String key : alm.getLinks().keySet()) {
                     // Validate the value - the node label that is specified as the target for this link
@@ -155,38 +162,41 @@ public class AnnotationLabel {
                             "Linked node label " + key + " not found in this tradition")).build();
                 }
             }
-            tx.success();
+            annotation_label = new AnnotationLabelModel(ourNode, tx);
+            tx.commit();
         } catch (Exception e) {
             e.printStackTrace();
             return Response.serverError().entity(jsonerror(e.getMessage())).build();
         }
         return Response.status(isNew ? Response.Status.CREATED : Response.Status.OK)
-                .entity(new AnnotationLabelModel(ourNode)).build();
+                .entity(annotation_label).build();
     }
 
     /**
      * Deletes the specified annotation label specification from the tradition. Returns an error
      * if there are any annotations still using this type.
      *
-     * @summary Delete annotation label
+     * @title Delete annotation label
      *
      * @statuscode 200 on success
      * @statuscode 409 if the annotation label is still in use
      * @statuscode 500 on failure, with an error report in JSON format
+     * @return the label model that was deleted
      */
     @DELETE
-    @ReturnType("java.lang.Void")
+    @ReturnType(clazz = AnnotationLabelModel.class)
     public Response deleteAnnotationLabel() {
-        Node ourNode = lookupAnnotationLabel();
-        if (ourNode == null) return Response.status(Response.Status.NOT_FOUND).build();
-        AnnotationLabelModel ourModel = new AnnotationLabelModel(ourNode);
-        Node tradNode = VariantGraphService.getTraditionNode(tradId, db);
+        AnnotationLabelModel ourModel;
         try (Transaction tx = db.beginTx()) {
+            Node ourNode = lookupAnnotationLabel(tx);
+            if (ourNode == null) return Response.status(Response.Status.NOT_FOUND).build();
+            ourModel = new AnnotationLabelModel(ourNode, tx);
+            Node tradNode = getTraditionNode.apply(tx);
             // Check for annotations on this tradition using this label, before we delete it
-            for (Node annoNode : DatabaseService.getRelated(tradNode, ERelations.HAS_ANNOTATION))
+            for (Node annoNode : DatabaseService.getRelated(tradNode, ERelations.HAS_ANNOTATION, tx))
                 if (annoNode.hasLabel(Label.label(ourModel.getName())))
                     return Response.status(Response.Status.CONFLICT).entity(jsonerror(
-                            "Label " + ourModel.getName() + " still in use on annotation " + annoNode.getId()))
+                                    "Label " + ourModel.getName() + " still in use on annotation " + annoNode.getElementId()))
                             .build();
 
             // Delete the label's properties and links
@@ -195,7 +205,7 @@ public class AnnotationLabel {
                 r.delete();
             }
             // Delete any reference to the label in any other label's linkset
-            for (Node n : getExistingLabelsForTradition()) {
+            for (Node n : getExistingLabelsForTradition(tradNode, tx)) {
                 if (n.equals(ourNode)) continue;
                 Relationship l = n.getSingleRelationship(ERelations.HAS_LINKS, Direction.OUTGOING);
                 if (l != null) {
@@ -208,43 +218,46 @@ public class AnnotationLabel {
             // Finally, delete the label
             ourNode.getSingleRelationship(ERelations.HAS_ANNOTATION_TYPE, Direction.INCOMING).delete();
             ourNode.delete();
-            tx.success();
+            tx.commit();
         } catch (Exception e) {
             e.printStackTrace();
             return Response.serverError().entity(jsonerror(e.getMessage())).build();
         }
-        return Response.ok().build();
+        return Response.ok(ourModel).build();
     }
 
-    private Node lookupAnnotationLabel() {
+    private Node lookupAnnotationLabel(Transaction tx) {
         Node ourNode = null;
-        try (Transaction tx = db.beginTx()) {
-            Node tradNode = VariantGraphService.getTraditionNode(tradId, db);
-            Optional<Node> foundNode = DatabaseService.getRelated(tradNode, ERelations.HAS_ANNOTATION_TYPE)
+        try {
+            Node tradNode = getTraditionNode.apply(tx);
+            Optional<Node> foundNode = DatabaseService.getRelated(tradNode, ERelations.HAS_ANNOTATION_TYPE, tx)
                     .stream().filter(x -> x.getProperty("name", "").equals(name)).findFirst();
             if (foundNode.isPresent()) ourNode = foundNode.get();
-            tx.success();
+        }catch(Exception e){
+            e.printStackTrace();
         }
         return ourNode;
     }
 
-    private List<Node> getExistingLabelsForTradition() {
-        Node tradNode = VariantGraphService.getTraditionNode(tradId, db);
-        List<Node> answer;
-        try (Transaction tx = db.beginTx()) {
-            answer = DatabaseService.getRelated(tradNode, ERelations.HAS_ANNOTATION_TYPE);
-            tx.success();
-            return answer;
+    private List<Node> getExistingLabelsForTradition(Node tradNode, Transaction tx) {
+        List<Node> answer = null;
+        try {
+            answer = DatabaseService.getRelated(tradNode, ERelations.HAS_ANNOTATION_TYPE, tx);
+        }catch (Exception e){
+            e.printStackTrace();
         }
+        return answer;
     }
 
-    private List<String> getValidTargetsForTradition(List<String> reservedWords) {
-        List<String> answer;
+    private List<String> getValidTargetsForTradition(List<String> reservedWords, Node tradNode, Transaction tx) {
+        List<String> answer = null;
         // Get the existing labels
-        try (Transaction tx = db.beginTx()) {
-            answer = getExistingLabelsForTradition().stream()
+        try {
+            answer = getExistingLabelsForTradition(tradNode, tx).stream()
                     .map(x -> x.getProperty("name").toString()).collect(Collectors.toList());
-            tx.success();
+
+        } catch (Exception e){
+            e.printStackTrace();
         }
         // Get the primary objects that can also be annotated
         for (Nodes x : Nodes.values()) {

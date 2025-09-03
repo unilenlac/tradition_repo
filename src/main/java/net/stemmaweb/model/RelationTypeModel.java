@@ -1,7 +1,10 @@
 package net.stemmaweb.model;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import net.stemmaweb.rest.ERelations;
 import net.stemmaweb.rest.Nodes;
+import net.stemmaweb.services.GraphDatabaseServiceProvider;
+
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.neo4j.graphdb.*;
 
@@ -17,6 +20,7 @@ import javax.xml.bind.annotation.XmlRootElement;
  */
 
 @XmlRootElement
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class RelationTypeModel implements Comparable<RelationTypeModel> {
 
     /**
@@ -26,13 +30,14 @@ public class RelationTypeModel implements Comparable<RelationTypeModel> {
     /**
      * A short description of what this relationship type signifies
      */
+    private Boolean defaultsettings; // undocumented; use this for Stemmaweb legacy defaults
     private String  description;
     /**
      * How tightly the relationship binds. A lower number indicates a closer binding.
      * If A and B are related at bindlevel 0, and B and C at bindlevel 1, it implies
      * that A and C have the same relationship as B and C do.
      */
-    private int     bindlevel;
+    private int bindlevel;
     /**
      * Whether this relationship should be replaced silently by a stronger type if
      * requested. This is used primarily for the internal 'collated' relationship, only
@@ -66,6 +71,7 @@ public class RelationTypeModel implements Comparable<RelationTypeModel> {
     public RelationTypeModel (String name) {
         this.thename = name;
         // Set some defaults
+        // this.defaultsettings = false;
         this.description = "A type of reading relation";
         this.bindlevel = 10;
         this.is_colocation = true;
@@ -77,25 +83,22 @@ public class RelationTypeModel implements Comparable<RelationTypeModel> {
 
     public RelationTypeModel (Node n) {
         this();
-        try (Transaction tx = n.getGraphDatabase().beginTx()) {
-            if (n.hasProperty("name"))
-                this.setName(n.getProperty("name").toString());
-            if (n.hasProperty("description"))
-                this.setDescription(n.getProperty("description").toString());
-            if (n.hasProperty("bindlevel"))
-                this.setBindlevel((int) n.getProperty("bindlevel"));
-            if (n.hasProperty("is_colocation"))
-                this.setIs_colocation((Boolean) n.getProperty("is_colocation"));
-            if (n.hasProperty("is_weak"))
-                this.setIs_weak((Boolean) n.getProperty("is_weak"));
-            if (n.hasProperty("is_transitive"))
-                this.setIs_transitive((Boolean) n.getProperty("is_transitive"));
-            if (n.hasProperty("is_generalizable"))
-                this.setIs_generalizable((Boolean) n.getProperty("is_generalizable"));
-            if (n.hasProperty("use_regular"))
-                this.setUse_regular((Boolean) n.getProperty("use_regular"));
-            tx.success();
-        }
+        if (n.hasProperty("name"))
+            this.setName(n.getProperty("name").toString());
+        if (n.hasProperty("description"))
+            this.setDescription(n.getProperty("description").toString());
+        if (n.hasProperty("bindlevel"))
+            this.setBindlevel((int) n.getProperty("bindlevel"));
+        if (n.hasProperty("is_colocation"))
+            this.setIs_colocation((Boolean) n.getProperty("is_colocation"));
+        if (n.hasProperty("is_weak"))
+            this.setIs_weak((Boolean) n.getProperty("is_weak"));
+        if (n.hasProperty("is_transitive"))
+            this.setIs_transitive((Boolean) n.getProperty("is_transitive"));
+        if (n.hasProperty("is_generalizable"))
+            this.setIs_generalizable((Boolean) n.getProperty("is_generalizable"));
+        if (n.hasProperty("use_regular"))
+            this.setUse_regular((Boolean) n.getProperty("use_regular"));
     }
 
     public String getName() {
@@ -105,6 +108,10 @@ public class RelationTypeModel implements Comparable<RelationTypeModel> {
     public void setName(String aname) {
         this.thename = aname;
     }
+
+    public Boolean getDefaultsettings() { return defaultsettings; }
+
+    public void setDefaultsettings(Boolean defaultsettings) { this.defaultsettings = defaultsettings; }
 
     public String getDescription() {
         return description;
@@ -165,17 +172,19 @@ public class RelationTypeModel implements Comparable<RelationTypeModel> {
     /**
      * Create the Neo4J node corresponding to this relation type model.
      * @param traditionNode - The tradition to which this model belongs
+     * @return the created RelationType node
      */
-    public Node instantiate (Node traditionNode) {
-        return match_relation_node(traditionNode, false);
+    public Node instantiate (Node traditionNode, Transaction tx) {
+        return match_relation_node(traditionNode, false, tx);
     }
 
     /**
      * Update the Neo4J node corresponding to this relation type model.
      * @param traditionNode - The tradition to which this model belongs
+     * @return the updated RelationType node
      */
-    public Node update (Node traditionNode) {
-        return match_relation_node(traditionNode, true);
+    public Node update (Node traditionNode, Transaction tx) {
+        return match_relation_node(traditionNode, true, tx);
     }
 
     /**
@@ -184,33 +193,28 @@ public class RelationTypeModel implements Comparable<RelationTypeModel> {
      * @return - The correspondingly named RELATION_TYPE node, or null
      */
     public Node lookup (Node traditionNode) {
-        GraphDatabaseService db = traditionNode.getGraphDatabase();
+
         Node relTypeNode = null;
-        try (Transaction tx = db.beginTx()) {
-            // First see if there is a type with this name
-            for (Relationship r : traditionNode.getRelationships(ERelations.HAS_RELATION_TYPE, Direction.OUTGOING)) {
-                if (r.getEndNode().getProperty("name").toString().equals(this.thename)) {
-                    relTypeNode = r.getEndNode();
-                    break;
-                }
+
+        // First see if there is a type with this name
+        for (Relationship r : traditionNode.getRelationships(Direction.OUTGOING, ERelations.HAS_RELATION_TYPE)) {
+            if (r.getEndNode().getProperty("name").toString().equals(this.thename)) {
+                relTypeNode = r.getEndNode();
+                break;
             }
-            tx.success();
-        } catch (Exception e) {
-            e.printStackTrace();
-            return null;
         }
+
         return relTypeNode;
     }
 
-    private Node match_relation_node(Node traditionNode, Boolean allow_update) {
-        GraphDatabaseService db = traditionNode.getGraphDatabase();
-        Node relType = this.lookup(traditionNode);
-        try (Transaction tx = db.beginTx()) {
+    private Node match_relation_node(Node traditionNode, Boolean allow_update, Transaction tx) {
+        try {
+            Node relType = this.lookup(traditionNode);
             if (relType == null) {
-                // Create the node if it doesn't exist
-                relType = db.createNode(Nodes.RELATION_TYPE);
+
+                relType = tx.createNode(Nodes.RELATION_TYPE);
                 this.update_reltype(relType);
-                traditionNode.createRelationshipTo(relType, ERelations.HAS_RELATION_TYPE);
+                // traditionNode.createRelationshipTo(relType, ERelations.HAS_RELATION_TYPE);
             } else {
                 // Check that the node matches our values, if it does exist
                 if (!(this.description.equals(relType.getProperty("description"))
@@ -224,7 +228,6 @@ public class RelationTypeModel implements Comparable<RelationTypeModel> {
                     else throw new Exception("Another relation type by this name already exists");
                 }
             }
-            tx.success();
             return relType;
         } catch (Exception e) {
             e.printStackTrace();

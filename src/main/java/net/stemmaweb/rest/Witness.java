@@ -12,6 +12,7 @@ import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 
 import com.qmino.miredot.annotations.ReturnType;
+import net.stemmaweb.Util;
 import net.stemmaweb.model.ReadingModel;
 import net.stemmaweb.model.WitnessModel;
 import net.stemmaweb.model.TextSequenceModel;
@@ -21,7 +22,7 @@ import org.neo4j.graphdb.*;
 import org.neo4j.graphdb.traversal.Evaluator;
 import org.neo4j.graphdb.traversal.Uniqueness;
 
-import static net.stemmaweb.rest.Util.jsonerror;
+import static net.stemmaweb.Util.jsonerror;
 
 /**
  * Comprises all the API calls related to a witness.
@@ -31,20 +32,21 @@ import static net.stemmaweb.rest.Util.jsonerror;
 
 public class Witness {
 
-    private GraphDatabaseService db;
-    private String tradId;
+    private final GraphDatabaseService db;
+    private final String tradId;
     private String sigil;
     private String sectId;
     private String errorMessage;
+    private final Util.GetTraditionFunction<Transaction, Node> getTraditionNode;
 
-    public Witness (String traditionId, String requestedSigil) {
-        GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
-        db = dbServiceProvider.getDatabase();
+    public Witness (String traditionId, String requestedSigil, Util.GetTraditionFunction<Transaction, Node> getNodeFunction) {
+        //GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
+        db = Database.getInstance().session;
         tradId = traditionId;
+        this.getTraditionNode = getNodeFunction;
         // The "sigil" might be a sigil, or it might be a node ID.
         try {
-            Long nodeId = Long.valueOf(requestedSigil);
-            String found = getWitnessById(nodeId);
+            String found = getWitnessById(tradId);
             if (found != null)
                 sigil = found;
         } catch (NumberFormatException e) {
@@ -54,39 +56,37 @@ public class Witness {
         sectId = null;
     }
 
-    public Witness (String traditionId, String sectionId, String requestedSigil) {
-        this(traditionId, requestedSigil);
+    public Witness (String traditionId, String sectionId, String requestedSigil, Util.GetTraditionFunction<Transaction, Node> getNodeFunction) {
+        this(traditionId, requestedSigil, getNodeFunction);
         sectId = sectionId;
     }
 
-    private String getWitnessById(Long nodeId) {
+    private String getWitnessById(String nodeId) {
         String foundSigil = null;
-        Node tradNode = VariantGraphService.getTraditionNode(tradId, db);
         try (Transaction tx = db.beginTx()) {
+            Node tradNode = VariantGraphService.getTraditionNode(tradId, tx);
             Node found = null;
-            for (Relationship r : tradNode.getRelationships(ERelations.HAS_WITNESS, Direction.OUTGOING)) {
-                if (r.getEndNodeId() == nodeId)
+            for (Relationship r : tradNode.getRelationships(Direction.OUTGOING, ERelations.HAS_WITNESS)) {
+                if (r.getEndNode().getElementId().equals(nodeId))
                     found = r.getEndNode();
             }
             if (found != null)
                 foundSigil = found.getProperty("sigil").toString();
-            tx.success();
         }
         return foundSigil;
     }
 
     private Node getWitnessBySigil() {
-        Node tradNode = VariantGraphService.getTraditionNode(tradId, db);
+        Node tradNode = VariantGraphService.getTraditionNode(tradId, db.beginTx());
         Node found = null;
         try (Transaction tx = db.beginTx()) {
-            for (Relationship r : tradNode.getRelationships(ERelations.HAS_WITNESS, Direction.OUTGOING)) {
+            for (Relationship r : tradNode.getRelationships(Direction.OUTGOING, ERelations.HAS_WITNESS)) {
                 Node wit = r.getEndNode();
                 if (wit.hasProperty("sigil") && wit.getProperty("sigil").equals(sigil)) {
                     found = wit;
                     break;
                 }
             }
-            tx.success();
         }
         return found;
     }
@@ -98,7 +98,7 @@ public class Witness {
 
     /**
      * Returns a WitnessModel corresponding to the requested witness.
-     * @summary Get witness information
+     * @title Get witness information
      * @return  A WitnessModel containing information about the witness
      * @statuscode 200 - on success
      * @statuscode 404 - if the tradition, section, or witness text doesn't exist
@@ -108,31 +108,35 @@ public class Witness {
     @Produces(MediaType.APPLICATION_JSON + "; charset=utf-8")
     @ReturnType(clazz = WitnessModel.class)
     public Response getWitnessInfo() {
-        Node witnessNode = getWitnessBySigil();
-        if (witnessNode == null) return Response.status(Status.NOT_FOUND).build();
-        WitnessModel thisWit = new WitnessModel(witnessNode);
-        return Response.ok(thisWit).build();
+        try (Transaction tx = db.beginTx()){
+            Node witnessNode = getWitnessBySigil();
+            if (witnessNode == null) return Response.status(Status.NOT_FOUND).build();
+            WitnessModel thisWit = new WitnessModel(witnessNode, tx);
+            return Response.ok(thisWit).build();
+        }
     }
 
     /**
      * Deletes the requested witness.
      *
-     * @summary Delete a witness
+     * @title Delete a witness
      * @statuscode 200 - on success
      * @statuscode 404 - if the tradition, section, or witness text doesn't exist
      * @statuscode 500 - on error, with an error message
      */
     @DELETE
     @Produces(MediaType.APPLICATION_JSON + "; charset=utf-8")
-    @ReturnType("java.lang.Void")
+    @ReturnType(clazz = WitnessModel.class)
     public Response deleteWitness() {
         if (sectId != null)
             return Response.status(Status.BAD_REQUEST).entity("Cannot delete a witness from a single section").build();
+        WitnessModel removed;
         try (Transaction tx = db.beginTx()) {
             // Find the node in question
             Node witnessNode = getWitnessBySigil();
             if (witnessNode == null) return Response.status(Status.NOT_FOUND).build();
             // Find all references to the witness throughout the tradition, and delete them
+            removed = new WitnessModel(witnessNode, tx);
             HashSet<Node> orphanReadings = new HashSet<>();
             for (Relationship r : VariantGraphService.returnEntireTradition(tradId, db).relationships()) {
                 if (r.isType(ERelations.SEQUENCE)) {
@@ -142,6 +146,7 @@ public class Witness {
                         ReadingService.removeWitnessLink(start, end, sigil, layer, "none");
                     }
                     // Was this the last outgoing for the start, or the last incoming for the end?
+
                     if (!start.getRelationships(Direction.OUTGOING, ERelations.SEQUENCE, ERelations.LEMMA_TEXT).iterator().hasNext())
                         orphanReadings.add(start);
                     if (!end.getRelationships(Direction.INCOMING, ERelations.SEQUENCE, ERelations.LEMMA_TEXT).iterator().hasNext())
@@ -156,7 +161,7 @@ public class Witness {
                         if (r.isType(ERelations.SEQUENCE) || r.isType(ERelations.LEMMA_TEXT))
                             return Response.serverError()
                                     .entity(String.format("Reading %d (%s) still has sequence links",
-                                            orphan.getId(), orphan.getProperty("text"))).build();
+                                            orphan.getElementId(), orphan.getProperty("text"))).build();
                         r.delete();
                     }
                     orphan.delete();
@@ -166,7 +171,7 @@ public class Witness {
             for (Relationship r : witnessNode.getRelationships(ERelations.HAS_WITNESS)) {
                 Node owner = r.getStartNode();
                 if (owner.hasLabel(Nodes.STEMMA)) {
-                    Node newHypothetical = db.createNode(Nodes.WITNESS);
+                    Node newHypothetical = tx.createNode(Nodes.WITNESS);
                     DatabaseService.copyProperties(witnessNode, newHypothetical);
                     newHypothetical.setProperty("hypothetical", true);
                     for (Relationship link : witnessNode.getRelationships(ERelations.TRANSMITTED)) {
@@ -184,12 +189,12 @@ public class Witness {
             }
             // Delete the node
             witnessNode.delete();
-            tx.success();
+            tx.commit();
         } catch (Exception e) {
             e.printStackTrace();
             return Response.serverError().build();
         }
-        return Response.ok().build();
+        return Response.ok(removed).build();
     }
 
 
@@ -201,7 +206,7 @@ public class Witness {
      * / from the start of the witness. If one or more witness layers are specified, return
      * the text composed of those layers.
      *
-     * @summary Get witness text
+     * @title Get witness text
      * @param layer - the text layer(s) to return, e.g. "a.c." or "s.l.". These layers must not conflict with each other!
      * @param start - the starting rank
      * @param end   - the end rank
@@ -223,80 +228,82 @@ public class Witness {
 
         long startRank = Long.parseLong(start);
         long endRank;
+        ArrayList<Node> iterationList;
+        try (Transaction tx = db.beginTx()){
+            iterationList = sectionsRequested(tx);
+            if (iterationList == null)
+                return Response.status(errorMessage.contains("not found") ? Status.NOT_FOUND : Status.INTERNAL_SERVER_ERROR)
+                        .entity(jsonerror(errorMessage)).build();
 
-        ArrayList<Node> iterationList = sectionsRequested();
-        if (iterationList == null)
-            return Response.status(errorMessage.contains("not found") ? Status.NOT_FOUND : Status.INTERNAL_SERVER_ERROR)
-                    .entity(jsonerror(errorMessage)).build();
+            // Empty out the layer list if it is the default.
+            if (layer.size() == 1 && layer.get(0).equals(""))
+                layer.remove(0);
 
-        // Empty out the layer list if it is the default.
-        if (layer.size() == 1 && layer.get(0).equals(""))
-            layer.remove(0);
+            ArrayList<Node> witnessReadings = new ArrayList<>();
+            for (Node currentSection: iterationList) {
+                if (iterationList.size() > 1 && (!end.equals("E") || startRank != 0))
+                    return Response.status(Status.BAD_REQUEST)
+                            .entity(jsonerror("Cannot request specific start/end across sections")).build();
 
-        ArrayList<Node> witnessReadings = new ArrayList<>();
-        for (Node currentSection: iterationList) {
-            if (iterationList.size() > 1 && (!end.equals("E") || startRank != 0))
-                return Response.status(Status.BAD_REQUEST)
-                        .entity(jsonerror("Cannot request specific start/end across sections")).build();
+                if (end.equals("E")) {
+                    // Find the rank of the graph's end.
+                    try {
+                        Node endNode = DatabaseService.getRelated(currentSection, ERelations.HAS_END, tx).get(0);
+                        endRank = Long.parseLong(endNode.getProperty("rank").toString());
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                        return Response.serverError().entity(jsonerror(e.getMessage())).build();
+                    }
+                } else
+                    endRank = Long.parseLong(end);
 
-            if (end.equals("E")) {
-                // Find the rank of the graph's end.
-                Node endNode = DatabaseService.getRelated(currentSection, ERelations.HAS_END).get(0);
-                try (Transaction tx = db.beginTx()) {
-                    endRank = Long.valueOf(endNode.getProperty("rank").toString());
-                    tx.success();
+                if (endRank == startRank) {
+                    return Response.status(Status.BAD_REQUEST)
+                            .entity(jsonerror("end-rank is equal to start-rank"))
+                            .build();
+                }
+
+                if (endRank < startRank) {
+                    // Swap them around.
+                    long tempRank = startRank;
+                    startRank = endRank;
+                    endRank = tempRank;
+                }
+                Node startNode;
+                try {
+                    startNode = VariantGraphService.getStartNode(currentSection.getElementId(), tx);
+                    final long sr = startRank;
+                    final long er = endRank;
+                    witnessReadings.addAll(traverseReadings(startNode, layer).stream()
+                            .filter(x -> Long.parseLong(x.getProperty("rank").toString()) >= sr
+                                    && Long.parseLong(x.getProperty("rank").toString()) <= er)
+                            .collect(Collectors.toList()));
                 } catch (Exception e) {
+                    if (e.getMessage().equals("CONFLICT"))
+                        return Response.status(Status.CONFLICT).entity(jsonerror("Traversal end node not reached")).build();
                     e.printStackTrace();
                     return Response.serverError().entity(jsonerror(e.getMessage())).build();
                 }
-            } else
-                endRank = Long.parseLong(end);
-
-            if (endRank == startRank) {
-                return Response.status(Status.BAD_REQUEST)
-                        .entity(jsonerror("end-rank is equal to start-rank"))
-                        .build();
             }
+            // If the path is size 0 then we didn't even get to the end node; the witness path doesn't exist.
+            if (witnessReadings.size() == 0)
+                return Response.status(Status.NOT_FOUND)
+                        .entity(jsonerror("No witness path found for this sigil")).build();
+            // Construct the text from the node reading models
 
-            if (endRank < startRank) {
-                // Swap them around.
-                long tempRank = startRank;
-                startRank = endRank;
-                endRank = tempRank;
-            }
-
-            Node startNode = VariantGraphService.getStartNode(String.valueOf(currentSection.getId()), db);
-            try (Transaction tx = db.beginTx()) {
-                final long sr = startRank;
-                final long er = endRank;
-                witnessReadings.addAll(traverseReadings(startNode, layer).stream()
-                        .filter(x -> Long.valueOf(x.getProperty("rank").toString()) >= sr
-                                && Long.valueOf(x.getProperty("rank").toString()) <= er)
-                        .collect(Collectors.toList()));
-                tx.success();
-            } catch (Exception e) {
-                if (e.getMessage().equals("CONFLICT"))
-                    return Response.status(Status.CONFLICT).entity(jsonerror("Traversal end node not reached")).build();
-                e.printStackTrace();
-                return Response.serverError().entity(jsonerror(e.getMessage())).build();
-            }
+            String witnessText = ReadingService.textOfReadings(
+                    witnessReadings.stream().map(n -> new ReadingModel(n, tx)).collect(Collectors.toList()), false, false);
+            TextSequenceModel wtm = new TextSequenceModel(witnessText);
+            return Response.ok(wtm).build();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
-        // If the path is size 0 then we didn't even get to the end node; the witness path doesn't exist.
-        if (witnessReadings.size() == 0)
-            return Response.status(Status.NOT_FOUND)
-                    .entity(jsonerror("No witness path found for this sigil")).build();
-        // Construct the text from the node reading models
-        String witnessText = ReadingService.textOfReadings(
-                witnessReadings.stream().map(ReadingModel::new).collect(Collectors.toList()), false, false);
-        TextSequenceModel wtm = new TextSequenceModel(witnessText);
-        return Response.ok(wtm).build();
-
     }
 
     /**
      * Returns the sequence of readings for a given witness.
      *
-     * @summary Get readings
+     * @title Get readings
      * @param witnessClass - the text layer to return, e.g. "a.c."
      * @return The witness text as a list of readings.
      * @statuscode 200 - on success
@@ -312,20 +319,25 @@ public class Witness {
         ArrayList<ReadingModel> readingModels = new ArrayList<>();
         if (witnessClass.size() == 1 && witnessClass.get(0).equals(""))
             witnessClass.remove(0);
+        ArrayList<Node> iterationList;
+        try (Transaction tx = db.beginTx()) {
+            iterationList = sectionsRequested(tx);
+            if (iterationList == null)
+                return Response.status(errorMessage.contains("not found") ? Status.NOT_FOUND : Status.INTERNAL_SERVER_ERROR)
+                        .entity(jsonerror(errorMessage)).build();
+            tx.commit();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
 
-        ArrayList<Node> iterationList = sectionsRequested();
-        if (iterationList == null)
-            return Response.status(errorMessage.contains("not found") ? Status.NOT_FOUND : Status.INTERNAL_SERVER_ERROR)
-                    .entity(jsonerror(errorMessage)).build();
-
-        for (Node currentSection: iterationList) {
+        for (Node currentSection : iterationList) {
             try (Transaction tx = db.beginTx()) {
-                Node startNode = VariantGraphService.getStartNode(String.valueOf(currentSection.getId()), db);
-                readingModels.addAll(traverseReadings(startNode, witnessClass).stream().map(ReadingModel::new).collect(Collectors.toList()));
+                Node startNode = VariantGraphService.getStartNode(currentSection.getElementId(), tx);
+                readingModels.addAll(traverseReadings(startNode, witnessClass).stream().map(n -> new ReadingModel(n, tx)).collect(Collectors.toList()));
                 // Remove the meta node from the list
                 if (readingModels.size() > 0 && readingModels.get(readingModels.size() - 1).getIs_end())
                     readingModels.remove(readingModels.size() - 1);
-                tx.success();
+                tx.close();
             } catch (Exception e) {
                 if (e.getMessage().equals("CONFLICT"))
                     return Response.status(Status.CONFLICT).entity(jsonerror("Traversal end node not reached")).build();
@@ -351,21 +363,27 @@ public class Witness {
             e = new WitnessPath(sigil, witnessClass).getEvalForWitness();
 
         ArrayList<Node> result = new ArrayList<>();
-        db.traversalDescription().depthFirst()
-                .relationships(ERelations.SEQUENCE, Direction.OUTGOING)
-                .evaluator(e)
-                .uniqueness(Uniqueness.RELATIONSHIP_PATH)
-                .traverse(startNode)
-                .nodes()
-                .forEach(result::add);
-        // If the path is nonzero but the end node wasn't reached, we had a conflict.
-        if (result.size() > 0 && !result.get(result.size()-1).hasProperty("is_end"))
-            throw new Exception("CONFLICT");
+        try (Transaction tx = db.beginTx()) {
+	        tx.traversalDescription().depthFirst()
+	                .relationships(ERelations.SEQUENCE, Direction.OUTGOING)
+	                .evaluator(e)
+	                .uniqueness(Uniqueness.RELATIONSHIP_PATH)
+	                .traverse(startNode)
+	                .nodes()
+	                .forEach(result::add);
+	        tx.close();
+	        // If the path is nonzero but the end node wasn't reached, we had a conflict.
+	        if (result.size() > 0 && !result.get(result.size()-1).hasProperty("is_end"))
+	            throw new Exception("CONFLICT");
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            errorMessage = ex.getMessage();
+        }
         return result;
     }
 
-    private ArrayList<Node> sectionsRequested() {
-        Node traditionNode = VariantGraphService.getTraditionNode(tradId, db);
+    private ArrayList<Node> sectionsRequested(Transaction tx) throws Exception {
+        Node traditionNode = getTraditionNode.apply(tx);
         if (traditionNode == null) {
             errorMessage = "Requested tradition does not exist";
             return null;
@@ -373,16 +391,16 @@ public class Witness {
 
         ArrayList<Node> iterationList = new ArrayList<>();
         if (this.sectId == null) {
-            iterationList = VariantGraphService.getSectionNodes(tradId, db);
+            iterationList = VariantGraphService.getSectionNodes(traditionNode, tx);
         } else {
             if (!VariantGraphService.sectionInTradition(tradId, sectId, db)) {
                 errorMessage = "Requested section does not exist in this tradition";
                 return null;
             }
-            try (Transaction tx = db.beginTx()) {
-                Node sectionNode = db.getNodeById(Long.valueOf(sectId));
+            try {
+                Node sectionNode = tx.getNodeByElementId(sectId);
                 iterationList.add(sectionNode);
-                tx.success();
+
             } catch (Exception e) {
                 e.printStackTrace();
                 errorMessage = e.getMessage();

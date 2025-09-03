@@ -21,5 +21,6 @@ public enum Nodes implements Label {
     PROPERTIES,      // is the properties that a particular annotation node can have
     LINKS,           // is the relationships that a particular annotation node can have
     USER,            // is a user node
+    IS_LEMMA,        // is a lemma node and should be prioritized when traversed
     __SYSTEM__       // is a __SYSTEM__ node
 }

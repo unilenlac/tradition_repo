@@ -1,37 +1,60 @@
 package net.stemmaweb.stemmaserver.integrationtests;
 
-import com.opencsv.CSVParser;
-import com.opencsv.CSVParserBuilder;
-import com.opencsv.CSVReader;
+import static org.junit.Assert.assertNotEquals;
 
-import com.opencsv.CSVReaderBuilder;
-import junit.framework.TestCase;
-import net.stemmaweb.model.*;
-import net.stemmaweb.rest.*;
-import net.stemmaweb.services.*;
-import net.stemmaweb.stemmaserver.JerseyTestServerFactory;
-import net.stemmaweb.stemmaserver.Util;
-
-import org.glassfish.jersey.test.JerseyTest;
-import org.json.JSONArray;
-import org.json.JSONException;
-import org.json.JSONObject;
-import org.neo4j.graphdb.GraphDatabaseService;
-import org.neo4j.graphdb.Node;
-import org.neo4j.graphdb.Result;
-import org.neo4j.graphdb.Transaction;
-import org.neo4j.test.TestGraphDatabaseFactory;
+import java.io.IOException;
+import java.io.StringReader;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import javax.ws.rs.client.Entity;
 import javax.ws.rs.client.WebTarget;
 import javax.ws.rs.core.GenericType;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
-import java.io.StringReader;
-import java.util.*;
-import java.util.stream.Collectors;
 
-import static org.junit.Assert.assertNotEquals;
+import net.stemmaweb.services.GraphDatabaseServiceProvider;
+import net.stemmaweb.Util.*;
+import net.stemmaweb.Util.GetTraditionFunction;
+import org.glassfish.jersey.test.JerseyTest;
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+import org.neo4j.dbms.api.DatabaseManagementService;
+import org.neo4j.dbms.api.DatabaseManagementServiceBuilder;
+import org.neo4j.graphdb.GraphDatabaseService;
+import org.neo4j.graphdb.Node;
+import org.neo4j.graphdb.Result;
+import org.neo4j.graphdb.Transaction;
+
+import com.opencsv.CSVParser;
+import com.opencsv.CSVParserBuilder;
+import com.opencsv.CSVReader;
+import com.opencsv.CSVReaderBuilder;
+
+import junit.framework.TestCase;
+import net.stemmaweb.model.AlignmentModel;
+import net.stemmaweb.model.GraphModel;
+import net.stemmaweb.model.ReadingBoundaryModel;
+import net.stemmaweb.model.ReadingModel;
+import net.stemmaweb.model.RelationModel;
+import net.stemmaweb.model.SectionModel;
+import net.stemmaweb.model.TextSequenceModel;
+import net.stemmaweb.model.WitnessModel;
+import net.stemmaweb.model.WitnessTokensModel;
+import net.stemmaweb.rest.Root;
+import net.stemmaweb.rest.Tradition;
+import net.stemmaweb.rest.Witness;
+import net.stemmaweb.stemmaserver.JerseyTestServerFactory;
+import net.stemmaweb.stemmaserver.Util;
 
 
 /**
@@ -40,13 +63,17 @@ import static org.junit.Assert.assertNotEquals;
 @SuppressWarnings("unchecked")
 public class TabularInputOutputTest extends TestCase {
 
-    private GraphDatabaseService db;
+    private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
+    private final GraphDatabaseService db = dbServiceProvider.getDatabase();
     private JerseyTest jerseyTest;
+
+    public TabularInputOutputTest() throws IOException {
+    }
 
     public void setUp() throws Exception {
         super.setUp();
-        db = new GraphDatabaseServiceProvider(new TestGraphDatabaseFactory().newImpermanentDatabase()).getDatabase();
-        Util.setupTestDB(db, "1");
+
+        Util.setupTestDB(db);
 
         // Create a JerseyTestServer for the necessary REST API calls
 
@@ -61,14 +88,15 @@ public class TabularInputOutputTest extends TestCase {
                 "src/TestFiles/florilegium_simple.csv", "csv");
         assertEquals(Response.Status.CREATED.getStatusCode(), response.getStatus());
         String tradId = Util.getValueFromJson(response, "tradId");
-        Tradition tradition = new Tradition(tradId);
+        GetTraditionFunction<Transaction, Node> getTraditionFunction = net.stemmaweb.Util.getTraditionNode(tradId);
+        Tradition tradition = new Tradition(tradId, getTraditionFunction);
 
         Response result = tradition.getAllWitnesses();
         ArrayList<WitnessModel> allWitnesses = (ArrayList<WitnessModel>) result.getEntity();
         assertEquals(13, allWitnesses.size());
 
         // Get a witness text
-        Witness witness = new Witness(tradId, "K");
+        Witness witness = new Witness(tradId, "K", net.stemmaweb.Util.getTraditionNode(tradId));
         TextSequenceModel resp = (TextSequenceModel) witness.getWitnessAsText().getEntity();
         System.out.println(resp.getText());
 
@@ -76,6 +104,30 @@ public class TabularInputOutputTest extends TestCase {
         ArrayList<ReadingModel> allReadings = (ArrayList<ReadingModel>) result.getEntity();
         assertEquals(310, allReadings.size());
         assertTrue(allReadings.stream().anyMatch(x -> x.getText().equals("Μαξίμου")));
+
+        // Do something that might cause a re-ranking, to make sure that our readings stay aligned
+        HashMap<String, String> rdgs = Util.makeReadingLookup(jerseyTest, tradId);
+        String firstTest = rdgs.get("νύσσης/104");
+        String firstComp = rdgs.get("Νύσης/104");
+        String secondTest = rdgs.get("μέλος/167");
+        String secondComp = rdgs.get("βέλος/167");
+        // This will re-rank the graph after the readings that come after
+        String combi1 = rdgs.get("ἡ/99");
+        String combi2 = rdgs.get("ἁμαρτία./100");
+        ReadingBoundaryModel readingBoundaryModel = new ReadingBoundaryModel();
+        readingBoundaryModel.setCharacter(" ");
+        response = jerseyTest.target("/reading/" + combi1 + "/concatenate/" + combi2)
+                .request(MediaType.APPLICATION_JSON)
+                .post(Entity.json(readingBoundaryModel));
+        assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
+        try (Transaction tx = db.beginTx()) {
+            assertEquals(tx.getNodeByElementId(firstComp).getProperty("rank"),
+                    tx.getNodeByElementId(firstTest).getProperty("rank"));
+            assertEquals(tx.getNodeByElementId(secondComp).getProperty("rank"),
+                    tx.getNodeByElementId(secondTest).getProperty("rank"));
+            tx.close();
+        }
+
     }
 
     public void testParseCsvLayers() {
@@ -83,14 +135,15 @@ public class TabularInputOutputTest extends TestCase {
                 "src/TestFiles/florilegium.csv", "csv");
         assertEquals(Response.Status.CREATED.getStatusCode(), response.getStatus());
         String tradId = Util.getValueFromJson(response, "tradId");
-        Tradition tradition = new Tradition(tradId);
+        GetTraditionFunction<Transaction, Node> getTraditionFunction = net.stemmaweb.Util.getTraditionNode(tradId);
+        Tradition tradition = new Tradition(tradId, getTraditionFunction);
 
         Response result = tradition.getAllWitnesses();
         ArrayList<WitnessModel> allWitnesses = (ArrayList<WitnessModel>) result.getEntity();
         assertEquals(13, allWitnesses.size());
 
         // Get a witness text
-        Witness witness = new Witness(tradId, "E");
+        Witness witness = new Witness(tradId, "E", net.stemmaweb.Util.getTraditionNode(tradId));
         TextSequenceModel tm = (TextSequenceModel) witness.getWitnessAsText().getEntity();
         List<String> layers = new ArrayList<>();
         layers.add("a.c.");
@@ -110,7 +163,8 @@ public class TabularInputOutputTest extends TestCase {
         Response response = Util.createTraditionFromFileOrString(jerseyTest, "Florilegium", "LR", "1",
                 "src/TestFiles/florilegium.csv", "csv");
         String tradId = Util.getValueFromJson(response, "tradId");
-        Tradition tradition = new Tradition(tradId);
+        GetTraditionFunction<Transaction, Node> getTraditionFunction = net.stemmaweb.Util.getTraditionNode(tradId);
+        Tradition tradition = new Tradition(tradId, getTraditionFunction);
         // Get the readings and look for our ἔχει(ν)
         Response result = tradition.getAllReadings();
         ArrayList<ReadingModel> readings = (ArrayList<ReadingModel>) result.getEntity();
@@ -138,7 +192,7 @@ public class TabularInputOutputTest extends TestCase {
                 .post(Entity.json(relationship));
         assertEquals(Response.Status.CREATED.getStatusCode(), actualResponse.getStatus());
 
-        GraphModel readingsAndRelationships = actualResponse.readEntity(new GenericType<GraphModel>(){});
+        GraphModel readingsAndRelationships = actualResponse.readEntity(new GenericType<>(){});
         assertEquals(0, readingsAndRelationships.getReadings().size());
         assertEquals(1, readingsAndRelationships.getRelations().size());
     }
@@ -158,7 +212,8 @@ public class TabularInputOutputTest extends TestCase {
         String tradId = Util.getValueFromJson(response, "tradId");
 
         // Now retrieve the tradition and test what it has.
-        Tradition tradition = new Tradition(tradId);
+        GetTraditionFunction<Transaction, Node> getTraditionFunction = net.stemmaweb.Util.getTraditionNode(tradId);
+        Tradition tradition = new Tradition(tradId, getTraditionFunction);
 
         Response result = tradition.getAllWitnesses();
         ArrayList<WitnessModel> allWitnesses = (ArrayList<WitnessModel>) result.getEntity();
@@ -176,7 +231,7 @@ public class TabularInputOutputTest extends TestCase {
 
         // Now retrieve the tradition and test what it has.
         tradId = Util.getValueFromJson(response, "tradId");
-        tradition = new Tradition(tradId);
+        tradition = new Tradition(tradId, getTraditionFunction);
 
         result = tradition.getAllWitnesses();
         allWitnesses = (ArrayList<WitnessModel>) result.getEntity();
@@ -238,8 +293,8 @@ public class TabularInputOutputTest extends TestCase {
         while (i < 3) {
             String fileName = String.format("src/TestFiles/florilegium_%c.csv", 120 + i++);
             String sectId = Util.getValueFromJson(
-                    Util.addSectionToTradition(jerseyTest, tradId, fileName, "csv", String.format("part %d", i)),
-                    "parentId");
+                    Util.addSectionToTradition(jerseyTest, tradId, fileName, "csv", String.format("part %d", i), true),
+                    "sectionId");
             tradSections.add(sectId);
         }
 
@@ -296,7 +351,7 @@ public class TabularInputOutputTest extends TestCase {
                 .request()
                 .get();
         assertEquals(Response.Status.BAD_REQUEST.getStatusCode(), response.getStatus());
-        assertEquals("Section 123456 not found in tradition", response.readEntity(String.class));
+        assertEquals("Section 123456 not found in tradition", Util.getValueFromJson(response, "error"));
 
         // Request sections on nonexistent tradition
         response = jerseyTest
@@ -395,15 +450,15 @@ public class TabularInputOutputTest extends TestCase {
         String ptz;
         String pz;
         try (Transaction tx = db.beginTx()) {
-            Result res = db.execute("MATCH (n:READING {text:\"Plätzchen\", rank:5}) RETURN n");
+            Result res = tx.execute("MATCH (n:READING {text:\"Plätzchen\", rank:5}) RETURN n");
             Iterator<Node> nodes = res.columnAs("n");
             assertTrue(nodes.hasNext());
-            ptz = String.valueOf(nodes.next().getId());
-            res = db.execute("MATCH (n:READING {text:\"Pläzchen\", rank:5}) RETURN n");
+            ptz = nodes.next().getElementId();
+            res = tx.execute("MATCH (n:READING {text:\"Pläzchen\", rank:5}) RETURN n");
             nodes = res.columnAs("n");
             assertTrue(nodes.hasNext());
-            pz = String.valueOf(nodes.next().getId());
-            tx.success();
+            pz = nodes.next().getElementId();
+            tx.close();
         }
         RelationModel spellingrel = new RelationModel();
         spellingrel.setSource(ptz);
@@ -421,6 +476,7 @@ public class TabularInputOutputTest extends TestCase {
                 .request()
                 .get();
         assertEquals(Response.Status.OK.getStatusCode(), result.getStatus());
+        assertEquals("text/plain;charset=utf-8", result.getMediaType().toString());
         CSVReader rdr = new CSVReader(new StringReader(result.readEntity(String.class)));
         // See that we have our witnesses
         String[] wits = rdr.readNext();
@@ -443,8 +499,12 @@ public class TabularInputOutputTest extends TestCase {
                 .request()
                 .get();
         assertEquals(Response.Status.OK.getStatusCode(), result.getStatus());
+        assertEquals("text/plain;charset=utf-8", result.getMediaType().toString());
+        String tsvText = result.readEntity(String.class);
+        // Make sure we are not quoting the TSV values
+        assertFalse(tsvText.contains("\""));
         final CSVParser parser = new CSVParserBuilder().withSeparator('\t').build();
-        rdr = new CSVReaderBuilder(new StringReader(result.readEntity(String.class)))
+        rdr = new CSVReaderBuilder(new StringReader(tsvText))
                 .withCSVParser(parser)
                 .build();
         // See that we have our witnesses
@@ -479,7 +539,7 @@ public class TabularInputOutputTest extends TestCase {
 
         // Add the second section
         Util.addSectionToTradition(jerseyTest, traditionId, "src/TestFiles/legendfrag.xml",
-                "stemmaweb", "section 2");
+                "stemmaweb", "section 2", true);
 
         // Export the whole thing to JSON and check the readings
         response = jerseyTest.target("/tradition/" + traditionId + "/json")
@@ -519,7 +579,7 @@ public class TabularInputOutputTest extends TestCase {
 
         // Now add the section with corrections
         Util.addSectionToTradition(jerseyTest, traditionId, "src/TestFiles/Matthew-407.json",
-                "cxjson", "AM 407");
+                "cxjson", "AM 407", true);
 
         // Export it to JSON
         response = jerseyTest.target("/tradition/" + traditionId + "/json")
@@ -583,7 +643,7 @@ public class TabularInputOutputTest extends TestCase {
         // Split this into multiple sections - ranks 38, 156, 228
         List<SectionModel> allSections = jerseyTest.target("/tradition/" + tradId + "/sections/")
                 .request()
-                .get(new GenericType<List<SectionModel>>() {});
+                .get(new GenericType<>() {});
         String section1 = allSections.get(0).getId();
         Response jerseyResponse = jerseyTest.target("/tradition/" + tradId + "/section/" + section1 + "/splitAtRank/228")
                 .request()
@@ -605,7 +665,7 @@ public class TabularInputOutputTest extends TestCase {
         // Section 4 should be missing all witnesses except A/B/C/P/S
         List<WitnessModel> section1Wits = jerseyTest.target("/tradition/" + tradId + "/section/" + section1 + "/witnesses")
                 .request()
-                .get(new GenericType<List<WitnessModel>>() {});
+                .get(new GenericType<>() {});
         assertEquals(11, section1Wits.size());
         for (WitnessModel wm : section1Wits) {
             assertNotEquals("G", wm.getSigil());
@@ -613,7 +673,7 @@ public class TabularInputOutputTest extends TestCase {
         }
         List<WitnessModel> section4Wits = jerseyTest.target("/tradition/" + tradId + "/section/" + section4 + "/witnesses")
                 .request()
-                .get(new GenericType<List<WitnessModel>>() {});
+                .get(new GenericType<>() {});
         assertEquals(5, section4Wits.size());
         List<String> expectedWits = Arrays.asList("A", "B", "C", "P", "S");
         for (WitnessModel wm : section4Wits)
@@ -653,7 +713,7 @@ public class TabularInputOutputTest extends TestCase {
             if (wtm.hasLayer()) {
                 req = req.queryParam("layer", wtm.getLayer());
             }
-            List<ReadingModel> witReadings = req.request().get(new GenericType<List<ReadingModel>>() {});
+            List<ReadingModel> witReadings = req.request().get(new GenericType<>() {});
             // Save the specific columns we will need later
             switch (wtm.constructSigil()) {
                 case "Q (a.c.)":
@@ -888,7 +948,12 @@ public class TabularInputOutputTest extends TestCase {
     }
 
     public void tearDown() throws Exception {
-        db.shutdown();
+        DatabaseManagementService service = dbServiceProvider.getManagementService();
+
+        if (service != null) {
+            service.shutdownDatabase(db.databaseName());
+        }
+
         jerseyTest.tearDown();
         super.tearDown();
     }

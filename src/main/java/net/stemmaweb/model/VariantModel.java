@@ -1,15 +1,25 @@
 package net.stemmaweb.model;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.annotation.JsonInclude;
-import net.stemmaweb.rest.ERelations;
-import net.stemmaweb.services.ReadingService;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+import javax.xml.bind.annotation.XmlRootElement;
+
 import org.neo4j.graphdb.Direction;
 import org.neo4j.graphdb.Path;
 
-import javax.xml.bind.annotation.XmlRootElement;
-import java.util.*;
-import java.util.stream.Collectors;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonInclude;
+
+import net.stemmaweb.rest.ERelations;
+import net.stemmaweb.services.ReadingService;
+import org.neo4j.graphdb.Transaction;
 
 @XmlRootElement
 @JsonInclude(JsonInclude.Include.NON_DEFAULT)
@@ -35,17 +45,17 @@ public class VariantModel {
      * Initialize a variant model from a given Neo4J path, assumed to be a valid variant path.
      * @param p - the Neo4J path to initialize from
      */
-    VariantModel (Path p, Map<String,Set<String>> vWits) {
+    VariantModel (Path p, Map<String,Set<String>> vWits, Transaction tx) {
         // Get the readings
         List<ReadingModel> vReadings = new ArrayList<>();
-        p.nodes().forEach(x -> vReadings.add(new ReadingModel(x)));
+        p.nodes().forEach(x -> vReadings.add(new ReadingModel(x, tx)));
         // Remove the first and last (common) readings
         vReadings.remove(0);
         vReadings.remove(vReadings.size()-1);
         this.setReadings(vReadings);
 
         // Set the "normal" flag appropriately
-        this.setNormal(p.startNode().hasRelationship(ERelations.NSEQUENCE, Direction.OUTGOING));
+        this.setNormal(p.startNode().hasRelationship(Direction.OUTGOING, ERelations.NSEQUENCE));
 
         // Now add the witnesses / layers that belong to the path, making sure to keep the sigla sorted.
         Map<String, List<String>> endWitnesses = new HashMap<>();
