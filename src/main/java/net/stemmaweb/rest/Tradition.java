@@ -663,42 +663,6 @@ public class Tradition {
     }
 
     /**
-     * Gets a list of all complex readings in the given tradition.
-     *
-     * @summary Get readings
-     * @return A list of complex reading metadata
-     * @statuscode 200 - on success
-     * @statuscode 404 - if no such tradition exists
-     * @statuscode 500 - on failure, with an error message
-     */
-    @GET
-    @Path("/complex")
-    @Produces("application/json; charset=utf-8")
-    @ReturnType("java.util.List<net.stemmaweb.model.ComplexReadingModel>")
-    public Response getAllComplexReadings() {
-        Node traditionNode = VariantGraphService.getTraditionNode(traditionId, db);
-        if (traditionNode == null)
-            return Response.status(Status.NOT_FOUND)
-                    .entity(jsonerror("There is no tradition with this id")).build();
-
-        ArrayList<SectionModel> allSections = produceSectionList(traditionNode);
-        if (allSections == null)
-            return Response.serverError()
-                    .entity(jsonerror("Tradition has no sections")).build();
-
-        ArrayList<ComplexReadingModel> complexReadingModels = new ArrayList<>();
-        for (SectionModel sm : allSections) {
-            Section sectRest = new Section(traditionId, sm.getId());
-            List<ComplexReadingModel> sectionReadings = sectRest.sectionComplexReadings();
-            if (sectionReadings == null)
-                return Response.serverError().entity(jsonerror("section lookup failed")).build();
-            complexReadingModels.addAll(sectionReadings);
-
-        }
-        return Response.ok(complexReadingModels).build();
-    }
-
-    /**
      * Return a list of the annotations that have been made on this tradition.
      *
      * @title Get annotations on tradition
