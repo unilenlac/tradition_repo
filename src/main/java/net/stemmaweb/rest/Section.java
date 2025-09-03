@@ -8,6 +8,8 @@ import static net.stemmaweb.services.ReadingService.recalculateRank;
 import static net.stemmaweb.services.ReadingService.removePlaceholder;
 import static net.stemmaweb.services.ReadingService.wouldGetCyclic;
 
+import java.io.File;
+import java.io.IOException;
 import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -1742,11 +1744,17 @@ public class Section {
     @Path("/xml")
     @Produces("application/xml; charset=utf-8")
     @ReturnType("java.lang.Void")
-    public Response getXml() throws XMLStreamException {
-        // return new TeiExporter(db).SimpleHnExporter(tradId, sectId);
+    public Response getXml() throws XMLStreamException, IllegalArgumentException, IOException {
+
         XmlBuilder builder = new XmlBuilder();
         DocumentDesigner doc = new DocumentDesigner(builder, db);
-        doc.designSection(tradId, sectId);
+        try{
+            doc.designSection(tradId, sectId);
+        } catch (IllegalArgumentException e) {
+            e.printStackTrace();
+            builder.fileHandler.close();
+            return Response.serverError().entity(e.getMessage()).build();
+        }
         String xml = builder.getDocument();
         return Response.ok().entity(xml).build();
     }

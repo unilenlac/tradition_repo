@@ -5,6 +5,7 @@ import static net.stemmaweb.Util.jsonerror;
 import static net.stemmaweb.Util.jsonresp;
 import static net.stemmaweb.Util.GetTraditionFunction;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -210,7 +211,7 @@ public class Tradition {
         }
     }
 
-    public static ArrayList<SectionModel> produceSectionList(Node traditionNode, Transaction tx) throws Exception {
+    public static ArrayList<SectionModel> produceSectionList(Node traditionNode, Transaction tx) throws XMLStreamException {
         ArrayList<SectionModel> sectionList = new ArrayList<>();
 
         ArrayList<Node> sectionNodes = DatabaseService.getRelated(traditionNode, ERelations.PART, tx);
@@ -234,7 +235,7 @@ public class Tradition {
         }
 
         if (sectionList.size() != depth) {
-            throw new Exception(
+            throw new XMLStreamException(
                     String.format("Section list and section node mismatch: %d nodes, %d sections found",
                             depth, sectionList.size()));
         }
@@ -1121,13 +1122,18 @@ public class Tradition {
     @Path("/xml")
     @Produces("text/xml; charset=utf-8")
     @ReturnType("java.lang.String")
-    public Response getTEICat(@QueryParam("start_section") String startSection, @QueryParam("end_section") String endSection) throws XMLStreamException {
+    public Response getXml(@QueryParam("start_section") String startSection, @QueryParam("end_section") String endSection) throws XMLStreamException, IOException {
         // return new TeiExporter(db).SimpleHnExporter(tradition, section);
         XmlBuilder builder = new XmlBuilder();
         DocumentDesigner doc = new DocumentDesigner(builder, db);
-        doc.designTradition(this.traditionId, startSection, endSection);
-        String xml = builder.getDocument();
-        return Response.ok().entity(xml).build();
+        try{
+            doc.designTradition(this.traditionId, startSection, endSection);
+            String xml = builder.getDocument();
+            return Response.ok().entity(xml).build();
+        } catch (IllegalArgumentException e) {
+            e.printStackTrace();
+            return Response.serverError().entity(jsonerror(e.getMessage())).build();
+        }
     }
 }
 

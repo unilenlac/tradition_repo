@@ -24,7 +24,7 @@ public class DocumentDesigner {
         this.db = db;
         this.builder = builder;
     }
-    public void designSection(String tradition_id, String section_id) throws XMLStreamException {
+    public void designSection(String tradition_id, String section_id) throws XMLStreamException, IllegalArgumentException {
         XMLStreamWriter writer = builder.document.getWriter();
         writer.writeStartDocument();
         writer.writeStartElement("div");
@@ -34,7 +34,7 @@ public class DocumentDesigner {
         writer.writeEndElement();
         writer.writeEndDocument();
     }
-    public void designTradition(String tradition_id, String start_section_id, String end_section_id) throws XMLStreamException {
+    public void designTradition(String tradition_id, String start_section_id, String end_section_id) throws RuntimeException, XMLStreamException, IllegalArgumentException {
 
         XMLStreamWriter writer = builder.document.getWriter();
         writer.writeStartDocument();
@@ -73,8 +73,8 @@ public class DocumentDesigner {
                 // Call the builder to add the section content
                 builder.addSectionToWriter(tradition_id, section_id, writer, tx);
             }
-        } catch (Exception e) {
-            throw new RuntimeException(e);
+        } catch (XMLStreamException e) {
+            throw new XMLStreamException(e);
         }
         writer.writeEndDocument();
     }

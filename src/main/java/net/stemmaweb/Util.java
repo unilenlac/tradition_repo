@@ -9,6 +9,7 @@ import org.neo4j.graphdb.*;
 import javax.xml.stream.*;
 import java.io.StringReader;
 import java.util.*;
+import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -423,7 +424,7 @@ public class Util {
          */
         String query = String.format("match (r:READING)-[l:HAS_HYPERNODE]->(h:HYPERREADING)\n" +
                 " WHERE r.section_id=\"%s\"\n" +
-                " with elementId(h) as hid, count(h) as rCount, h.note as group, h.source as witness\n" +
+                " with elementId(h) as hid, count(h) as rCount, h.note as group, h.source as witness, h.is_lemma as is_lemma\n" +
                 " return *", section_node.getElementId());
         return tx.execute(query);
     }
@@ -604,5 +605,35 @@ public class Util {
         res.put("hn_stats", hn_stats);
 
         return res;
+    }
+    public static void evalHnTable(List<Map<String, Object>> hn_table, List<Map<String, Object>> hn_stats, Logger logger){
+        for(Map<String, Object> hn_stat: hn_stats){
+            List<Map<String, Object>> hn_group = hn_table.stream().filter(node -> node.get("hyperId").equals(hn_stat.get("hid"))).collect(Collectors.toList());
+            for (Map<String, Object> hn: hn_group) {
+                final String group = hn_stat.get("group").toString();
+                if (group == null || group.isEmpty()) {
+                    logger.severe("(error) Hypernode group value cannot be null or empty \n" +
+                            "Hypernode ID: " + hn_stat.get("hid") + "\n" +
+                            "Witness: " + hn_stat.get("witness") + "\n" +
+                            "Rank: " + hn.get("rank"));
+                    throw new IllegalArgumentException("Hypernode group value cannot be null or empty");
+                }
+            }
+        }
+        // check if at least one hypernode per group as the is_lemma = true
+        List<String> groups = hn_stats.stream().map(x -> x.get("group").toString()).distinct().collect(Collectors.toList());
+        for (String group: groups){
+            List<Map<String, Object>> filtered_hn = hn_stats.stream().filter(x -> x.get("group").equals(group)).collect(Collectors.toList());
+            long lemma_count = filtered_hn.stream().filter(x -> Objects.equals(x.get("is_lemma"), true)).count();
+            if (lemma_count < 1){
+                // get first node of the requested group in the hn_table
+                Map<String, Object> node = hn_table.stream().filter(x -> x.get("group").equals(group)).findFirst().orElse(null);
+                assert node != null;
+                logger.severe(String.format("(error) No lemmatized hypernode found in group \n" +
+                        "Group ID: %s\n" +
+                        "Rank (region): %s ", group, node.get("rank")));
+                throw new IllegalArgumentException(String.format("No lemmatized hypernode found in group %s", group));
+            }
+        }
     }
 }

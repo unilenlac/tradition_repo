@@ -13,8 +13,13 @@ import org.neo4j.graphdb.Transaction;
 
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamWriter;
+import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
+
+import java.util.logging.FileHandler;
+import java.util.logging.Logger;
+import java.util.logging.SimpleFormatter;
 
 public class XmlBuilder implements DocumentBuilder{
     /**
@@ -23,9 +28,17 @@ public class XmlBuilder implements DocumentBuilder{
 
     private final Util util;
     public final XmlDocument document;
+    public final FileHandler fileHandler;
+    public final Logger logger = Logger.getLogger("XmlBuilderLogger");
 
     private final GraphService graphService = new GraphService();
-    public XmlBuilder() throws XMLStreamException {
+    public XmlBuilder() throws XMLStreamException, IOException {
+
+        fileHandler = new FileHandler("logs/xml_export_download.log", false);
+        fileHandler.setFormatter(new SimpleFormatter()); // Simple text format
+        logger.addHandler(fileHandler);
+        logger.setLevel(java.util.logging.Level.INFO);
+
         this.document = new XmlDocument();
         this.util = new Util();
     }
@@ -84,7 +97,7 @@ public class XmlBuilder implements DocumentBuilder{
      * @param writer The XMLStreamWriter used to write the XML content.
      * @param tx The Neo4j transaction used for database operations.
      */
-    public void addSectionToWriter(String tradition_id, String section_id, XMLStreamWriter writer, Transaction tx) {
+    public void addSectionToWriter(String tradition_id, String section_id, XMLStreamWriter writer, Transaction tx) throws XMLStreamException, IllegalArgumentException {
 
         try {
 
@@ -96,9 +109,12 @@ public class XmlBuilder implements DocumentBuilder{
             
             Result hypernodes = util.getHypernodes(section_node, tx); // provides text, nodeId, nodeUuid, hyperId, group, witness, rank, is_lemma, weight
             Result stats = util.hn_stats(section_node, tx); // provides hid (hypernode id), rCount (reading count), group (hypernode group), witness
-            
+
             List<Map<String, Object>> hn_table = hypernodes.stream().collect(Collectors.toList());
             List<Map<String, Object>> hn_stats = stats.stream().collect(Collectors.toList());
+
+            this.logger.info("Hypernode structure evaluated for section " + section_id + " " + section_node.getProperty("name").toString());
+            Util.evalHnTable(hn_table, hn_stats, this.logger);
 
             Result section = graphService.getSectionByRank(section_id, tx);
             Result witnesses = graphService.getTraditionWitnesses(tradition_id, tx);
@@ -132,7 +148,7 @@ public class XmlBuilder implements DocumentBuilder{
                     // populate hyper-readings
 
                     // get main hn, the main hn should be the hn that has the traversed node as a member. the hn is not necessarily the largest one.
-                    Optional<Map<String, Object>> lemma_hn = hn_nodes.stream().filter(x -> x.get("is_lemma").equals(true)).findAny();
+                    Optional<Map<String, Object>> lemma_hn = hn_nodes.stream().filter(x -> Objects.equals(x.get("is_lemma"),true)).findAny();
 
                     if(lemma_hn.isPresent()){
                         
@@ -191,7 +207,7 @@ public class XmlBuilder implements DocumentBuilder{
                 }
             }
         } catch (XMLStreamException e) {
-            throw new RuntimeException(e);
+            throw new XMLStreamException(e);
         }
     }
     public String getDocument() {

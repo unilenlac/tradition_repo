@@ -29,10 +29,7 @@ import javax.ws.rs.core.UriInfo;
 import javax.xml.stream.XMLOutputFactory;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamWriter;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.StringWriter;
+import java.io.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -380,5 +377,24 @@ public class Root {
     public Response teiExporter(@QueryParam("tradition") String tradition,
                                 @QueryParam("section") String section) throws XMLStreamException {
         return new TeiExporter(db).SimpleHnExporter(tradition, section);
+    }
+    @GET
+    @Path("/log_file")
+    @Produces(MediaType.TEXT_PLAIN)
+    public Response getLogFile() {
+        File logFile = new File("logs/xml_export_download.log");
+        if (!logFile.exists()) {
+            return Response.status(Response.Status.NOT_FOUND)
+                .entity("No log file found.").build();
+        }
+        try {
+            InputStream resource = new FileInputStream(logFile);
+            return Response.status(Response.Status.OK).type("text/plain").entity(resource)
+                    .header("Content-Disposition", "attachment; filename=\"xml_export_download.log\"")
+                    .build();
+        } catch (Exception e) {
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                .entity("Error reading log file: " + e.getMessage()).build();
+        }
     }
 }
