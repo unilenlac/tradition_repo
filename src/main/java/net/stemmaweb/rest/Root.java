@@ -1,8 +1,12 @@
 package net.stemmaweb.rest;
 
-import com.qmino.miredot.annotations.MireDotIgnore;
-import com.qmino.miredot.annotations.ReturnType;
+import io.swagger.v3.jaxrs2.integration.resources.BaseOpenApiResource;
+import io.swagger.v3.oas.annotations.Operation;
+// import com.qmino.miredot.annotations.MireDotIgnore;
+// import com.qmino.miredot.annotations.ReturnType;
 import com.sun.xml.txw2.output.IndentingXMLStreamWriter;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import net.stemmaweb.Util;
 import net.stemmaweb.exporter.TeiExporter;
 import net.stemmaweb.model.TraditionModel;
@@ -10,7 +14,6 @@ import net.stemmaweb.model.UserModel;
 import net.stemmaweb.services.Database;
 import net.stemmaweb.services.DatabaseService;
 import net.stemmaweb.services.GraphDatabaseServiceProvider;
-
 import net.stemmaweb.services.VariantGraphService;
 import org.apache.tika.Tika;
 import org.glassfish.jersey.media.multipart.FormDataMultiPart;
@@ -19,13 +22,11 @@ import org.json.JSONException;
 import org.json.JSONObject;
 import org.neo4j.exceptions.KernelException;
 import org.neo4j.graphdb.*;
+import javax.servlet.ServletConfig;
 import javax.servlet.ServletContext;
 import javax.ws.rs.*;
 import javax.ws.rs.Path;
-import javax.ws.rs.core.Context;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
-import javax.ws.rs.core.UriInfo;
+import javax.ws.rs.core.*;
 import javax.xml.stream.XMLOutputFactory;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamWriter;
@@ -54,14 +55,15 @@ public class Root {
      */
 
     private static final String CLICHED_MESSAGE = "Hello World!";
-
+    
     @GET
     @Produces("text/plain")
-    @MireDotIgnore
+    @Operation(summary = "Get example data", description = "Returns a sample JSON response")
+    @ApiResponse(responseCode = "200", description = "Successful operation")
     public String getHello() {
         return CLICHED_MESSAGE;
     }
-
+   /*
     @GET
     @Path("{path: docs.*}")
     @MireDotIgnore
@@ -77,6 +79,7 @@ public class Root {
             return Response.status(Response.Status.NOT_FOUND).build();
         }
     }
+    */
 
     /**
      * @param tradId - the ID of the tradition being queried
@@ -147,11 +150,12 @@ public class Root {
      * @statuscode 500 - Something went wrong. An error message will be returned.
      *
      */
+    @Tag(name = "Tradition", description = "Tradition endpoints allow to operate over groups of text")
     @POST
     @Path("/tradition")
     @Consumes(MediaType.MULTIPART_FORM_DATA)
     @Produces("application/json; charset=utf-8")
-    @ReturnType("java.util.Map<String,String>")
+    // @ReturnType("java.util.Map<String,String>")
     public Response importGraphMl(@DefaultValue("") @FormDataParam("name") String name,
                                   @FormDataParam("userId") String userId,
                                   @FormDataParam("public") String is_public,
@@ -253,7 +257,7 @@ public class Root {
     @GET
     @Path("/traditions")
     @Produces("application/json; charset=utf-8")
-    @ReturnType("java.util.List<net.stemmaweb.model.TraditionModel>")
+    // @ReturnType("java.util.List<net.stemmaweb.model.TraditionModel>")
     public Response getAllTraditions(@DefaultValue("false") @QueryParam("public") Boolean publiconly) {
         List<TraditionModel> traditionList = new ArrayList<>();
 
@@ -283,7 +287,7 @@ public class Root {
     @GET
     @Path("/users")
     @Produces("application/json; charset=utf-8")
-    @ReturnType("java.util.List<net.stemmaweb.model.UserModel>")
+    // @ReturnType("java.util.List<net.stemmaweb.model.UserModel>")
     public Response getAllUsers() {
         List<UserModel> userList = new ArrayList<>();
 

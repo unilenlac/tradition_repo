@@ -6,6 +6,11 @@ import java.util.Set;
 import javax.annotation.PostConstruct;
 import javax.ws.rs.core.Application;
 
+import io.swagger.v3.jaxrs2.integration.JaxrsOpenApiContextBuilder;
+import io.swagger.v3.jaxrs2.integration.resources.OpenApiResource;
+import io.swagger.v3.oas.integration.SwaggerConfiguration;
+import io.swagger.v3.oas.models.OpenAPI;
+import io.swagger.v3.oas.models.info.Info;
 import net.stemmaweb.services.DatabaseService;
 
 import net.stemmaweb.services.GraphDatabaseServiceProvider;
@@ -25,30 +30,7 @@ public class ApplicationConfig extends Application {
     @Override
     public Set<Class<?>> getClasses() {
         Set<Class<?>> s = new HashSet<>();
-        s.add(Root.class);
-
+        //s.add(Root.class);
         return s;
     }
-    
-/*
-    @PostConstruct
-    public void initializeApp()
-    {
-        // This has been moved to ApplicationContextListener so that
-        // apache tomcat properly shuts down neo4j.
-        // Connect to the database, create the root node if necessary, and leave.
-        //GraphDatabaseService db = new GraphDatabaseServiceProvider(DB_PATH).getDatabase();
-        //DatabaseService.createRootNode(db);
-        //registerShutdownHook(db);
-    }
-
-    private static void registerShutdownHook( final GraphDatabaseService graphDb )
-    {
-        // Registers a shutdown hook for the Neo4j instance so that it
-        // shuts down nicely when the VM exits (even if you "Ctrl-C" the
-        // running application).
-        Runtime.getRuntime().addShutdownHook(new Thread(graphDb::shutdown));
-    }
-    */
-
 }

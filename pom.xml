@@ -33,64 +33,6 @@
 				<artifactId>maven-surefire-plugin</artifactId>
 				<version>3.2.2</version>
 			</plugin>
-<!--
-			<plugin>
-                <groupId>com.qmino</groupId>
-                <artifactId>miredot-plugin</artifactId>
-                <version>2.4.2-Java11-SNAPSHOT</version>
-                <dependencies>
-                    <dependency>
-                        <groupId>org.neo4j</groupId>
-                        <artifactId>neo4j</artifactId>
-                        <version>${neo4j-version}</version>
-                    </dependency>
-                </dependencies>
-                <executions>
-                    <execution>
-                        <goals>
-                            <goal>restdoc</goal>
-                        </goals>
-                    </execution>
-                </executions>
-                <configuration>
-                    <licence>MIREDOT_LICENSE</licence>
-                    <restModel>
-                        <restFramework>
-                            <name>jax-rs</name>
-                        </restFramework>
-                    </restModel>
-                    <output>
-                        <title>Stemmarest - a repository for variant text traditions</title>
-                        <html>
-                            <initialCollapseLevel>3</initialCollapseLevel>
-                            <intro>build/docintro.html</intro>
-                        </html>
-                    </output>
-                    <!__ insert other configuration here (optional) __>
-                </configuration>
-            </plugin>
-			<plugin>
-				<groupId>org.codehaus.mojo</groupId>
-				<artifactId>exec-maven-plugin</artifactId>
-				<version>1.6.0</version>
-				<executions>
-					<execution>
-						<phase>prepare-package</phase>
-						<goals>
-							<goal>exec</goal>
-						</goals>
-					</execution>
-				</executions>
-				<configuration>
-					<executable>cp</executable>
-					<arguments>
-						<argument>-R</argument>
-						<argument>target/miredot</argument>
-						<argument>src/main/webapp/WEB-INF/docs</argument>
-					</arguments>
-				</configuration>
-			</plugin>
- -->
 		</plugins>
 	</build>
 	<dependencies>
@@ -238,182 +180,12 @@
 			<artifactId>neo4j-common</artifactId>
 			<version>${neo4j-version}</version>
 		</dependency>
-
-		<!--
-                <dependency>
-                    <groupId>org.neo4j</groupId>
-                    <artifactId>neo4j-common</artifactId>
-                    <version>${neo4j-version}</version>
-                </dependency>
-                <dependency>
-                    <groupId>org.neo4j</groupId>
-                    <artifactId>neo4j-bolt</artifactId>
-                    <version>${neo4j-version}</version>
-                </dependency>
-        -->
-<!--
-		<dependency>
-			<groupId>org.neo4j</groupId>
-			<artifactId>graph-algorithms-core</artifactId>
-			<version>${neo4j-algo-version}</version>
-		</dependency>
-		<dependency>
-			<groupId>org.neo4j</groupId>
-			<artifactId>graph-algorithms-algo</artifactId>
-			<version>${neo4j-algo-version}</version>
-		</dependency>
- -->
-<!--
-		<dependency>
-			<groupId>org.neo4j.gds</groupId>
-			<artifactId>core</artifactId>
-			<version>${neo4j-gds-version}</version>
-		</dependency>
-
-		<dependency>
-			<groupId>org.neo4j.gds</groupId>
-			<artifactId>algo-common</artifactId>
-			<version>${neo4j-gds-version}</version>
-		</dependency>
- -->
-
-		<!-- Contains the productized algorithms -->
-		<!--
-		<dependency>
-			<groupId>org.neo4j.gds</groupId>
-			<artifactId>algo</artifactId>
-			<version>${neo4j-gds-version}</version>
-		</dependency>
-		<dependency>
-			<groupId>org.neo4j.gds</groupId>
-			<artifactId>pipeline</artifactId>
-			<version>2.8.0</version>
-			<scope>runtime</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.neo4j.gds</groupId>
-			<artifactId>proc-pipeline-catalog</artifactId>
-			<version>2.8.0</version>
-		</dependency>
-		-->
-
-		<!-- procs -->
-		<!--
-		<dependency>
-			<groupId>org.neo4j.gds</groupId>
-			<artifactId>proc-common</artifactId>
-			<version>${neo4j-gds-version}</version>
-		</dependency>
-
-		<dependency>
-			<groupId>org.neo4j.gds</groupId>
-			<artifactId>proc</artifactId>
-			<version>${neo4j-gds-version}</version>
-		</dependency>
-
-		<dependency>
-			<groupId>org.neo4j.gds</groupId>
-			<artifactId>alpha-proc</artifactId>
-			<version>${neo4j-gds-version}</version>
-		</dependency>
-
-		<dependency>
-			<groupId>org.neo4j.gds</groupId>
-			<artifactId>open-model-catalog</artifactId>
-			<version>${neo4j-gds-version}</version>
-		</dependency>
-		-->
-		<!--
-		<dependency>
-			<groupId>org.neo4j.gds</groupId>
-			<artifactId>open-write-services</artifactId>
-			<version>${neo4j-gds-version}</version>
-		</dependency>
-		<dependency>
-			<groupId>org.neo4j.gds</groupId>
-			<artifactId>metrics-api</artifactId>
-			<version>2.8.0</version>
-			<scope>runtime</scope>
-		</dependency>
-
-		<dependency>
-			<groupId>org.neo4j.gds</groupId>
-			<artifactId>algo</artifactId>
-			<version>${neo4j-gds-version}</version>
-		</dependency>
-		<dependency>
-		    <groupId>org.neo4j.gds</groupId>
-		    <artifactId>proc</artifactId>
-			<version>${neo4j-gds-version}</version>
-		</dependency>
-		<dependency>
-			<groupId>org.neo4j.gds</groupId>
-			<artifactId>proc-sysinfo</artifactId>
-			<version>${neo4j-gds-version}</version>
-			<scope>runtime</scope>
-		</dependency>
-		<dependency>
-		    <groupId>org.neo4j.gds</groupId>
-		    <artifactId>proc-common</artifactId>
-			<version>${neo4j-gds-version}</version>
-		</dependency>
-		<dependency>
-			<groupId>org.neo4j.gds</groupId>
-			<artifactId>open-model-catalog</artifactId>
-			<version>${neo4j-gds-version}</version>
-		</dependency>
-		<dependency>
-			<groupId>org.neo4j.gds</groupId>
-			<artifactId>proc-pregel</artifactId>
-			<version>${neo4j-gds-version}</version>
-			<scope>runtime</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.neo4j.gds</groupId>
-			<artifactId>proc-community</artifactId>
-			<version>${neo4j-gds-version}</version>
-		</dependency>
-		<dependency>
-			<groupId>org.neo4j.gds</groupId>
-			<artifactId>proc-catalog</artifactId>
-			<version>${neo4j-gds-version}</version>
-		</dependency>
-
-		<dependency>
-			<groupId>org.neo4j.gds</groupId>
-			<artifactId>algo-common</artifactId>
-			<version>${neo4j-gds-version}</version>
-		</dependency>
-		-->
-		<!--
-                <dependency>
-                    <groupId>org.neo4j.gds</groupId>
-                    <artifactId>alpha-proc</artifactId>
-                    <version>${neo4j-gds-version}</version>
-                </dependency>
-                <dependency>
-                     <groupId>org.neo4j.gds</groupId>
-                    <artifactId>model-catalog-api</artifactId>
-                    <version>${neo4j-gds-version}</version>
-                </dependency>
-                <dependency>
-                     <groupId>org.neo4j.gds</groupId>
-                    <artifactId>open-model-catalog</artifactId>
-                    <version>${neo4j-gds-version}</version>
-                    <scope>main</scope>
-                </dependency>
-        -->
 		<!-- Used for better documentation of REST interfaces -->
 		<dependency>
 			<groupId>com.qmino</groupId>
 			<artifactId>miredot-annotations</artifactId>
 			<version>1.6.0</version>
 		</dependency>
-		<!-- Test dependencies -->
-		<!-- <dependency> <groupId>${jersey-group}</groupId> <artifactId>jersey-client</artifactId> 
-			<version>${jersey-version}</version> <scope>test</scope> </dependency> <dependency> 
-			<groupId>${jersey-group}.jersey-test-framework</groupId> <artifactId>jersey-test-framework-grizzly2</artifactId> 
-			<version>${jersey-version}</version> <scope>test</scope> </dependency> -->
 		<dependency>
 			<groupId>org.glassfish.jersey.test-framework</groupId>
 			<artifactId>jersey-test-framework-core</artifactId>
@@ -467,63 +239,25 @@
 			<version>2.1.210</version>
 			<scope>test</scope>
 		</dependency>
-<!-- 
-		<dependency>
-			<groupId>org.neo4j</groupId>
-			<artifactId>neo4j-kernel</artifactId>
-			<version>${neo4j-version}</version>
-			<type>test-jar</type>
-			<scope>test</scope>
-		</dependency>
--->
-		<!--
-		<dependency>
-			<groupId>org.neo4j.community</groupId>
-			<artifactId>it-test-support</artifactId>
-			<version>${neo4j-version}</version>
-			<scope>test</scope>
-
-		</dependency>
-		<dependency>
-			<groupId>org.neo4j</groupId>
-			<artifactId>neo4j-io</artifactId>
-			<version>${neo4j-version}</version>
-			<type>test-jar</type>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.neo4j.test</groupId>
-			<artifactId>neo4j-harness</artifactId>
-			<version>${neo4j-version}</version>
-			<type>test-jar</type>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.neo4j.procedure</groupId>
-			<artifactId>apoc-core</artifactId>
-			<version>${neo4j-version}</version>
-		</dependency>
-
-                <dependency>
-                    <groupId>org.neo4j.procedure</groupId>
-                    <artifactId>apoc-core</artifactId>
-                    <version>5.10.1</version>
-                    <scope>test</scope>
-                </dependency>
-         -->
-		<!--
-		<dependency>
-            <groupId>org.neo4j.procedure</groupId>
-            <artifactId>apoc</artifactId>
-            <version>${apoc.version}</version>
-            <scope>test</scope>
-            <classifier>all</classifier>
-        </dependency>
--->
         <dependency>
 			<groupId>org.json</groupId>
 			<artifactId>json</artifactId>
 			<version>20210307</version>
+		</dependency>
+		<dependency>
+			<groupId>io.swagger.core.v3</groupId>
+			<artifactId>swagger-jaxrs2</artifactId>
+			<version>${swagger-version}</version>
+		</dependency>
+		<dependency>
+			<groupId>io.swagger.core.v3</groupId>
+			<artifactId>swagger-jaxrs2-servlet-initializer-v2</artifactId>
+			<version>${swagger-version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.webjars</groupId>
+			<artifactId>swagger-ui</artifactId>
+			<version>${swagger-ui-version}</version>  <!-- Check Maven Repository for the latest version -->
 		</dependency>
 	</dependencies>
 	<properties>
@@ -531,10 +265,11 @@
 		<neo4j-algo-version>3.5.4.0</neo4j-algo-version>
 		<neo4j-gds-version>2.8.0</neo4j-gds-version>
 		<jackson-version>2.15.2</jackson-version>
-		<jersey-version>2.34</jersey-version>
+		<jersey-version>2.40</jersey-version>
 		<apoc.version>5.9.0</apoc.version>
+		<swagger-version>2.2.7</swagger-version>
+		<swagger-ui-version>5.17.14</swagger-ui-version>
 	</properties>
-
 	<repositories>
 		<repository>
 			<id>repository</id>
@@ -564,6 +299,4 @@
 			<url>https://secure-nexus.miredot.com/content/repositories/miredot-snapshots/</url>
 		</pluginRepository>
 	</pluginRepositories>
-
-
 </project>
