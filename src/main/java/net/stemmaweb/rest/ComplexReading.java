@@ -10,7 +10,7 @@ import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.qmino.miredot.annotations.ReturnType;
+
 import net.stemmaweb.model.*;
 import net.stemmaweb.services.*;
 
@@ -54,7 +54,7 @@ public class ComplexReading {
     */
     @GET
     @Produces("application/json; charset=utf-8")
-    @ReturnType(clazz = ComplexReadingModel.class)
+    
     public Response getComplexReading() {
         ComplexReadingModel reading;
         try (Transaction tx = db.beginTx()) {
@@ -76,7 +76,7 @@ public class ComplexReading {
      */
     @DELETE
     @Produces("application/json; charset=utf-8")
-    @ReturnType(clazz = GraphModel.class)
+    
     public Response deleteUserComplexReading() {
       try (Transaction tx = db.beginTx()) {
           Node removableNode = tx.getNodeByElementId(readId.toString());

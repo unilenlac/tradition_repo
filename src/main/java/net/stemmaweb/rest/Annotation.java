@@ -1,6 +1,6 @@
 package net.stemmaweb.rest;
 
-import com.qmino.miredot.annotations.ReturnType;
+
 import net.stemmaweb.Util;
 import net.stemmaweb.model.AnnotationLabelModel;
 import net.stemmaweb.model.AnnotationLinkModel;
@@ -58,7 +58,6 @@ public class Annotation {
      */
     @GET
     @Produces("application/json; charset=utf-8")
-    @ReturnType(clazz = AnnotationModel.class)
     public Response getAnnotation() {
         AnnotationModel result;
         try (Transaction tx = db.beginTx()) {
@@ -87,7 +86,6 @@ public class Annotation {
     @PUT
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces("application/json; charset=utf-8")
-    @ReturnType(clazz = AnnotationModel.class)
     public Response updateAnnotation(AnnotationModel newAnno) {
         AnnotationModel result;
         Node aNode;
@@ -277,7 +275,6 @@ public class Annotation {
      */
     @DELETE
     @Produces("application/json; charset=utf-8")
-    @ReturnType("java.util.List<net.stemmaweb.model.AnnotationModel>")
     public Response deleteAnnotation() {
         List<AnnotationModel> deleted;
         try (Transaction tx = db.beginTx()) {
@@ -333,7 +330,6 @@ public class Annotation {
     @Path("/link")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces("application/json; charset=utf-8")
-    @ReturnType(clazz = AnnotationModel.class)
     public Response addAnnotationLink(AnnotationLinkModel alm) {
         AnnotationModel updated;
         try(Transaction tx = db.beginTx()) {
@@ -427,7 +423,6 @@ public class Annotation {
     @Path("/link")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces("application/json; charset=utf-8")
-    @ReturnType(clazz = AnnotationModel.class)
     public Response deleteAnnotationLink(AnnotationLinkModel alm) {
         AnnotationModel updated;
         try (Transaction tx = db.beginTx()) {
@@ -462,7 +457,6 @@ public class Annotation {
     @GET
     @Path("/referents")
     @Produces("application/json; charset=utf-8")
-    @ReturnType("java.util.List<net.stemmaweb.model.AnnotationModel")
     public Response getReferents(@QueryParam("recursive") @DefaultValue("false") String recurse) {
         List<AnnotationModel> result;
         try(Transaction tx = db.beginTx()){

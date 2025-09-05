@@ -1,11 +1,11 @@
 package net.stemmaweb.rest;
 
-import com.qmino.miredot.annotations.ReturnType;
+
 import net.stemmaweb.Util.GetTraditionFunction;
 import net.stemmaweb.model.AnnotationLabelModel;
 import net.stemmaweb.services.DatabaseService;
 import net.stemmaweb.services.GraphDatabaseServiceProvider;
-import net.stemmaweb.services.VariantGraphService;
+
 import org.neo4j.graphdb.*;
 
 import javax.ws.rs.*;
@@ -53,7 +53,6 @@ public class AnnotationLabel {
      */
     @GET
     @Produces("application/json; charset=utf-8")
-    @ReturnType(clazz = AnnotationLabelModel.class)
     public Response getAnnotationLabel() {
         try(Transaction tx = db.beginTx()){
             Node ourNode = lookupAnnotationLabel(tx);
@@ -79,7 +78,6 @@ public class AnnotationLabel {
     @PUT
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces("application/json; charset=utf-8")
-    @ReturnType(clazz = AnnotationLabelModel.class)
     public Response createOrUpdateAnnotationLabel(AnnotationLabelModel alm) {
         boolean isNew = false;
         Node ourNode;
@@ -184,7 +182,6 @@ public class AnnotationLabel {
      * @return the label model that was deleted
      */
     @DELETE
-    @ReturnType(clazz = AnnotationLabelModel.class)
     public Response deleteAnnotationLabel() {
         AnnotationLabelModel ourModel;
         try (Transaction tx = db.beginTx()) {

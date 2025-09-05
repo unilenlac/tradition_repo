@@ -3,6 +3,7 @@ package net.stemmaweb.model;
 import javax.ws.rs.core.Response;
 import javax.xml.bind.annotation.XmlRootElement;
 
+import io.swagger.v3.oas.annotations.Hidden;
 import net.stemmaweb.services.Database;
 import org.neo4j.graphdb.Direction;
 import org.neo4j.graphdb.GraphDatabaseService;
@@ -12,7 +13,7 @@ import org.neo4j.graphdb.Transaction;
 import com.fasterxml.jackson.annotation.JsonGetter;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonSetter;
-import com.qmino.miredot.annotations.MireDotIgnore;
+
 
 import net.stemmaweb.exporter.DotExporter;
 import net.stemmaweb.rest.ERelations;
@@ -39,7 +40,7 @@ public class StemmaModel {
      * True if the stemma indicates witness contamination / conflation.
      */
     private Boolean is_contaminated;
-    @MireDotIgnore
+    @Hidden
     private Integer from_jobid;
     /**
      * A string that holds the dot specification of the stemma or tree topology.

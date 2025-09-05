@@ -1,6 +1,5 @@
 package net.stemmaweb.rest;
 
-import com.qmino.miredot.annotations.ReturnType;
 import net.stemmaweb.model.AnnotationModel;
 import net.stemmaweb.model.ReadingModel;
 import net.stemmaweb.model.TraditionModel;
@@ -26,7 +25,7 @@ public class Ordo {
 
     @GET
     @Produces("application/json; charset=utf-8")
-    @ReturnType("java.util.List<net.stemmaweb.model.ReadingModel>")
+    
     public Response getTextOrdo() {
         // This method should return a JSON representation of text ordo.
         // The implementation is not provided in the original code snippet.

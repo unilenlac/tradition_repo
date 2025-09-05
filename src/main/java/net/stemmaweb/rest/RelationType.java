@@ -25,7 +25,7 @@ import org.neo4j.codegen.api.Throw;
 import org.neo4j.exceptions.KernelException;
 import org.neo4j.graphdb.*;
 
-import com.qmino.miredot.annotations.ReturnType;
+
 
 import net.stemmaweb.model.RelationTypeModel;
 import net.stemmaweb.services.GraphDatabaseServiceProvider;
@@ -63,7 +63,7 @@ public class RelationType {
      */
     @GET
     @Produces(MediaType.APPLICATION_JSON + "; charset=utf-8")
-    @ReturnType("net.stemmaweb.model.RelationTypeModel")
+    
     public Response getRelationType() {
         RelationTypeModel rtModel = new RelationTypeModel(typeName);
         Node foundRelType = rtModel.lookup(VariantGraphService.getTraditionNode(traditionId, db.beginTx()));
@@ -98,7 +98,7 @@ public class RelationType {
     @PUT
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON + "; charset=utf-8")
-    @ReturnType(clazz = RelationTypeModel.class)
+    
     public Response create(RelationTypeModel rtModel) {
         // Find any existing relation type on this tradition
         try (Transaction ctx = this.db.beginTx()) {
@@ -284,7 +284,7 @@ public class RelationType {
      */
     @DELETE
     @Produces(MediaType.APPLICATION_JSON + "; charset=utf-8")
-    @ReturnType(clazz = RelationTypeModel.class)
+    
     public Response delete() {
         RelationTypeModel rtModel = new RelationTypeModel(typeName);
         Node tradition = VariantGraphService.getTraditionNode(traditionId, db.beginTx());

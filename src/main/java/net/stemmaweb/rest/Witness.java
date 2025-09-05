@@ -11,7 +11,7 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 
-import com.qmino.miredot.annotations.ReturnType;
+
 import net.stemmaweb.Util;
 import net.stemmaweb.model.ReadingModel;
 import net.stemmaweb.model.WitnessModel;
@@ -106,7 +106,7 @@ public class Witness {
      */
     @GET
     @Produces(MediaType.APPLICATION_JSON + "; charset=utf-8")
-    @ReturnType(clazz = WitnessModel.class)
+    
     public Response getWitnessInfo() {
         try (Transaction tx = db.beginTx()){
             Node witnessNode = getWitnessBySigil();
@@ -126,7 +126,7 @@ public class Witness {
      */
     @DELETE
     @Produces(MediaType.APPLICATION_JSON + "; charset=utf-8")
-    @ReturnType(clazz = WitnessModel.class)
+    
     public Response deleteWitness() {
         if (sectId != null)
             return Response.status(Status.BAD_REQUEST).entity("Cannot delete a witness from a single section").build();
@@ -220,7 +220,7 @@ public class Witness {
     @GET
     @Path("/text")
     @Produces(MediaType.APPLICATION_JSON + "; charset=utf-8")
-    @ReturnType(clazz = TextSequenceModel.class)
+    
     public Response getWitnessAsTextWithLayer(
             @QueryParam("layer") @DefaultValue("") List<String> layer,
             @QueryParam("start") @DefaultValue("0") String start,
@@ -314,7 +314,7 @@ public class Witness {
     @GET
     @Path("/readings")
     @Produces(MediaType.APPLICATION_JSON + "; charset=utf-8")
-    @ReturnType("java.util.List<net.stemmaweb.model.ReadingModel>")
+    
     public Response getWitnessAsReadings(@QueryParam("layer") @DefaultValue("") List<String> witnessClass) {
         ArrayList<ReadingModel> readingModels = new ArrayList<>();
         if (witnessClass.size() == 1 && witnessClass.get(0).equals(""))

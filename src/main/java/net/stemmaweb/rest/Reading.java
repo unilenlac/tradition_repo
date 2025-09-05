@@ -14,7 +14,7 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 
-import com.qmino.miredot.annotations.ReturnType;
+
 import net.stemmaweb.model.*;
 import net.stemmaweb.services.*;
 
@@ -60,7 +60,7 @@ public class Reading {
     */
     @GET
     @Produces("application/json; charset=utf-8")
-    @ReturnType(clazz = ReadingModel.class)
+    
     public Response getReading() {
         if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
         ReadingModel reading;
@@ -94,7 +94,7 @@ public class Reading {
     @PUT
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces("application/json; charset=utf-8")
-    @ReturnType(clazz = ReadingModel.class)
+    
     public Response changeReadingProperties(ReadingChangePropertyModel changeModels) {
         if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
         ReadingModel modelToReturn = new ReadingModel();
@@ -153,7 +153,7 @@ public class Reading {
      */
     @DELETE
     @Produces("application/json; charset=utf-8")
-    @ReturnType(clazz = GraphModel.class)
+    
     public Response deleteUserReading() {
         if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
         GraphModel deletedElements = new GraphModel();
@@ -210,7 +210,7 @@ public class Reading {
     @Path("setlemma")
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Produces("application/json; charset=utf-8")
-    @ReturnType("java.util.List<net.stemmaweb.model.ReadingModel>")
+    
     public Response setReadingAsLemma(@FormParam("value") @DefaultValue("false") String value) {
         if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
         List<ReadingModel> changed = new ArrayList<>();
@@ -261,7 +261,7 @@ public class Reading {
     @POST
     @Path("/lacunaAfter")
     @Produces("application/json; charset=utf-8")
-    @ReturnType("net.stemmaweb.model.GraphModel")
+    
     public Response addLacuna (@QueryParam("witness") List<String> forWitnesses) {
         if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
         GraphModel result = new GraphModel();
@@ -332,7 +332,7 @@ public class Reading {
     @GET
     @Path("related")
     @Produces("application/json; charset=utf-8")
-    @ReturnType("java.util.List<net.stemmaweb.model.ReadingModel>")
+    
     public Response getRelatedReadings(@QueryParam("types") List<String> filterTypes) {
 
         if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
@@ -363,7 +363,7 @@ public class Reading {
     @POST
     @Path("normaliseRelated/{reltype}")
     @Produces("application/json; charset=utf-8")
-    @ReturnType("java.util.List<net.stemmaweb.model.ReadingModel>")
+    
     public Response normaliseRelated(@PathParam("reltype") String onRelationType) {
         if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
         List<ReadingModel> changed = new ArrayList<>();
@@ -428,7 +428,7 @@ public class Reading {
     @DELETE
     @Path("relations")
     @Produces("application/json; charset=utf-8")
-    @ReturnType("java.util.List<net.stemmaweb.model.RelationModel")
+    
     public Response deleteAllRelations() {
         if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
         ArrayList<RelationModel> deleted = new ArrayList<>();
@@ -462,7 +462,7 @@ public class Reading {
     @GET
     @Path("witnesses")
     @Produces("application/json; charset=utf-8")
-    @ReturnType("java.util.List<net.stemmaweb.model.WitnessModel>")
+    
     public Response getReadingWitnesses() {
         if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
         try {
@@ -527,7 +527,7 @@ public class Reading {
     @Path("duplicate")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces("application/json; charset=utf-8")
-    @ReturnType(clazz = GraphModel.class)
+    
     public Response duplicateReading(DuplicateModel duplicateModel) throws IOException {
         if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
         ArrayList<ReadingModel> createdReadings = new ArrayList<>();
@@ -717,7 +717,7 @@ public class Reading {
     @POST
     @Path("merge/{secondReadId}")
     @Produces("application/json; charset=utf-8")
-    @ReturnType(clazz = GraphModel.class)
+    
     public Response mergeReadings(@PathParam("secondReadId") String secondReadId) {
         if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
         GraphModel result;
@@ -966,7 +966,7 @@ public class Reading {
     @Path("split/{splitIndex}")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces("application/json; charset=utf-8")
-    @ReturnType(clazz = GraphModel.class)
+    
     public Response splitReading(@PathParam("splitIndex") int splitIndex,
                                  ReadingBoundaryModel model) {
         if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
@@ -1141,7 +1141,7 @@ public class Reading {
     @GET
     @Path("next/{witnessId}")
     @Produces("application/json; charset=utf-8")
-    @ReturnType(clazz = ReadingModel.class)
+    
     public Response getNextReadingInWitness(@PathParam("witnessId") String witnessId,
                                             @DefaultValue("witnesses") @QueryParam("layer") String layer) {
         if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
@@ -1175,7 +1175,7 @@ public class Reading {
     @GET
     @Path("prior/{witnessId}")
     @Produces("application/json; charset=utf-8")
-    @ReturnType(clazz = ReadingModel.class)
+    
     public Response getPreviousReadingInWitness(@PathParam("witnessId") String witnessId,
                                                 @DefaultValue("witnesses") @QueryParam("layer") String layer) {
         if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
@@ -1294,7 +1294,7 @@ public class Reading {
     @Path("concatenate/{read2Id}")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces("application/json; charset=utf-8")
-    @ReturnType(clazz = GraphModel.class)
+    
     public Response compressReadings(@PathParam("read2Id") String readId2, ReadingBoundaryModel boundary) {
         if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
         Node read1, read2;
@@ -1334,7 +1334,7 @@ public class Reading {
     @GET
     @Path("complex")
     @Produces("application/json; charset=utf-8")
-    @ReturnType("java.util.List<net.stemmaweb.model.ComplexReadingModel>")
+    
     public Response getComplexReadings() {
         List<ComplexReadingModel> crList = new ArrayList<>();
         try (Transaction tx = db.beginTx()) {
@@ -1361,7 +1361,7 @@ public class Reading {
     @Path("complex")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces("application/json; charset=utf-8")
-    @ReturnType(clazz = ComplexReadingModel.class)
+    
     public Response complexReading(ComplexReadingModel skeleton) {
         try (Transaction tx = db.beginTx()) {
             Node hyperNode = tx.createNode(Nodes.READING, Nodes.HYPERREADING);
@@ -1402,7 +1402,7 @@ public class Reading {
      */
     @DELETE
     @Path("complex/{cid}")
-    @ReturnType("java.lang.Void")
+    
     public Response deleteComplex(@PathParam("cid") String cid) {
         try (Transaction tx = db.beginTx()) {
             Node removableNode = tx.getNodeByElementId(cid);
@@ -1608,7 +1608,7 @@ public class Reading {
      */
     @POST
     @Path("mergenodes/{target}")
-    @ReturnType("java.lang.Void")
+    
     public Response mergeNodes(@PathParam("target") String target) {
 
         Attach attach = new Attach();
@@ -1693,7 +1693,7 @@ public class Reading {
     @Path("rank")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces("application/json; charset=utf-8")
-    @ReturnType(clazz = ReadingModel.class)
+    
     public Response changeRank(@QueryParam("rank") Long rank) {
         ReadingModel res = null;
         if (rank != null){

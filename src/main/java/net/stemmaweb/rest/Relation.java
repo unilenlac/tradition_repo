@@ -33,7 +33,7 @@ import org.neo4j.graphdb.Transaction;
 import org.neo4j.graphdb.traversal.Traverser;
 import org.neo4j.graphdb.traversal.Uniqueness;
 
-import com.qmino.miredot.annotations.ReturnType;
+
 
 import net.stemmaweb.model.GraphModel;
 import net.stemmaweb.model.ReadingModel;
@@ -80,7 +80,7 @@ public class Relation {
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON + "; charset=utf-8")
-    @ReturnType(clazz = GraphModel.class)
+    
     public Response create(RelationModel relationModel) throws IOException {
         // Make sure a scope is set
         try (Transaction tx = db.beginTx()) {
@@ -527,7 +527,7 @@ public class Relation {
     @Path("/remove")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON + "; charset=utf-8")
-    @ReturnType("java.util.List<net.stemmaweb.model.RelationModel>")
+    
     public Response deleteByData(RelationModel relationModel) {
         ArrayList<RelationModel> deleted = new ArrayList<>();
 
@@ -592,7 +592,7 @@ public class Relation {
     @DELETE
     @Path("{relationId}")
     @Produces(MediaType.APPLICATION_JSON + "; charset=utf-8")
-    @ReturnType(clazz = RelationModel.class)
+    
     public Response deleteById(@PathParam("relationId") String relationId) {
         RelationModel relationModel;
 

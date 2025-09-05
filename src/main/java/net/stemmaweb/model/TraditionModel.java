@@ -5,6 +5,7 @@ import java.util.Arrays;
 
 import javax.xml.bind.annotation.XmlRootElement;
 
+import io.swagger.v3.oas.annotations.Hidden;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.Relationship;
@@ -12,7 +13,6 @@ import org.neo4j.graphdb.Transaction;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
-import com.qmino.miredot.annotations.MireDotIgnore;
 
 import net.stemmaweb.rest.ERelations;
 import net.stemmaweb.services.DatabaseService;
@@ -55,7 +55,7 @@ public class TraditionModel {
      * Whether the tradition should be viewable by other users
      */
     private Boolean is_public;
-    @MireDotIgnore
+    @Hidden
     private Integer stemweb_jobid;
     /**
      * User ID of the tradition's owner
@@ -67,7 +67,7 @@ public class TraditionModel {
      */
     private ArrayList<String> witnesses;
 
-    @MireDotIgnore
+    @Hidden
     // Derived from relationships
     private ArrayList<String> reltypes;
 

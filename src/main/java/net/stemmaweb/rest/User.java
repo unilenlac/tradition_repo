@@ -8,7 +8,7 @@ import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 import javax.xml.crypto.Data;
 
-import com.qmino.miredot.annotations.ReturnType;
+
 import net.stemmaweb.model.TraditionModel;
 import net.stemmaweb.model.UserModel;
 import net.stemmaweb.services.Database;
@@ -52,7 +52,7 @@ public class User {
      */
     @GET
     @Produces(MediaType.APPLICATION_JSON + "; charset=utf-8")
-    @ReturnType(clazz = UserModel.class)
+    
     public Response getUserById() {
         UserModel userModel;
         try (Transaction tx = db.beginTx()) {
@@ -83,7 +83,7 @@ public class User {
     @PUT
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON + "; charset=utf-8")
-    @ReturnType(clazz = UserModel.class)
+    
     public Response create(UserModel userModel) {
         // Find any existing user
         Node extantUser;
@@ -150,7 +150,7 @@ public class User {
      */
     @DELETE
     @Produces(MediaType.APPLICATION_JSON + "; charset=utf-8")
-    @ReturnType(clazz = UserModel.class)
+    
     public Response deleteUser() {
         Node foundUser;
         UserModel removed;
@@ -189,7 +189,7 @@ public class User {
     @GET
     @Path("/traditions")
     @Produces(MediaType.APPLICATION_JSON + "; charset=utf-8")
-    @ReturnType("java.util.List<net.stemmaweb.model.TraditionModel>")
+    
     public Response getUserTraditions() {
         if (!DatabaseService.userExists(userId, db)) {
             return Response.status(Status.NOT_FOUND).entity(jsonerror("User does not exist")).build();

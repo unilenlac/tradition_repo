@@ -11,7 +11,7 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 
-import com.qmino.miredot.annotations.ReturnType;
+
 import net.stemmaweb.Util.GetTraditionFunction;
 import net.stemmaweb.model.StemmaModel;
 import net.stemmaweb.parser.DotParser;
@@ -58,7 +58,7 @@ public class Stemma {
      */
     @GET
     @Produces("application/json; charset=utf-8")
-    @ReturnType(clazz = StemmaModel.class)
+    
     public Response getStemma() {
 
         try (Transaction tx = db.beginTx()) {
@@ -88,7 +88,7 @@ public class Stemma {
     @PUT  // a replacement stemma
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces("application/json; charset=utf-8")
-    @ReturnType(clazz = StemmaModel.class)
+    
     public Response replaceStemma(StemmaModel stemmaSpec) {
         // In case the stemma spec doesn't have a name, assume it wants the name in the URL just called
         if (stemmaSpec.getIdentifier() == null)
@@ -135,7 +135,7 @@ public class Stemma {
      */
     @DELETE
     @Produces(MediaType.APPLICATION_JSON + "; charset=utf-8")
-    @ReturnType(clazz = StemmaModel.class)
+    
     public Response deleteStemma() {
         try (Transaction tx = db.beginTx()) {
             Node stemmaNode = getStemmaNode(tx);
@@ -191,7 +191,7 @@ public class Stemma {
     @POST
     @Path("reorient/{nodeId}")
     @Produces("application/json; charset=utf-8")
-    @ReturnType(clazz = StemmaModel.class)
+    
     public Response reorientStemma(@PathParam("nodeId") String nodeId) {
 
         try (Transaction tx = db.beginTx())

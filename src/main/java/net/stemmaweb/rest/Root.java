@@ -1,9 +1,6 @@
 package net.stemmaweb.rest;
 
-import io.swagger.v3.jaxrs2.integration.resources.BaseOpenApiResource;
 import io.swagger.v3.oas.annotations.Operation;
-// import com.qmino.miredot.annotations.MireDotIgnore;
-// import com.qmino.miredot.annotations.ReturnType;
 import com.sun.xml.txw2.output.IndentingXMLStreamWriter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -13,16 +10,12 @@ import net.stemmaweb.model.TraditionModel;
 import net.stemmaweb.model.UserModel;
 import net.stemmaweb.services.Database;
 import net.stemmaweb.services.DatabaseService;
-import net.stemmaweb.services.GraphDatabaseServiceProvider;
-import net.stemmaweb.services.VariantGraphService;
-import org.apache.tika.Tika;
 import org.glassfish.jersey.media.multipart.FormDataMultiPart;
 import org.glassfish.jersey.media.multipart.FormDataParam;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.neo4j.exceptions.KernelException;
 import org.neo4j.graphdb.*;
-import javax.servlet.ServletConfig;
 import javax.servlet.ServletContext;
 import javax.ws.rs.*;
 import javax.ws.rs.Path;
@@ -155,7 +148,7 @@ public class Root {
     @Path("/tradition")
     @Consumes(MediaType.MULTIPART_FORM_DATA)
     @Produces("application/json; charset=utf-8")
-    // @ReturnType("java.util.Map<String,String>")
+    // 
     public Response importGraphMl(@DefaultValue("") @FormDataParam("name") String name,
                                   @FormDataParam("userId") String userId,
                                   @FormDataParam("public") String is_public,
@@ -257,7 +250,7 @@ public class Root {
     @GET
     @Path("/traditions")
     @Produces("application/json; charset=utf-8")
-    // @ReturnType("java.util.List<net.stemmaweb.model.TraditionModel>")
+    // 
     public Response getAllTraditions(@DefaultValue("false") @QueryParam("public") Boolean publiconly) {
         List<TraditionModel> traditionList = new ArrayList<>();
 
@@ -287,7 +280,7 @@ public class Root {
     @GET
     @Path("/users")
     @Produces("application/json; charset=utf-8")
-    // @ReturnType("java.util.List<net.stemmaweb.model.UserModel>")
+    // 
     public Response getAllUsers() {
         List<UserModel> userList = new ArrayList<>();
 
