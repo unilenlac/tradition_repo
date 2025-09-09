@@ -1,25 +1,34 @@
 # Stemmarest
 ### Stemmarest - a REST API for variant text traditions
 
-Stemmarest is a [Neo4j](http://neo4j.com/)-based repository for variant text traditions (i.e. texts that have been transmitted in multiple manuscripts). The repository is accessed via a REST API, documentation for which [can be found here](https://dhuniwien.github.io/tradition_repo/).
+Stemmarest is a [Neo4j](http://neo4j.com/)-based repository for variant text traditions (i.e. texts that have been transmitted in multiple manuscripts). The repository is accessed via a REST API
 
-This repository is a fork of the [stemmarest](https://dhuniwien.github.io/tradition_repo/) repository.
+This repository is a fork of the [Stemmarest](https://dhuniwien.github.io/tradition_repo/) repository, that features critical edition exportation capabilities in XML format.
 
-## Background
+### Documentation
 
-Development of Stemmarest was begun by a team of software engineering students at the [University of Bern](https://www.unibe.ch/), and since 2016 has been continued by the [Digital Humanities group at the University of Vienna](https://acdh.univie.ac.at/) with financial support from the [Swiss National Science Foundation](http://www.snf.ch/en/Pages/default.aspx).
+The original API documentation [can be found here](https://dhuniwien.github.io/tradition_repo/).
 
-This fork is an extension of the original Stemmarest project, incorporating updates and improvements to include lacking exportation features. This version is still under development by the [Faculty of Theology and Religion](https://www.unil.ch/ftsr/fr/home.html) at the university of Lausanne.
+As the code has been upgraded, a few routes have been added or modified. Please refer to the swagger generated documentation for the latest information. This documentation is available when the backend is running at the `/stemmarest/api/docs` endpoint.
 
-## Upgrading and features
+### The Stemmaweb environment
+
+Originally the Stemmarest backend has been built to work with the Stemmaweb platform, which provides a web-based interface for exploring and editing these traditions.
+
+The Stemmaweb codebase has been adapted to work with this API. The fork can be found [here](https://github.com/unilenlac/stemmaweb).
+
+If you need a script to collate texts and import them into the stemmarest backend, you can use this [collate and import script](https://github.com/unilenlac/enlac). Please note that this script handles only XML texts that follows the [ENLAC DTD](https://github.com/unilenlac/martyre-philippe/blob/PM-1_master/tei-irsb.dtd) specification, but can be modified to suit your needs.
+
+## Upgrades and features
 
 This version includes the following upgrades and new features :
 
+- **XML exportation : support for exporting a critical edition in XML format. Exportation result includes the critical text and the critical apparatus.**
+- Route : /tradition/complex added to retrieve/manage complex variant texts or hypernode (groups of nodes)
 - code base upgrading to fit the latest version of Neo4j
-- additional export formats for variant texts (XML)
 - Improved database session initialization and configuration
 - Improved database session management through the application
-- Route : /tradition/complex added to retrieve complex variant texts or hypernode (groups of nodes)
+- OpenAPI documentation generation for all endpoints available at the /stemmarest/api/docs endpoint
 
 ## Docker
 
@@ -41,13 +50,15 @@ docker run -itd --rm --name stemmarest --network stemmaweb -p 8080:8080 -p 5005:
 
 ### Database
 
-please find bellow the directories where the Neo4j embedded database stores his data and config files:
+Neo4j embedded database stores his data and config files in the following directories:
 
 - Data: `/var/lib/stemmarest/data`
 - Config (neo4j): `/var/lib/stemmarest/conf`
 - Plugin (neo4j): `/var/lib/stemmarest/plugins`
 
 These folders can be used to mount volumes and persist data.
+
+This API use the version 5.26 [LTS] of Neo4j for Java ([embedded version](https://neo4j.com/docs/java-reference/5/java-embedded/)).
 
 ## Building
 
@@ -68,3 +79,24 @@ This version runs on Tomcat version 9 with JDK 17; to deploy it, copy the WAR fi
 Stemmarest requires a location for its data storage; by default this is `/var/lib/stemmarest`, but can be changed by setting the environment variable `STEMMAREST_HOME`. The directory specified must have its permissions set so that the Tomcat user can write to it.
 
 Note that if, at any time, you wish to inspect the database visually, you may shut down the Stemmarest server and start an instance of Neo4J at the database directory location. **Make sure that your version of Neo4J matches the version specified in `pom.xml`!**
+
+## Todo
+
+- Fix remaining tests that haven't been updated: the code is actually compiled without tests.
+- Refactor code hierarchy: this code needs Separation of Concerns to be properly organized. Part of the code mainly concerned => Route logic, business logic, and data access logic should be separated.
+
+## Background
+
+Development of Stemmarest was begun by a team of software engineering students at the [University of Bern](https://www.unibe.ch/), and since 2016 has been continued by the [Digital Humanities group at the University of Vienna](https://acdh.univie.ac.at/) with financial support from the [Swiss National Science Foundation](http://www.snf.ch/en/Pages/default.aspx).
+
+This fork is an extension of the original Stemmarest project, incorporating updates and improvements to include lacking exportation features. This version is still under development by the [Faculty of Theology and Religion](https://www.unil.ch/ftsr/fr/home.html) at the university of Lausanne.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Contact
+
+For any questions or issues, please open an issue on the GitHub repository or contact the maintainer at [renato.diaz@unil.ch]
+
+Feel free to contribute to the project by submitting pull requests !
