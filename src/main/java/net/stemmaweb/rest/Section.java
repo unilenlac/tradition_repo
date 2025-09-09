@@ -39,6 +39,7 @@ import javax.ws.rs.core.Response;
 import javax.xml.stream.XMLStreamException;
 
 import io.swagger.v3.oas.annotations.Hidden;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import net.stemmaweb.Util;
 import net.stemmaweb.builders.XmlBuilder;
 import net.stemmaweb.directors.DocumentDesigner;
@@ -93,6 +94,7 @@ public class Section {
      * @return the Witness REST module initialised for that sigill
      */
     @Path("/witness/{sigil}")
+    
     public Witness getWitnessFromSection(@PathParam("sigil") String sigil) {
         return new Witness(tradId, sectId, sigil, getTraditionNode);
     }
@@ -102,6 +104,7 @@ public class Section {
      * @param readingId - the ID of the requested reading
      */
     @Path("/reading/{readingId}")
+    
     public Reading getReadingOnSection(@PathParam("readingId") String readingId) {
         // Check that the reading actually belongs to our section
         boolean readingInSection;
@@ -126,7 +129,7 @@ public class Section {
      */
     @GET
     @Produces("application/json; charset=utf-8")
-    
+    @Hidden
     public Response getSectionInfo() {
         SectionModel result;
         if (!sectionInTradition())
@@ -154,7 +157,7 @@ public class Section {
     @PUT
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces("application/json; charset=utf-8")
-    
+    @Hidden
     public Response updateSectionInfo(SectionModel newInfo) {
         if (!sectionInTradition())
             return Response.status(Response.Status.NOT_FOUND).entity(jsonerror("Tradition and/or section not found")).build();
@@ -182,7 +185,7 @@ public class Section {
      * @statuscode 500 - on failure, with an error message
      */
     @DELETE
-    
+    @Hidden
     public Response deleteSection() {
         if (!sectionInTradition())
             return Response.status(Response.Status.NOT_FOUND).type(MediaType.APPLICATION_JSON_TYPE)
@@ -238,7 +241,7 @@ public class Section {
     @GET
     @Path("/witnesses")
     @Produces("application/json; charset=utf-8")
-    
+    @Hidden
     public Response getAllWitnessInSection() throws Exception {
         if (!sectionInTradition())
             return Response.status(Response.Status.NOT_FOUND).entity(jsonerror("Tradition and/or section not found")).build();
@@ -297,7 +300,7 @@ public class Section {
     @GET
     @Path("/complex")
     @Produces("application/json; charset=utf-8")
-    
+    @Hidden
     public Response getAllComplexReadings() {
         if (!sectionInTradition())
             return Response.status(Response.Status.NOT_FOUND).entity(jsonerror("Tradition and/or section not found")).build();
@@ -350,7 +353,7 @@ public class Section {
     @GET
     @Path("/readings")
     @Produces("application/json; charset=utf-8")
-    
+    @Hidden
     public Response getAllReadings() {
         if (!sectionInTradition())
             return Response.status(Response.Status.NOT_FOUND).entity(jsonerror("Tradition and/or section not found")).build();
@@ -396,7 +399,7 @@ public class Section {
     @GET
     @Path("/relations")
     @Produces("application/json; charset=utf-8")
-    
+    @Hidden
     public Response getAllRelationships(@DefaultValue("false") @QueryParam("include_readings") String includeReadings) {
         ArrayList<RelationModel> relList = sectionRelations(includeReadings.equals("true"));
 
@@ -443,7 +446,7 @@ public class Section {
     @GET
     @Path("/colocated")
     @Produces("application/json; charset=utf-8")
-    
+    @Hidden
     public Response getColocatedClusters() {
         List<Set<Node>> clusterList;
         try (Transaction tx = db.beginTx()) {
@@ -480,7 +483,7 @@ public class Section {
     @GET
     @Path("/lemmatext")
     @Produces("application/json; charset=utf-8")
-    
+    @Hidden
     public Response getLemmaText(@QueryParam("final")     @DefaultValue("false") String followFinal,
                                  @QueryParam("startRank") @DefaultValue("1") String startRank,
                                  @QueryParam("endRank")   @DefaultValue("E") String endRank,
@@ -523,7 +526,7 @@ public class Section {
     @GET
     @Path("/lemmareadings")
     @Produces("application/json; charset=utf-8")
-    
+    @Hidden
     public Response getLemmaReadings(@QueryParam("final") @DefaultValue("false") String followFinal,
                                      @QueryParam("startRank") @DefaultValue("1") String startRank,
                                      @QueryParam("endRank")   @DefaultValue("E") String endRank,
@@ -613,7 +616,7 @@ public class Section {
     @GET
     @Path("/annotations")
     @Produces("application/json; charset=utf-8")
-    
+    @Hidden
     public Response getAnnotationsOnSection(@QueryParam("label") List<String> filterLabels,
                                             @QueryParam("recursive") @DefaultValue("false") String recurse) {
         if (!sectionInTradition())
@@ -671,6 +674,7 @@ public class Section {
     @Path("/variants")
     @Produces("application/json; charset=utf-8")
     
+    @Hidden
     public Response getVariantGroups(@DefaultValue("no") @QueryParam("significant") String significant,
                                      @DefaultValue("no") @QueryParam("exclude_type1") String excludeType1,
                                      @DefaultValue("no") @QueryParam("exclude_nonsense") String excludeNonsense,
@@ -716,6 +720,7 @@ public class Section {
     @Path("/orderAfter/{priorSectID}")
     @Produces(MediaType.TEXT_PLAIN)
     
+    @Hidden
     public Response reorderSectionAfter(@PathParam("priorSectID") String priorSectID) {
         try (Transaction tx = db.beginTx()) {
             Node tradNode = getTraditionNode.apply(tx);
@@ -797,6 +802,7 @@ public class Section {
     @Path("/splitAtRank/{rank}")
     @Produces("application/json; charset=utf-8")
     
+    @Hidden
     public Response splitAtRank (@PathParam("rank") String rankstr) {
         if (!sectionInTradition())
             return Response.status(Response.Status.NOT_FOUND).entity(jsonerror("Tradition and/or section not found")).build();
@@ -955,6 +961,7 @@ public class Section {
     @Path("/merge/{otherId}")
     @Produces(MediaType.TEXT_PLAIN)
     
+    @Hidden
     public Response mergeSections (@PathParam("otherId") String otherId) {
         if (!sectionInTradition())
             return Response.status(Response.Status.NOT_FOUND).entity("Tradition and/or section not found").build();
@@ -1068,10 +1075,11 @@ public class Section {
      * This does not belong to the official API!
      * It is a secret hack to fix ranks if we find they are broken or missing.
      */
-    @Hidden
+    
     @GET
     @Path("/initRanks")
     @Produces(MediaType.APPLICATION_JSON)
+    @Hidden
     public Response initRanks() {
         if (!sectionInTradition())
             return Response.status(Response.Status.NOT_FOUND).entity("Tradition and/or section not found").build();
@@ -1111,6 +1119,7 @@ public class Section {
     @Path("/mergeablereadings/{startRank}/{endRank}")
     @Produces("application/json; charset=utf-8")
     
+    @Hidden
     public Response getCouldBeIdenticalReadings(
             @PathParam("startRank") String startRank,
             @PathParam("endRank") String endRank,
@@ -1252,6 +1261,7 @@ public class Section {
     @Path("/identicalreadings/{startRank}/{endRank}")
     @Produces("application/json; charset=utf-8")
     
+    @Hidden
     public Response getIdenticalReadings(@PathParam("startRank") String startRank,
                                          @PathParam("endRank") String endRank) {
         Map<String,String> useRanks;
@@ -1346,6 +1356,7 @@ public class Section {
     @Path("/setlemma")
     @Produces("application/json; charset=utf-8")
     
+    @Hidden
     public Response setLemmaText() {
         if (!sectionInTradition())
             return Response.status(Response.Status.NOT_FOUND).entity(jsonerror("Tradition and/or section not found")).build();
@@ -1420,6 +1431,7 @@ public class Section {
     @Path("/emendations")
     @Produces("application/json; charset=utf-8")
     
+    @Hidden
     public Response getEmendations() {
         if (!sectionInTradition())
             return Response.status(Response.Status.NOT_FOUND)
@@ -1465,6 +1477,7 @@ public class Section {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces("application/json; charset=utf-8")
     
+    @Hidden
     public Response emendText(ProposedEmendationModel proposal) {
         if (!sectionInTradition())
             return Response.status(Response.Status.NOT_FOUND)
@@ -1530,6 +1543,7 @@ public class Section {
     @Path("/graph")
     @Produces("application/json; charset=utf-8")
     
+    @Hidden
     public Response getGraphModel() {
         // TODO does this check make sense, or does the not-found happen already in Tradition.java?
         GraphModel thisSection;
@@ -1575,6 +1589,7 @@ public class Section {
     @Path("/graphml")
     @Produces("application/zip")
     
+    @Hidden
     public Response getGraphML() {
         try(Transaction tx = db.beginTx()){
             Node tradNode = getTraditionNode.apply(tx);
@@ -1609,6 +1624,7 @@ public class Section {
     @Path("/dot")
     @Produces("text/plain; charset=utf-8")
     
+    @Hidden
     public Response getDot(@DefaultValue("false") @QueryParam("include_relations") Boolean includeRelatedRelationships,
                            @DefaultValue("false") @QueryParam("show_normal") Boolean showNormalForms,
                            @DefaultValue("false") @QueryParam("show_rank") Boolean showRank,
@@ -1639,6 +1655,7 @@ public class Section {
     @Path("/json")
     @Produces("application/json; charset=utf-8")
     
+    @Hidden
     public Response getJson(@QueryParam("conflate") List<String> toConflate,
                             @QueryParam("exclude_layers") String excludeLayers) {
         List<String> thisSection = new ArrayList<>(Collections.singletonList(sectId));
@@ -1658,6 +1675,7 @@ public class Section {
     @Path("/csv")
     @Produces("text/plain; charset=utf-8")
     
+    @Hidden
     public Response getCsv(@QueryParam("conflate") List<String> toConflate,
                            @QueryParam("exclude_layers") String excludeLayers) {
         List<String> thisSection = new ArrayList<>(Collections.singletonList(sectId));
@@ -1678,6 +1696,7 @@ public class Section {
     @Path("/tsv")
     @Produces("text/plain; charset=utf-8")
     
+    @Hidden
     public Response getTsv(@QueryParam("conflate") List<String> toConflate,
                            @QueryParam("exclude_layers") String excludeLayers) {
         List<String> thisSection = new ArrayList<>(Collections.singletonList(sectId));
@@ -1706,6 +1725,7 @@ public class Section {
     @Path("/teicat")
     @Produces("application/xml; charset=utf-8")
     
+    @Hidden
     public Response getTeicat(@DefaultValue("no") @QueryParam("significant") String significant,
                               @DefaultValue("no") @QueryParam("exclude_type1") String excludeType1,
                               @DefaultValue("no") @QueryParam("exclude_nonsense") String excludeNonsense,
@@ -1745,6 +1765,7 @@ public class Section {
     @Path("/xml")
     @Produces("application/xml; charset=utf-8")
     
+    @Hidden
     public Response getXml() throws XMLStreamException, IllegalArgumentException, IOException {
 
         XmlBuilder builder = new XmlBuilder();
@@ -1774,6 +1795,7 @@ public class Section {
     @Path("/matrix")
     @Produces("text/plain; charset=utf-8")
     
+    @Hidden
     public Response getCharMatrix(@QueryParam("conflate") List<String> toConflate,
                                   @QueryParam("exclude_layers") String excludeLayers,
                                   @DefaultValue("8") @QueryParam("maxVars") int maxVars) {

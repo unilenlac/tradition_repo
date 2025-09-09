@@ -14,14 +14,14 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 
-
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import net.stemmaweb.model.*;
 import net.stemmaweb.services.*;
 
 import org.neo4j.graphdb.*;
 import org.neo4j.graphdb.NotFoundException;
 import org.neo4j.graphdb.traversal.Uniqueness;
-import org.neo4j.internal.batchimport.stats.Stat;
 
 import static net.stemmaweb.Util.getTraditionNode;
 import static net.stemmaweb.Util.jsonerror;
@@ -32,7 +32,7 @@ import static net.stemmaweb.Util.jsonerror;
  * 
  * @author PSE FS 2015 Team2
  */
-
+@Tag(name = "Reading", description = "Operations related to individual readings")
 public class Reading {
 
     private String errorMessage; // global error message used for sub-method calls
@@ -60,7 +60,6 @@ public class Reading {
     */
     @GET
     @Produces("application/json; charset=utf-8")
-    
     public Response getReading() {
         if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
         ReadingModel reading;
@@ -94,7 +93,6 @@ public class Reading {
     @PUT
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces("application/json; charset=utf-8")
-    
     public Response changeReadingProperties(ReadingChangePropertyModel changeModels) {
         if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
         ReadingModel modelToReturn = new ReadingModel();
@@ -153,7 +151,6 @@ public class Reading {
      */
     @DELETE
     @Produces("application/json; charset=utf-8")
-    
     public Response deleteUserReading() {
         if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
         GraphModel deletedElements = new GraphModel();
@@ -210,7 +207,6 @@ public class Reading {
     @Path("setlemma")
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Produces("application/json; charset=utf-8")
-    
     public Response setReadingAsLemma(@FormParam("value") @DefaultValue("false") String value) {
         if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
         List<ReadingModel> changed = new ArrayList<>();
@@ -261,7 +257,6 @@ public class Reading {
     @POST
     @Path("/lacunaAfter")
     @Produces("application/json; charset=utf-8")
-    
     public Response addLacuna (@QueryParam("witness") List<String> forWitnesses) {
         if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
         GraphModel result = new GraphModel();
@@ -332,7 +327,6 @@ public class Reading {
     @GET
     @Path("related")
     @Produces("application/json; charset=utf-8")
-    
     public Response getRelatedReadings(@QueryParam("types") List<String> filterTypes) {
 
         if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
@@ -363,7 +357,6 @@ public class Reading {
     @POST
     @Path("normaliseRelated/{reltype}")
     @Produces("application/json; charset=utf-8")
-    
     public Response normaliseRelated(@PathParam("reltype") String onRelationType) {
         if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
         List<ReadingModel> changed = new ArrayList<>();
@@ -428,7 +421,6 @@ public class Reading {
     @DELETE
     @Path("relations")
     @Produces("application/json; charset=utf-8")
-    
     public Response deleteAllRelations() {
         if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
         ArrayList<RelationModel> deleted = new ArrayList<>();
@@ -462,7 +454,6 @@ public class Reading {
     @GET
     @Path("witnesses")
     @Produces("application/json; charset=utf-8")
-    
     public Response getReadingWitnesses() {
         if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
         try {
@@ -527,7 +518,6 @@ public class Reading {
     @Path("duplicate")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces("application/json; charset=utf-8")
-    
     public Response duplicateReading(DuplicateModel duplicateModel) throws IOException {
         if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
         ArrayList<ReadingModel> createdReadings = new ArrayList<>();
@@ -717,7 +707,6 @@ public class Reading {
     @POST
     @Path("merge/{secondReadId}")
     @Produces("application/json; charset=utf-8")
-    
     public Response mergeReadings(@PathParam("secondReadId") String secondReadId) {
         if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
         GraphModel result;
@@ -966,7 +955,6 @@ public class Reading {
     @Path("split/{splitIndex}")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces("application/json; charset=utf-8")
-    
     public Response splitReading(@PathParam("splitIndex") int splitIndex,
                                  ReadingBoundaryModel model) {
         if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
@@ -1141,7 +1129,6 @@ public class Reading {
     @GET
     @Path("next/{witnessId}")
     @Produces("application/json; charset=utf-8")
-    
     public Response getNextReadingInWitness(@PathParam("witnessId") String witnessId,
                                             @DefaultValue("witnesses") @QueryParam("layer") String layer) {
         if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
@@ -1175,7 +1162,6 @@ public class Reading {
     @GET
     @Path("prior/{witnessId}")
     @Produces("application/json; charset=utf-8")
-    
     public Response getPreviousReadingInWitness(@PathParam("witnessId") String witnessId,
                                                 @DefaultValue("witnesses") @QueryParam("layer") String layer) {
         if ("-1".equals(readId)) return Response.status(Status.NOT_FOUND).build();
@@ -1232,13 +1218,7 @@ public class Reading {
             } else {
                 neighbour = matching.iterator().next().getOtherNode(read);
             }
-            // tx.close();
-        // } catch (NotFoundException e) {
-        //     errorMessage = e.getMessage();
-        // } catch (Exception e) {
-        //     e.printStackTrace();
-        //     errorMessage = e.getMessage();
-        // }
+
         return neighbour;
     }
 
@@ -1334,7 +1314,7 @@ public class Reading {
     @GET
     @Path("complex")
     @Produces("application/json; charset=utf-8")
-    
+    @Operation(tags = {"Tradition"}, summary = "Get all complex readings", description = "Retrieves all complex readings containing this reading")
     public Response getComplexReadings() {
         List<ComplexReadingModel> crList = new ArrayList<>();
         try (Transaction tx = db.beginTx()) {
@@ -1361,7 +1341,6 @@ public class Reading {
     @Path("complex")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces("application/json; charset=utf-8")
-    
     public Response complexReading(ComplexReadingModel skeleton) {
         try (Transaction tx = db.beginTx()) {
             Node hyperNode = tx.createNode(Nodes.READING, Nodes.HYPERREADING);
@@ -1402,13 +1381,11 @@ public class Reading {
      */
     @DELETE
     @Path("complex/{cid}")
-    
     public Response deleteComplex(@PathParam("cid") String cid) {
         try (Transaction tx = db.beginTx()) {
             Node removableNode = tx.getNodeByElementId(cid);
             removableNode.getRelationships().forEach(Relationship::delete);
             removableNode.delete();
-            tx.close();
         } catch (Exception e) {
             e.printStackTrace();
             return Response.serverError().entity(jsonerror(e.getMessage())).build();
@@ -1608,7 +1585,6 @@ public class Reading {
      */
     @POST
     @Path("mergenodes/{target}")
-    
     public Response mergeNodes(@PathParam("target") String target) {
 
         Attach attach = new Attach();
@@ -1895,7 +1871,6 @@ public class Reading {
             tradId = tx.getNodeByElementId(rdg.getProperty("section_id").toString())
                     .getSingleRelationship(ERelations.PART, Direction.INCOMING)
                     .getStartNode().getProperty("id").toString();
-            tx.close();
         }
         return tradId;
     }

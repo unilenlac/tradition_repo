@@ -1,5 +1,6 @@
 package net.stemmaweb.rest;
 
+import io.swagger.v3.oas.annotations.Hidden;
 import io.swagger.v3.oas.annotations.Operation;
 import com.sun.xml.txw2.output.IndentingXMLStreamWriter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -41,8 +42,22 @@ import static net.stemmaweb.exporter.TeiExporter.addRdgContent;
 public class Root {
     @Context ServletContext context;
     @Context UriInfo uri;
-    // private final GraphDatabaseServiceProvider dbServiceProvider = new GraphDatabaseServiceProvider();
-    private GraphDatabaseService db = Database.getInstance().session;
+
+    private GraphDatabaseService db;
+    
+    // Lazy initialization of database connection
+    private GraphDatabaseService getDatabase() {
+        if (db == null) {
+            try {
+                db = Database.getInstance().session;
+            } catch (Exception e) {
+                // Log the error but don't fail the entire class loading
+                System.err.println("Warning: Database connection failed: " + e.getMessage());
+                // You might want to use a proper logger here
+            }
+        }
+        return db;
+    }
     /*
      * Delegated API calls
      */
@@ -56,38 +71,83 @@ public class Root {
     public String getHello() {
         return CLICHED_MESSAGE;
     }
-   /*
+    
     @GET
-    @Path("{path: docs.*}")
-    @MireDotIgnore
-    public Response getDocs(@PathParam("path") String path) {
-        if (path.equals("docs") || path.equals("docs/")) path = "docs/index.html";
-        final String target = String.format("/WEB-INF/%s", path);
-        Tika tika = new Tika();
+    @Path("/status")
+    @Produces("application/json")
+    @Operation(summary = "Get API status", description = "Returns the API status without database dependency")
+    @ApiResponse(responseCode = "200", description = "API status")
+    public Response getStatus() {
+        JSONObject status = new JSONObject();
+        status.put("status", "running");
+        status.put("service", "Stemmarest API");
+        status.put("timestamp", System.currentTimeMillis());
+        
         try {
-            String mimeType = tika.detect(new File(context.getRealPath(target)));
-            InputStream resource = context.getResourceAsStream(target);
-            return Response.status(Response.Status.OK).type(mimeType).entity(resource).build();
-        } catch (IOException e) {
-            return Response.status(Response.Status.NOT_FOUND).build();
+            getDatabase(); // Try to get database connection
+            status.put("database", "connected");
+        } catch (Exception e) {
+            status.put("database", "disconnected");
+            status.put("database_error", e.getMessage());
         }
+        
+        return Response.ok(status.toString()).build();
     }
-    */
+    
+    /**
+     * Serves the Swagger UI documentation
+     */
+    @GET
+    @Path("/docs")
+    @Produces("text/html")
+    @Operation(summary = "API Documentation", description = "Serves the Swagger UI for API documentation")
+    @ApiResponse(responseCode = "200", description = "Swagger UI HTML page")
+    public Response getApiDocs(@Context UriInfo uriInfo) {
+        String baseUri = uriInfo.getBaseUri().toString();
+        // Remove 'api/' from the end to get the root context
+        String contextPath = baseUri.substring(0, baseUri.lastIndexOf("/api/"));
+        
+        String html = "<!DOCTYPE html>\n" +
+            "<html lang=\"en\">\n" +
+            "<head>\n" +
+            "    <meta charset=\"utf-8\" />\n" +
+            "    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n" +
+            "    <meta name=\"description\" content=\"SwaggerUI\" />\n" +
+            "    <title>Stemmarest API Documentation</title>\n" +
+            "    <link rel=\"stylesheet\" href=\"https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui.css\" />\n" +
+            "</head>\n" +
+            "<body>\n" +
+            "    <div id=\"swagger-ui\"></div>\n" +
+            "    <script src=\"https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui-bundle.js\" crossorigin></script>\n" +
+            "    <script>\n" +
+            "        SwaggerUIBundle({\n" +
+            "            url: '" + contextPath + "/openapi.json',\n" +
+            "            dom_id: '#swagger-ui',\n" +
+            "            presets: [\n" +
+            "                SwaggerUIBundle.presets.apis,\n" +
+            "                SwaggerUIBundle.presets.standalone\n" +
+            "            ]\n" +
+            "        });\n" +
+            "    </script>\n" +
+            "</body>\n" +
+            "</html>";
+            
+        return Response.ok(html).build();
+    }
 
     /**
+     * Gets a tradition resource and all its sub-resources
      * @param tradId - the ID of the tradition being queried
      */
     @Path("/tradition/{tradId}")
+    @Operation(summary = "Get tradition resource", 
+               description = "Returns a tradition resource that provides access to all tradition-related endpoints including sections, witnesses, stemmas, readings, relations, and annotations")
+    @ApiResponse(responseCode = "200", description = "Tradition resource successfully retrieved")
+    @ApiResponse(responseCode = "404", description = "Tradition not found")
+    @ApiResponse(responseCode = "500", description = "Server error")
     public Tradition getTradition(@PathParam("tradId") String tradId) {
         GetTraditionFunction<Transaction, Node> getTraditionFunction = Util.getTraditionNode(tradId);
         return new Tradition(tradId, getTraditionFunction);
-    }
-    @Path("/novus/{tradId}")
-    public Novus getNovusTradition(@PathParam("tradId") String tradId) throws Exception {
-        GetTraditionFunction<Transaction, Node> getTraditionFunction = Util.getTraditionNode(tradId);
-        Node node = getTraditionFunction.apply(db.beginTx());
-        return new Novus(tradId, node);
-
     }
     /**
      * @param userId - The ID of a stemmarest user; this is usually either an email address or a Google ID token.
@@ -99,13 +159,20 @@ public class Root {
     /**
      * @param readingId - the ID of the reading being queried
      */
+
     @Path("/reading/{readingId}")
+    @Operation(summary = "Get reading resource", 
+               description = "Returns a reading resource that provides access to all reading-related endpoints including relations and annotations")
+    @ApiResponse(responseCode = "200", description = "Reading resource successfully retrieved")
+    @ApiResponse(responseCode = "404", description = "Reading not found")
+    @ApiResponse(responseCode = "500", description = "Server error")
     public Reading getReading(@PathParam("readingId") String readingId) {
         return new Reading(readingId);
     }
     /**
      * @param readingId - the ID of the complex reading being queried
      */
+
     @Path("/complexreading/{readingId}")
     public ComplexReading getComplexReading(@PathParam("readingId") String readingId) {
         return new ComplexReading(readingId);
@@ -143,12 +210,10 @@ public class Root {
      * @statuscode 500 - Something went wrong. An error message will be returned.
      *
      */
-    @Tag(name = "Tradition", description = "Tradition endpoints allow to operate over groups of text")
     @POST
     @Path("/tradition")
     @Consumes(MediaType.MULTIPART_FORM_DATA)
     @Produces("application/json; charset=utf-8")
-    // 
     public Response importGraphMl(@DefaultValue("") @FormDataParam("name") String name,
                                   @FormDataParam("userId") String userId,
                                   @FormDataParam("public") String is_public,
@@ -160,8 +225,8 @@ public class Root {
                                   @FormDataParam("file") FormDataMultiPart fileDetail) throws KernelException {
 
 
-
-        if (!DatabaseService.userExists(userId, db)) {
+        GraphDatabaseService database = getDatabase();
+        if (!DatabaseService.userExists(userId, database)) {
             return Response.status(Response.Status.CONFLICT)
                 .entity(jsonerror("No user with this id exists"))
                 .build();
@@ -194,8 +259,7 @@ public class Root {
 
         // If we got file contents, we should send them off for parsing.
         if (empty == null) {
-
-            try(Transaction tx = db.beginTx()){
+            try(Transaction tx = database.beginTx()){
                 // Node trad_node = tx.findNode(Nodes.TRADITION, "id", tradId);
                 GetTraditionFunction<Transaction, Node> getTraditionFunction = Util.getTraditionNode(tradId);
                 Node tradNode = getTraditionFunction.apply(tx);
@@ -253,8 +317,8 @@ public class Root {
     // 
     public Response getAllTraditions(@DefaultValue("false") @QueryParam("public") Boolean publiconly) {
         List<TraditionModel> traditionList = new ArrayList<>();
-
-        try (Transaction tx = db.beginTx()) {
+        GraphDatabaseService database = getDatabase();
+        try (Transaction tx = database.beginTx()) {
             ResourceIterator<Node> nodeList;
             if (publiconly)
                 nodeList = tx.findNodes(Nodes.TRADITION, "is_public", true);
@@ -283,8 +347,8 @@ public class Root {
     // 
     public Response getAllUsers() {
         List<UserModel> userList = new ArrayList<>();
-
-        try (Transaction tx = db.beginTx()) {
+        GraphDatabaseService database = getDatabase();
+        try (Transaction tx = database.beginTx()) {
 
             tx.findNodes(Nodes.USER)
                     .forEachRemaining(t -> userList.add(new UserModel(t, tx)));
@@ -297,7 +361,8 @@ public class Root {
 
     private String createTradition(String name, String direction, String language, String isPublic) {
         String tradId = UUID.randomUUID().toString();
-        try (Transaction tx = db.beginTx()) {
+        GraphDatabaseService database = getDatabase();
+        try (Transaction tx = database.beginTx()) {
             // Make the tradition node
             Node traditionNode = tx.createNode(Nodes.TRADITION);
             traditionNode.setProperty("id", tradId);
@@ -319,7 +384,8 @@ public class Root {
     }
 
     private void linkUserToTradition(String userId, String tradId) throws Exception {
-        try (Transaction tx = db.beginTx()) {
+        GraphDatabaseService database = getDatabase();
+        try (Transaction tx = database.beginTx()) {
             Node userNode = tx.findNode(Nodes.USER, "id", userId);
             if (userNode == null) {
                 tx.rollback();
@@ -337,7 +403,8 @@ public class Root {
     @GET
     @Path("/sandbox")
     @Produces(MediaType.APPLICATION_XML)
-    public Response sandox() throws XMLStreamException {
+    @Hidden
+    public Response sandbox() throws XMLStreamException {
 
         String s_1 = "<element>1</element>";
         String s_2 = "test<element>1</element>.";
@@ -368,6 +435,7 @@ public class Root {
         writer.writeEndElement();
         return Response.ok().entity(result.toString()).build();
     }
+    /* Deprecated
     @GET
     @Path("/tei_exporter")
     @Produces(MediaType.APPLICATION_XML)
@@ -375,9 +443,11 @@ public class Root {
                                 @QueryParam("section") String section) throws XMLStreamException {
         return new TeiExporter(db).SimpleHnExporter(tradition, section);
     }
+    */
     @GET
     @Path("/log_file")
     @Produces(MediaType.TEXT_PLAIN)
+    @Hidden
     public Response getLogFile() {
         File logFile = new File("logs/xml_export_download.log");
         if (!logFile.exists()) {

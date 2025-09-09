@@ -21,6 +21,8 @@ import net.stemmaweb.services.GraphDatabaseServiceProvider;
 
 import org.neo4j.graphdb.*;
 
+import io.swagger.v3.oas.annotations.Hidden;
+
 import static net.stemmaweb.Util.jsonerror;
 
 /**
@@ -58,7 +60,7 @@ public class Stemma {
      */
     @GET
     @Produces("application/json; charset=utf-8")
-    
+    @Hidden
     public Response getStemma() {
 
         try (Transaction tx = db.beginTx()) {

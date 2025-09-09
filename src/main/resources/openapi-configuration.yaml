@@ -1,8 +1,9 @@
 # use resourceClasses for precise control:
-
+resourceClasses:
+  - net.stemmaweb.rest.Root
 prettyPrint: true
 cacheTTL: 0
-readAllResources: true  # Changed to false for more control
+readAllResources: True  # Changed to false for more control
 openAPI:
   info:
     version: '1.0'

@@ -26,6 +26,9 @@ import javax.ws.rs.core.Response.Status;
 import javax.xml.stream.XMLStreamException;
 
 import io.swagger.v3.oas.annotations.Hidden;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import net.stemmaweb.Util.GetTraditionFunction;
 import net.stemmaweb.builders.XmlBuilder;
 import net.stemmaweb.directors.DocumentDesigner;
 import net.stemmaweb.exporter.*;
@@ -38,7 +41,6 @@ import org.neo4j.graphdb.traversal.Uniqueness;
 
 import com.alexmerz.graphviz.ParseException;
 
-import net.stemmaweb.model.AlignmentModel;
 import net.stemmaweb.model.AnnotationLabelModel;
 import net.stemmaweb.model.AnnotationModel;
 import net.stemmaweb.model.DisplayOptionModel;
@@ -58,13 +60,15 @@ import net.stemmaweb.parser.TEIParallelSegParser;
 import net.stemmaweb.parser.TabularParser;
 
 
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 /**
  * Comprises all the api calls related to a tradition.
  * Can be called using http://BASE_URL/tradition
  *
  * @author PSE FS 2015 Team2
  */
-
+@Tag(name = "Tradition", description = "Tradition endpoints allow to operate over groups of text")
 public class Tradition {
     private final GraphDatabaseService db;
     /**
@@ -89,7 +93,10 @@ public class Tradition {
      * Delegates to {@link net.stemmaweb.rest.Section Section} module
      * @param sectionId - the ID of the requested tradition section
      */
-    @Path("/section/{sectionId}")
+    @Path("/section/{sectionId}")  // Hide this from standalone OpenAPI generation
+    @Operation(summary = "Get a section by ID", description = "Retrieves a specific section from the tradition")
+    @ApiResponse(responseCode = "200", description = "The requested section")
+    @ApiResponse(responseCode = "404", description = "Section not found")
     public Section getSection(@PathParam("sectionId") String sectionId) throws Exception {
         try(Transaction tx = db.beginTx()){
             Node tradNode = getTraditionNode.apply(tx);
@@ -107,6 +114,9 @@ public class Tradition {
      * @param sigil - the sigil of the requested witness
      */
     @Path("/witness/{sigil}")
+    @Operation(summary = "Get a witness by sigil", description = "Retrieves a specific witness from the tradition")
+    @ApiResponse(responseCode = "200", description = "The requested witness")
+    @ApiResponse(responseCode = "404", description = "Witness not found")
     public Witness getWitness(@PathParam("sigil") String sigil) {
         return new Witness(traditionId, sigil, getTraditionNode);
     }
@@ -116,6 +126,9 @@ public class Tradition {
      * @param name - the name of the requested stemma
      */
     @Path("/stemma/{name}")
+    @Operation(summary = "Get a stemma by name", description = "Retrieves a specific stemma from the tradition")
+    @ApiResponse(responseCode = "200", description = "The requested stemma")
+    @ApiResponse(responseCode = "404", description = "Stemma not found")
     public Stemma getStemma(@PathParam("name") String name) {
         return new Stemma(traditionId, name);
     }
@@ -124,6 +137,9 @@ public class Tradition {
      * Delegates to {@link net.stemmaweb.rest.Relation Relation} module
      */
     @Path("/relation")
+    @Operation(summary = "Get a relation", description = "Retrieves a specific relation from the tradition")
+    @ApiResponse(responseCode = "200", description = "The requested relation")
+    @ApiResponse(responseCode = "404", description = "Relation not found")
     public Relation getRelation() {
         return new Relation(traditionId, getTraditionNode);
     }
@@ -132,6 +148,9 @@ public class Tradition {
      * Delegates to {@link net.stemmaweb.rest.Reading Reading} module, if the reading belongs to this tradition
      */
     @Path("/reading/{id}")
+    @Operation(tags = {"Tradition"}, summary = "Get a reading by ID", description = "Retrieves a specific reading from the tradition")
+    @ApiResponse(responseCode = "200", description = "The requested reading")
+    @ApiResponse(responseCode = "404", description = "Reading not found")
     public Reading getReading(@PathParam("id") String rid) {
         Reading resource = new Reading(rid);
         if (resource.getTraditionId().equals(traditionId))
@@ -145,6 +164,9 @@ public class Tradition {
      * @param name - the name of the requested RelationType
      */
     @Path("/relationtype/{name}")
+    @Operation(summary = "Get a relation type by name", description = "Retrieves a specific relation type from the tradition")
+    @ApiResponse(responseCode = "200", description = "The requested relation type")
+    @ApiResponse(responseCode = "404", description = "Relation type not found")
     public RelationType getRelationType(@PathParam("name") String name) { return new RelationType(traditionId, name); }
 
     /**
@@ -152,6 +174,9 @@ public class Tradition {
      * @param name - the name of the requested annotation label
      */
     @Path("/annotationlabel/{name}")
+    @Operation(summary = "Get an annotation label by name", description = "Retrieves a specific annotation label from the tradition")
+    @ApiResponse(responseCode = "200", description = "The requested annotation label")
+    @ApiResponse(responseCode = "404", description = "Annotation label not found")
     public AnnotationLabel getAnnotationType(@PathParam("name") String name) {
         return new AnnotationLabel(traditionId, name, getTraditionNode);
     }
@@ -161,6 +186,9 @@ public class Tradition {
      * @param annoid - the ID of the requested annotation
      */
     @Path("/annotation/{annoid}")
+    @Operation(summary = "Get an annotation by ID", description = "Retrieves a specific annotation from the tradition")
+    @ApiResponse(responseCode = "200", description = "The requested annotation")
+    @ApiResponse(responseCode = "404", description = "Annotation not found")
     public Annotation getAnnotationOnTradition(@PathParam("annoid") String annoid) {
         return new Annotation(traditionId, annoid, getTraditionNode);
     }
@@ -183,7 +211,9 @@ public class Tradition {
     @Path("/stemma")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces("application/json; charset=utf-8")
-    
+    @Operation(summary = "Create a new stemma", description = "Creates a new stemma for the tradition")
+    @ApiResponse(responseCode = "201", description = "Stemma created successfully")
+    @ApiResponse(responseCode = "500", description = "Server error")
     public Response newStemma(StemmaModel stemmaSpec) {
         // Make sure the tradition exists
         try(Transaction tx = db.beginTx()){
@@ -261,7 +291,7 @@ public class Tradition {
     @Path("/section")
     @Consumes(MediaType.MULTIPART_FORM_DATA)
     @Produces("application/json; charset=utf-8")
-
+    @Hidden
     public Response addSection(@FormDataParam("name") String sectionName,
                                @FormDataParam("filetype") String filetype,
                                @FormDataParam("addSingleSection") @DefaultValue("true") String addSingleSection,
@@ -390,7 +420,7 @@ public class Tradition {
     @Path("/annotation")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces("application/json; charset=utf-8")
-    
+    @Hidden
     public Response addAnnotation(AnnotationModel am) {
 
         AnnotationModel result;
@@ -480,7 +510,7 @@ public class Tradition {
     @GET
     @Path("/sections")
     @Produces("application/json; charset=utf-8")
-    
+    @Hidden
     public Response getAllSections() {
         try(Transaction tx = db.beginTx()){
             Node traditionNode = getTraditionNode.apply(tx);
@@ -509,7 +539,7 @@ public class Tradition {
     @GET
     @Path("/witnesses")
     @Produces("application/json; charset=utf-8")
-    
+    @Hidden
     public Response getAllWitnesses() {
         try (Transaction tx = db.beginTx()) {
             Node traditionNode = getTraditionNode.apply(tx);
@@ -539,7 +569,7 @@ public class Tradition {
     @GET
     @Path("/stemmata")
     @Produces("application/json; charset=utf-8")
-    
+    @Hidden
     public Response getAllStemmata() {
         try (Transaction tx = db.beginTx()) {
             Node traditionNode = getTraditionNode.apply(tx);
@@ -569,7 +599,7 @@ public class Tradition {
     @GET
     @Path("/relations")
     @Produces("application/json; charset=utf-8")
-    
+    @Hidden
     public Response getAllRelationships(@DefaultValue("false") @QueryParam("include_readings") String includeReadings) {
         ArrayList<RelationModel> relList = new ArrayList<>();
         try(Transaction tx = db.beginTx()){
@@ -604,7 +634,7 @@ public class Tradition {
     @GET
     @Path("/relationtypes")
     @Produces("application/json; charset=utf-8")
-    
+    @Hidden
     public Response getAllRelationTypes() {
         try(Transaction tx = db.beginTx()){
             Node traditionNode = getTraditionNode.apply(tx);
@@ -633,7 +663,7 @@ public class Tradition {
     @GET
     @Path("/readings")
     @Produces("application/json; charset=utf-8")
-    
+    @Hidden
     public Response getAllReadings() {
         try(Transaction tx = db.beginTx()){
             Node traditionNode = getTraditionNode.apply(tx);
@@ -675,7 +705,7 @@ public class Tradition {
     @GET
     @Path("/annotations")
     @Produces("application/json; charset=utf-8")
-    
+    @Hidden
     public Response getAllAnnotations(@QueryParam("label") List<String> filterLabels) {
         try (Transaction tx = db.beginTx()) {
             Node traditionNode = getTraditionNode.apply(tx);
@@ -716,7 +746,7 @@ public class Tradition {
     @GET
     @Path("/annotationlabels")
     @Produces("application/json; charset=utf-8")
-    
+    @Hidden
     public Response getDefinedAnnotationLabels() {
         try (Transaction tx = db.beginTx()) {
             Node traditionNode = getTraditionNode.apply(tx);
@@ -745,7 +775,7 @@ public class Tradition {
     @POST
     @Path("/pruneAnnotations")
     @Produces("application/json; charset=utf-8")
-    
+    @Hidden
     public Response pruneAnnotations() {
         try (Transaction tx = db.beginTx()) {
             Node traditionNode = getTraditionNode.apply(tx);
@@ -789,7 +819,7 @@ public class Tradition {
     @PUT
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces("application/json; charset=utf-8")
-    
+    @Hidden
     public Response changeTraditionMetadata(TraditionModel tradition) {
         TraditionModel updatedTradition;
         try (Transaction tx = db.beginTx()) {
@@ -855,7 +885,7 @@ public class Tradition {
      * @statuscode 500 - on error, with an error message
      */
     @DELETE
-    
+    @Hidden
     public Response deleteTraditionById() {
         try (Transaction tx = db.beginTx()) {
         	Node foundTradition = getTraditionNode.apply(tx);
@@ -933,7 +963,7 @@ public class Tradition {
      */
     @GET
     @Produces("application/json; charset=utf-8")
-    
+    @Hidden
     public Response getTraditionInfo() {
         TraditionModel metadata=null;
         try(Transaction tx = db.beginTx()){
@@ -957,7 +987,7 @@ public class Tradition {
     @GET
     @Path("/graphml")
     @Produces("application/zip")
-    
+    @Hidden
     public Response getGraphML() {
         try(Transaction tx = db.beginTx()){
             Node tradNode = getTraditionNode.apply(tx);
@@ -981,7 +1011,7 @@ public class Tradition {
     @GET
     @Path("/stemmaweb")
     @Produces(MediaType.APPLICATION_XML)
-    
+    @Hidden
     public Response getGraphMLStemmaweb() {
         try(Transaction tx = db.beginTx()){
             if (getTraditionNode.apply(tx) == null)
@@ -1009,7 +1039,7 @@ public class Tradition {
     @GET
     @Path("/dot")
     @Produces("text/plain; charset=utf-8")
-    
+    @Hidden
     public Response getDot(@DefaultValue("false") @QueryParam("include_relations") Boolean includeRelatedRelationships,
                            @DefaultValue("false") @QueryParam("show_normal") Boolean showNormalForms,
                            @DefaultValue("false") @QueryParam("show_rank") Boolean showRank,
@@ -1043,7 +1073,7 @@ public class Tradition {
     @GET
     @Path("/json")
     @Produces("application/json; charset=utf-8")
-    
+    @Hidden
     public Response getJson(@QueryParam("conflate") List<String> toConflate,
                             @QueryParam("section") List<String> sectionList,
                             @QueryParam("exclude_layers") String excludeLayers) {
@@ -1064,7 +1094,7 @@ public class Tradition {
     @GET
     @Path("/csv")
     @Produces("text/plain; charset=utf-8")
-    
+    @Hidden
     public Response getCsv(@QueryParam("conflate") List<String> toConflate,
                            @QueryParam("section") List<String> sectionList,
                            @QueryParam("exclude_layers") String excludeLayers) {
@@ -1085,7 +1115,7 @@ public class Tradition {
     @GET
     @Path("/tsv")
     @Produces("text/plain; charset=utf-8")
-    
+    @Hidden
     public Response getTsv(@QueryParam("conflate") List<String> toConflate,
                            @QueryParam("section") List<String> sectionList,
                            @QueryParam("exclude_layers") String excludeLayers) {
@@ -1108,7 +1138,7 @@ public class Tradition {
     @GET
     @Path("/matrix")
     @Produces("text/plain; charset=utf-8")
-    
+    @Hidden
     public Response getCharMatrix(@QueryParam("conflate") List<String> toConflate,
                                   @QueryParam("section") List<String> sectionList,
                                   @QueryParam("exclude_layers") String excludeLayers,
@@ -1116,11 +1146,26 @@ public class Tradition {
         return new TabularExporter(db).exportAsCharMatrix(traditionId, maxVars, toConflate,
                 sectionList, "true".equals(excludeLayers));
     }
-
+    /**
+     * Returns a TEI file that contains the aligned reading data for the tradition.
+     *
+     * @title Download TEI alignment
+     *
+     * @param startSection - The section at which to start the export (defaults to first section)
+     * @param endSection   - The section at which to end the export (defaults to last section)
+     * @return the TEI XML as plaintext
+     * @throws XMLStreamException
+     * @throws IOException
+     */
     @GET
     @Path("/xml")
     @Produces("text/xml; charset=utf-8")
-    
+    @Hidden
+    @Operation(summary = "Export tradition to XML", 
+               description = "Returns lemmatized text and apparatus in TEI format. Accessed via /tradition/{tradId}/xml")
+    @ApiResponse(responseCode = "200", description = "TEI XML file successfully generated")
+    @ApiResponse(responseCode = "404", description = "Tradition not found")
+    @ApiResponse(responseCode = "500", description = "Server error during XML generation")
     public Response getXml(@QueryParam("start_section") String startSection, @QueryParam("end_section") String endSection) throws XMLStreamException, IOException {
         // return new TeiExporter(db).SimpleHnExporter(tradition, section);
         XmlBuilder builder = new XmlBuilder();

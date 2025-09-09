@@ -11,6 +11,7 @@ import javax.ws.rs.core.Response.Status;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import net.stemmaweb.model.*;
 import net.stemmaweb.services.*;
 
@@ -27,6 +28,7 @@ import static net.stemmaweb.Util.jsonerror;
  * @author VS, IRSB
  */
 
+@Tag(name = "Complex reading (Hypernodes)", description = "Operations related to complex readings")
 public class ComplexReading {
 
     private String errorMessage; // global error message used for sub-method calls

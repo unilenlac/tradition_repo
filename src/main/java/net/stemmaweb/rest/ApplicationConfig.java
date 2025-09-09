@@ -30,7 +30,9 @@ public class ApplicationConfig extends Application {
     @Override
     public Set<Class<?>> getClasses() {
         Set<Class<?>> s = new HashSet<>();
-        //s.add(Root.class);
+        s.add(Root.class);
+        s.add(Tradition.class);
+        s.add(Reading.class);
         return s;
     }
 }

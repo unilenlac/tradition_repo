@@ -20,6 +20,8 @@ import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.Relationship;
 import org.neo4j.graphdb.Transaction;
 
+import io.swagger.v3.oas.annotations.Hidden;
+
 import static net.stemmaweb.Util.jsonerror;
 
 /**
@@ -83,7 +85,6 @@ public class User {
     @PUT
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON + "; charset=utf-8")
-    
     public Response create(UserModel userModel) {
         // Find any existing user
         Node extantUser;
@@ -150,7 +151,6 @@ public class User {
      */
     @DELETE
     @Produces(MediaType.APPLICATION_JSON + "; charset=utf-8")
-    
     public Response deleteUser() {
         Node foundUser;
         UserModel removed;
@@ -189,7 +189,6 @@ public class User {
     @GET
     @Path("/traditions")
     @Produces(MediaType.APPLICATION_JSON + "; charset=utf-8")
-    
     public Response getUserTraditions() {
         if (!DatabaseService.userExists(userId, db)) {
             return Response.status(Status.NOT_FOUND).entity(jsonerror("User does not exist")).build();
@@ -210,7 +209,6 @@ public class User {
         Node foundUser;
         try (Transaction tx = db.beginTx()) {
             foundUser = tx.findNode(Nodes.USER, "id", userId);
-            //tx.close();
         }
         return foundUser;
     }
