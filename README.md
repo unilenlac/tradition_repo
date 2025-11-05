@@ -40,13 +40,29 @@ Then you can run a basic version of the container with:
 
     docker run -it --rm --name stemmarest --network stemmaweb -p 8080:8080 unilenlac/stemmarest:1.2-tomcat9-jdk17
 
-Please note that this version is compiled for an ARM architecture. AMD version will be soon provided.
-
 Debugging while the container is running is possible by opening a port and running a debugging server over the application. You also must use the JAVA_TOOL_OPTIONS environment variable to configure the debugger.
 
 ```
 docker run -itd --rm --name stemmarest --network stemmaweb -p 8080:8080 -p 5005:5005 -e JAVA_TOOL_OPTIONS="-agentlib:jdwp=transport=dt_socket,address=*:5005,server=y,suspend=n"
 ```
+
+### neo4j plugins and configuration
+
+Two plugins are also provided in the plugins folder : APOC and Graph Data Science library. Default versions are :
+- APOC version 5.22.0
+- Graph Data Science version 2.8.0
+
+Versions can be changed by using the following environment variables when building the docker image :
+
+- APOC_VERSION
+- GDS_VERSION
+Example :
+
+```
+docker build --build-arg APOC_VERSION=5.22.0 --build-arg GDS_VERSION=2.8.0 -t unilenlac/stemmarest:tag .
+```
+
+A default configuration file for the embedded version of Neo4j is also provided in the `/var/lib/stemmarest/conf` folder. You can change it by mounting your own configuration file in the same folder.
 
 ### Database
 

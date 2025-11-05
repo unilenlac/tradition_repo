@@ -1,0 +1,1 @@
+This folder contains the default neo4j.conf file. The plugin folder is empty but can be mounted into the container to add extra neede neo4j plugins
